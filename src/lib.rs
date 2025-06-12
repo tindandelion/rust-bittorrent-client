@@ -1,8 +1,10 @@
 mod decode_dict;
 mod decode_string;
+mod types;
 
-use crate::decode_dict::Dict;
 use std::fs;
+
+use crate::types::Dict;
 
 const TORRENT_FILE: &str = "test-data/debian-12.11.0-amd64-netinst.iso.torrent";
 

@@ -1,16 +1,15 @@
-use std::str::Utf8Error;
+use crate::types::ByteString;
 
 #[derive(Debug, PartialEq)]
 pub enum DecodeStringError {
     DelimiterNotFound,
-    InvalidLengthRepr(String),
+    InvalidLengthValue {
+        bytes: Vec<u8>,
+        value: Option<String>,
+    },
     LengthValueTooBig {
         expected: usize,
         actual: usize,
-    },
-    InvalidEncodedString {
-        encoded_bytes: Vec<u8>,
-        invalid_pos: usize,
     },
 }
 
@@ -22,27 +21,6 @@ impl std::fmt::Display for DecodeStringError {
     }
 }
 
-#[derive(Debug, PartialEq, Hash, Eq)]
-pub struct ByteString {
-    value: Vec<u8>,
-}
-
-impl ByteString {
-    pub fn new(value: &[u8]) -> Self {
-        Self {
-            value: value.to_vec(),
-        }
-    }
-
-    pub fn as_bytes(&self) -> &[u8] {
-        &self.value
-    }
-
-    pub fn as_str(&self) -> Result<&str, Utf8Error> {
-        str::from_utf8(&self.value)
-    }
-}
-
 pub fn decode_string(encoded: &[u8]) -> Result<(ByteString, usize), DecodeStringError> {
     let delimiter_index = encoded
         .iter()
@@ -50,10 +28,14 @@ pub fn decode_string(encoded: &[u8]) -> Result<(ByteString, usize), DecodeString
         .ok_or(DecodeStringError::DelimiterNotFound)?;
 
     let length_slice = &encoded[0..delimiter_index];
-    let length_str = decode_utf8(length_slice)?;
-    let string_length = length_str
-        .parse::<usize>()
-        .map_err(|_| DecodeStringError::InvalidLengthRepr(length_str.to_string()))?;
+    let length_str = decode_string_length(length_slice)?;
+    let string_length =
+        length_str
+            .parse::<usize>()
+            .map_err(|_| DecodeStringError::InvalidLengthValue {
+                bytes: length_slice.to_vec(),
+                value: Some(length_str.to_string()),
+            })?;
 
     let string_start = delimiter_index + 1;
     let string_end = string_start + string_length;
@@ -69,10 +51,10 @@ pub fn decode_string(encoded: &[u8]) -> Result<(ByteString, usize), DecodeString
     Ok((ByteString::new(string_bytes), string_end))
 }
 
-fn decode_utf8(slice: &[u8]) -> Result<&str, DecodeStringError> {
-    str::from_utf8(slice).map_err(|err| DecodeStringError::InvalidEncodedString {
-        encoded_bytes: slice.to_vec(),
-        invalid_pos: err.valid_up_to(),
+fn decode_string_length(slice: &[u8]) -> Result<&str, DecodeStringError> {
+    str::from_utf8(slice).map_err(|_| DecodeStringError::InvalidLengthValue {
+        bytes: slice.to_vec(),
+        value: None,
     })
 }
 
@@ -136,7 +118,10 @@ mod error_handling {
         let encoded = "a:spam".as_bytes();
         assert_eq!(
             decode_string(encoded),
-            Err(DecodeStringError::InvalidLengthRepr("a".to_string()))
+            Err(DecodeStringError::InvalidLengthValue {
+                bytes: vec![97],
+                value: Some("a".to_string())
+            })
         );
     }
 
@@ -145,7 +130,10 @@ mod error_handling {
         let encoded = "-1:spam".as_bytes();
         assert_eq!(
             decode_string(encoded),
-            Err(DecodeStringError::InvalidLengthRepr("-1".to_string()))
+            Err(DecodeStringError::InvalidLengthValue {
+                bytes: vec![45, 49],
+                value: Some("-1".to_string())
+            })
         );
     }
 
@@ -157,9 +145,9 @@ mod error_handling {
 
         assert_eq!(
             decode_string(&encoded),
-            Err(DecodeStringError::InvalidEncodedString {
-                encoded_bytes: encoded[..2].to_vec(),
-                invalid_pos: 1,
+            Err(DecodeStringError::InvalidLengthValue {
+                bytes: vec![49, 0xFF],
+                value: None,
             })
         );
     }
