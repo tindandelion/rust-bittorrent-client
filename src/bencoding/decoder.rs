@@ -9,6 +9,12 @@ pub struct Decoder<'a> {
     data: &'a [u8],
 }
 
+const LIST_START_DELIMITER: u8 = b'l';
+const DICT_START_DELIMITER: u8 = b'd';
+const INT_START_DELIMITER: u8 = b'i';
+const STRING_DELIMITER: u8 = b':';
+const TRAILING_DELIMITER: u8 = b'e';
+
 impl<'a> Decoder<'a> {
     pub fn new(data: &'a [u8]) -> Self {
         Self { data }
@@ -72,24 +78,28 @@ impl<'a> Decoder<'a> {
         if self.data.is_empty() {
             Err(DecodeError::EndingDelimiterNotFound)
         } else {
-            Ok(self.data[0] == b'e')
+            Ok(self.data[0] == TRAILING_DELIMITER)
         }
     }
 
     fn decode_next_string_element(&mut self) -> Result<Option<ByteString>, DecodeError> {
-        if self.data[0] == b'i' {
-            self.decode_int()?;
-            Ok(None)
-        } else if self.data[0] == b'd' {
-            self.decode_dict()?;
-
-            Ok(None)
-        } else if self.data[0] == b'l' {
-            self.decode_list()?;
-            Ok(None)
-        } else {
-            let value = self.decode_string()?;
-            Ok(Some(value))
+        match self.data[0] {
+            INT_START_DELIMITER => {
+                self.decode_int()?;
+                Ok(None)
+            }
+            DICT_START_DELIMITER => {
+                self.decode_dict()?;
+                Ok(None)
+            }
+            LIST_START_DELIMITER => {
+                self.decode_list()?;
+                Ok(None)
+            }
+            _ => {
+                let value = self.decode_string()?;
+                Ok(Some(value))
+            }
         }
     }
 
@@ -97,7 +107,7 @@ impl<'a> Decoder<'a> {
         let delimiter_index = self
             .data
             .iter()
-            .position(|&b| b == b':')
+            .position(|&b| b == STRING_DELIMITER)
             .ok_or(DecodeError::StringDelimiterNotFound)?;
 
         let length_slice = &self.data[0..delimiter_index];
