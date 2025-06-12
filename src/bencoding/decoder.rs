@@ -5,11 +5,11 @@ use super::{
     types::{ByteString, Dict},
 };
 
-pub struct BencodingDecoder<'a> {
+pub struct Decoder<'a> {
     data: &'a [u8],
 }
 
-impl<'a> BencodingDecoder<'a> {
+impl<'a> Decoder<'a> {
     pub fn new(data: &'a [u8]) -> Self {
         Self { data }
     }
@@ -126,7 +126,7 @@ mod decode_string {
     #[test]
     fn empty_string() {
         let encoded = "0:".as_bytes();
-        let mut state = BencodingDecoder::new(encoded);
+        let mut state = Decoder::new(encoded);
 
         let decoded = state.decode_string().unwrap();
         assert_eq!("", decoded.as_str().unwrap());
@@ -136,7 +136,7 @@ mod decode_string {
     #[test]
     fn non_empty_string() {
         let encoded = "4:spam".as_bytes();
-        let mut state = BencodingDecoder::new(encoded);
+        let mut state = Decoder::new(encoded);
 
         let decoded = state.decode_string().unwrap();
         assert_eq!("spam", decoded.as_str().unwrap());
@@ -146,7 +146,7 @@ mod decode_string {
     #[test]
     fn ignore_trailing_bytes() {
         let encoded = "4:spam abcde".as_bytes();
-        let mut state = BencodingDecoder::new(encoded);
+        let mut state = Decoder::new(encoded);
 
         let decoded = state.decode_string().unwrap();
         assert_eq!("spam", decoded.as_str().unwrap());
@@ -158,7 +158,7 @@ mod decode_string {
         let mut encoded = "6:spam".as_bytes().to_vec();
         encoded.extend_from_slice(&[0xF5, 0xF6]);
 
-        let mut state = BencodingDecoder::new(&encoded);
+        let mut state = Decoder::new(&encoded);
         let decoded = state.decode_string().unwrap();
         assert_eq!(decoded.as_bytes(), &encoded[2..]);
         assert!(state.data.is_empty());
@@ -171,7 +171,7 @@ mod decode_string {
         #[test]
         fn delimiter_not_found() {
             let encoded = "hello".as_bytes();
-            let mut state = BencodingDecoder::new(encoded);
+            let mut state = Decoder::new(encoded);
 
             assert_eq!(
                 state.decode_string(),
@@ -182,7 +182,7 @@ mod decode_string {
         #[test]
         fn non_numeric_length_value() {
             let encoded = "a:spam".as_bytes();
-            let mut state = BencodingDecoder::new(encoded);
+            let mut state = Decoder::new(encoded);
 
             assert_eq!(
                 state.decode_string(),
@@ -196,7 +196,7 @@ mod decode_string {
         #[test]
         fn negative_length_value() {
             let encoded = "-1:spam".as_bytes();
-            let mut state = BencodingDecoder::new(encoded);
+            let mut state = Decoder::new(encoded);
 
             assert_eq!(
                 state.decode_string(),
@@ -213,7 +213,7 @@ mod decode_string {
             encoded.push(0xFF);
             encoded.extend_from_slice(":spam".as_bytes());
 
-            let mut state = BencodingDecoder::new(&encoded);
+            let mut state = Decoder::new(&encoded);
             assert_eq!(
                 state.decode_string(),
                 Err(DecodeError::InvalidStringLengthValue {
@@ -226,7 +226,7 @@ mod decode_string {
         #[test]
         fn length_is_too_big() {
             let encoded = "10:spam".as_bytes();
-            let mut state = BencodingDecoder::new(encoded);
+            let mut state = Decoder::new(encoded);
 
             assert_eq!(
                 state.decode_string(),
@@ -246,7 +246,7 @@ mod decode_int {
     #[test]
     fn skip_value_and_move_past_integer_value() {
         let encoded = "i123456e".as_bytes();
-        let mut state = BencodingDecoder::new(encoded);
+        let mut state = Decoder::new(encoded);
 
         state.decode_int().unwrap();
         assert!(state.data.is_empty());
@@ -255,7 +255,7 @@ mod decode_int {
     #[test]
     fn return_error_if_ending_delimiter_not_found() {
         let encoded = "i123456".as_bytes();
-        let mut state = BencodingDecoder::new(encoded);
+        let mut state = Decoder::new(encoded);
 
         assert_eq!(
             state.decode_int(),
@@ -270,7 +270,7 @@ mod decode_dict {
 
     #[test]
     fn empty_dict() {
-        let mut state = BencodingDecoder::new("de".as_bytes());
+        let mut state = Decoder::new("de".as_bytes());
 
         let decoded_dict = state.decode_dict().unwrap();
 
@@ -281,7 +281,7 @@ mod decode_dict {
     #[test]
     fn extracts_and_stores_string_values() {
         let encoded = "d3:cow3:moo4:spam4:eggse".as_bytes();
-        let mut state = BencodingDecoder::new(encoded);
+        let mut state = Decoder::new(encoded);
 
         let decoded_dict = state.decode_dict().unwrap();
 
@@ -293,7 +293,7 @@ mod decode_dict {
     #[test]
     fn skips_integer_elements() {
         let encoded = "d3:cow3:moo4:spami1234ee".as_bytes();
-        let mut state = BencodingDecoder::new(encoded);
+        let mut state = Decoder::new(encoded);
         let decoded_dict = state.decode_dict().unwrap();
 
         assert_eq!(1, decoded_dict.len());
@@ -304,7 +304,7 @@ mod decode_dict {
     #[test]
     fn skips_dict_elements() {
         let encoded = "d4:spamd3:fooi1234ee3:cow3:mooe".as_bytes();
-        let mut state = BencodingDecoder::new(encoded);
+        let mut state = Decoder::new(encoded);
         let decoded_dict = state.decode_dict().unwrap();
 
         assert_eq!(1, decoded_dict.len());
@@ -315,7 +315,7 @@ mod decode_dict {
     #[test]
     fn skips_list_elements() {
         let encoded = "d4:spaml4:spam4:eggse3:cow3:mooe".as_bytes();
-        let mut state = BencodingDecoder::new(encoded);
+        let mut state = Decoder::new(encoded);
         let decoded_dict = state.decode_dict().unwrap();
 
         assert_eq!(1, decoded_dict.len());
@@ -326,7 +326,7 @@ mod decode_dict {
     #[test]
     fn return_error_if_ending_delimiter_not_found() {
         let encoded = "d3:cow3:moo4:spam4:eggs".as_bytes();
-        let mut state = BencodingDecoder::new(encoded);
+        let mut state = Decoder::new(encoded);
 
         assert_eq!(
             state.decode_dict(),
@@ -342,7 +342,7 @@ mod decode_list {
     #[test]
     fn skips_list_elements() {
         let encoded = "l4:spam4:eggse".as_bytes();
-        let mut state = BencodingDecoder::new(encoded);
+        let mut state = Decoder::new(encoded);
 
         state.decode_list().unwrap();
         assert!(state.data.is_empty());
@@ -351,7 +351,7 @@ mod decode_list {
     #[test]
     fn returns_error_if_ending_delimiter_not_found() {
         let encoded = "l4:spam4:eggs".as_bytes();
-        let mut state = BencodingDecoder::new(encoded);
+        let mut state = Decoder::new(encoded);
 
         assert_eq!(
             state.decode_list(),
