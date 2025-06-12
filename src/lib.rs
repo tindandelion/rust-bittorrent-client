@@ -1,22 +1,13 @@
-mod decode_dict;
-mod decode_string;
-mod types;
-
 use std::fs;
 
-use crate::types::Dict;
+use crate::bencoding::{Dict, decode_torrent_file};
+mod bencoding;
 
 const TORRENT_FILE: &str = "test-data/debian-12.11.0-amd64-netinst.iso.torrent";
 
-pub fn bt_client() -> String {
-    let dict = read_torrent_file();
-    dict.get_string("announce").unwrap().to_string()
-}
-
-fn read_torrent_file() -> Dict {
+pub fn read_torrent_file() -> Dict {
     let contents = fs::read(TORRENT_FILE).unwrap();
-    let (first_dict, _) = decode_dict::decode_dict(&contents).unwrap();
-    first_dict
+    decode_torrent_file(&contents).unwrap()
 }
 
 #[cfg(test)]

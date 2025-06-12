@@ -1,5 +1,7 @@
-use bt_client::bt_client;
+use bt_client::read_torrent_file;
 
 fn main() {
-    println!("{}", bt_client());
+    let torrent_contents = read_torrent_file();
+    let announce_url = torrent_contents.get_string("announce").unwrap();
+    println!("Your announce url: {}", announce_url);
 }

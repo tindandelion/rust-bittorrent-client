@@ -1,0 +1,13 @@
+mod decoder;
+mod errors;
+mod types;
+
+use std::error::Error;
+
+use crate::bencoding::decoder::BencodingDecoder;
+pub use types::Dict;
+
+pub fn decode_torrent_file(data: &[u8]) -> Result<Dict, Box<dyn Error>> {
+    let mut decoder = BencodingDecoder::new(data);
+    decoder.decode_dict().map_err(|e| e.into())
+}

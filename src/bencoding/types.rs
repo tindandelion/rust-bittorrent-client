@@ -22,6 +22,7 @@ impl ByteString {
     }
 }
 
+#[derive(Debug, PartialEq)]
 pub struct Dict {
     values: HashMap<ByteString, ByteString>,
 }
