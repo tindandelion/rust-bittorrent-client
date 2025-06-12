@@ -30,7 +30,7 @@ impl<'a> BencodingDecoder<'a> {
         Ok(Dict::new(values))
     }
 
-    pub fn decode_list(&mut self) -> Result<(), DecodeError> {
+    fn decode_list(&mut self) -> Result<(), DecodeError> {
         self.move_by(1);
         while !self.at_trailing_delimiter()? {
             self.decode_next_string_element()?;
@@ -39,7 +39,7 @@ impl<'a> BencodingDecoder<'a> {
         Ok(())
     }
 
-    pub fn decode_int(&mut self) -> Result<(), DecodeError> {
+    fn decode_int(&mut self) -> Result<(), DecodeError> {
         let end_index = self
             .data
             .iter()
@@ -49,7 +49,7 @@ impl<'a> BencodingDecoder<'a> {
         Ok(())
     }
 
-    pub fn decode_string(&mut self) -> Result<ByteString, DecodeError> {
+    fn decode_string(&mut self) -> Result<ByteString, DecodeError> {
         let string_length = self.decode_string_length()?;
 
         if string_length > self.data.len() {
