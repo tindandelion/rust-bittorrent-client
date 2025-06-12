@@ -23,27 +23,23 @@ impl std::fmt::Display for DecodeStringError {
 }
 
 #[derive(Debug, PartialEq, Hash, Eq)]
-pub struct ByteString<'a> {
-    value: &'a [u8],
+pub struct ByteString {
+    value: Vec<u8>,
 }
 
-impl<'a> ByteString<'a> {
-    pub fn new(value: &'a [u8]) -> Self {
-        Self { value }
+impl ByteString {
+    pub fn new(value: &[u8]) -> Self {
+        Self {
+            value: value.to_vec(),
+        }
     }
 
     pub fn as_bytes(&self) -> &[u8] {
-        self.value
+        &self.value
     }
 
     pub fn as_str(&self) -> Result<&str, Utf8Error> {
-        str::from_utf8(self.value)
-    }
-}
-
-impl<'a> ToString for ByteString<'a> {
-    fn to_string(&self) -> String {
-        str::from_utf8(self.value).unwrap().to_string()
+        str::from_utf8(&self.value)
     }
 }
 

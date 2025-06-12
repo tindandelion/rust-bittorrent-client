@@ -2,13 +2,19 @@ use std::{collections::HashMap, error::Error};
 
 use crate::decode_string::{ByteString, decode_string};
 
-pub struct Dict<'a> {
-    values: HashMap<ByteString<'a>, ByteString<'a>>,
+pub struct Dict {
+    values: HashMap<ByteString, ByteString>,
 }
 
-impl<'a> Dict<'a> {
+impl Dict {
     pub fn len(&self) -> usize {
         self.values.len()
+    }
+
+    pub fn get_string(&self, key: &str) -> Option<&str> {
+        let key = ByteString::new(key.as_bytes());
+        let value = self.values.get(&key)?;
+        value.as_str().ok()
     }
 }
 
