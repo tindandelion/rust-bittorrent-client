@@ -1,7 +1,7 @@
 ---
 layout: post
 title:  "BitTorrent: Key Concepts"
-date: 2025-05-18
+date: 2025-06-13
 ---
 
 Let's start with an overview of the key concepts of BitTorrent architecture to gain a high-level understanding of what we're dealing with.
