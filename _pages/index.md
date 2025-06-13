@@ -8,7 +8,7 @@ permalink: /
 list_title: Project diary
 ---
 
-As I [continue my programming adventures in Rust][first-rust-project], I've decided to launch yet another learning project. This time, it's going to be an implementation of a simple [BitTorrent][bit-torrent] client. 
+As I [continue my programming adventures in Rust][first-rust-project], I've decided to launch yet another learning project. This time, it's going to be an implementation of a [simple BitTorrent client][project-github]. 
 
 ### Motivations
 
@@ -34,4 +34,4 @@ It should be noted that I'm starting this project knowing _absolutely nothing_ a
 **Let's get going!**
 
 [first-rust-project]: https://www.tindandelion.com/rust-text-compression/
-[bit-torrent]: https://www.bittorrent.com/
+[project-github]: https://github.com/tindandelion/rust-text-compression
