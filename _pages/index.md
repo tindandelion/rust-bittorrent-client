@@ -29,9 +29,16 @@ Writing a fully-fledged BitTorrent client is quite a big task, so for my pet pro
 * Serve requests from other peers while the download is ongoing
 * Show the download progress in some form of text-based UI
 
-It should be noted that I'm starting this project knowing _absolutely nothing_ about the BitTorrent protocol. Of course, I have some experience with various BitTorrent clients _as a user_, but I have absolutely no idea how they work under the hood. But hey, that's what this project is all about: getting into the nitty-gritty details. 
+It should be noted that I'm starting this project knowing _absolutely nothing_ about the BitTorrent protocol. Of course, I have some experience with various BitTorrent clients _as a user_, but I have absolutely no idea how they work under the hood. But hey, that's what this project is all about: getting into the nitty-gritty details!
 
-**Let's get going!**
+### Useful links 
+
+Obviously, I'm not the first person to implement a BitTorrent client. There are plenty of resources on the Web dedicated to this subject. Here, I'm going to put up a list of those that I use in the course of this project. The list will be updated as I move along. 
+
+* [Unofficial BitTorrent Protocol Specification][bittorrent-spec]
+
+
 
 [first-rust-project]: https://www.tindandelion.com/rust-text-compression/
 [project-github]: https://github.com/tindandelion/rust-text-compression
+[bittorrent-spec]: https://wiki.theory.org/BitTorrentSpecification
