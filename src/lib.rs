@@ -27,14 +27,7 @@ pub fn make_tracker_request_url(
 
     url.query_pairs_mut()
         .append_pair("info_hash", &info_hash_str)
-        .append_pair("peer_id", &peer_id_str)
-        .append_pair("port", "6881")
-        .append_pair("uploaded", "0")
-        .append_pair("downloaded", "0")
-        .append_pair("left", "0")
-        .append_pair("compact", "0")
-        .append_pair("no_peer_id", "0")
-        .append_pair("event", "started");
+        .append_pair("peer_id", &peer_id_str);
 
     Ok(url)
 }
@@ -69,13 +62,6 @@ mod tests {
         let expected_params = [
             "info_hash=%124Vx%9A%BC%DE%F1%23Eg%89%AB%CD%EF%124Vx%9A",
             "peer_id=%00%00%00%00%00%00%00%00%00%00%00%00%00%00%00%00%00%00%00%00",
-            "port=6881",
-            "uploaded=0",
-            "downloaded=0",
-            "left=0",
-            "compact=0",
-            "no_peer_id=0",
-            "event=started",
         ]
         .join("&");
         let full_expected_url = tracker_url.to_owned() + "?" + &expected_params;
