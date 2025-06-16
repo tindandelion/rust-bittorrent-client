@@ -76,9 +76,9 @@ mod tests {
             "compact=0",
             "no_peer_id=0",
             "event=started",
-        ];
-        let param_string = expected_params.join("&");
-        let full_expected_url = tracker_url.to_owned() + "?" + &param_string;
+        ]
+        .join("&");
+        let full_expected_url = tracker_url.to_owned() + "?" + &expected_params;
         assert_eq!(full_expected_url, url.to_string())
     }
 }
