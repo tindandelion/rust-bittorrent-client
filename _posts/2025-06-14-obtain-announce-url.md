@@ -84,7 +84,7 @@ Hooray, we've got our very first feature working! Tagging it as [version 0.0.1][
 
 Now that I have the announce URL at hand, I can proceed to make an actual request to the torrent tracker. I suspect I'm going to split this work into two parts. For starters, I need to learn how to make HTTP requests in general in Rust. Second, I need to create a proper request to the tracker with all needed parameters, and parse its response.
 
-Looks like there's a lot of fun ahead!
+Looks like there's [a lot of fun ahead][next-post]!
 
 
 [prev-post]: {{site.baseurl}}/{% post_url 2025-06-13-bittorrent-overview %}
@@ -99,3 +99,4 @@ Looks like there's a lot of fun ahead!
 [decoder-0.0.1-decode-string]: https://github.com/tindandelion/rust-bittorrent-client/blob/main/src/bencoding/decoder.rs#L58
 [main-0.0.1]: https://github.com/tindandelion/rust-bittorrent-client/blob/0.0.1/src/bin/main.rs
 [version-0.0.1]: https://github.com/tindandelion/rust-bittorrent-client/tree/0.0.1
+[next-post]: {{site.baseurl}}/{% post_url 2025-06-16-make-http-request %}

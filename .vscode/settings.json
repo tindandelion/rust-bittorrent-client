@@ -47,6 +47,11 @@
         "bencoding",
         "JSON",
         "bencoded",
-        "dict"
+        "dict",
+        "reqwest",
+        "params",
+        "async",
+        "Debian",
+        "hacky"
     ]
 } 
