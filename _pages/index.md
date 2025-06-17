@@ -10,6 +10,8 @@ list_title: Project diary
 
 As I [continue my programming adventures in Rust][first-rust-project], I've decided to launch yet another learning project. This time, it's going to be an implementation of a [simple BitTorrent client][project-github]. 
 
+
+
 ### Motivations
 
 Why BitTorrent? One reason is that I've always been interested in how peer-to-peer systems work. There's something very intriguing about how multiple actors can collaborate to accomplish a task without the need for centralized control. By diving deeper into the implementation of such a system, I hope to gain a better understanding of how they work in general. 
@@ -40,5 +42,5 @@ Obviously, I'm not the first person to implement a BitTorrent client. There are 
 
 
 [first-rust-project]: https://www.tindandelion.com/rust-text-compression/
-[project-github]: https://github.com/tindandelion/rust-text-compression
+[project-github]: https://github.com/tindandelion/rust-bittorrent-client
 [bittorrent-spec]: https://wiki.theory.org/BitTorrentSpecification
