@@ -20,14 +20,12 @@ fn make_announce_url(
     tracker_url: &str,
     announce_params: &AnnounceParams,
 ) -> Result<Url, ParseError> {
-    unsafe {
-        let info_hash = String::from_utf8_unchecked(announce_params.info_hash.clone());
-        let peer_id = String::from_utf8_unchecked(announce_params.peer_id.clone());
-        Url::parse_with_params(
-            tracker_url,
-            &[("info_hash", &info_hash), ("peer_id", &peer_id)],
-        )
-    }
+    let info_hash = unsafe { String::from_utf8_unchecked(announce_params.info_hash.clone()) };
+    let peer_id = unsafe { String::from_utf8_unchecked(announce_params.peer_id.clone()) };
+    Url::parse_with_params(
+        tracker_url,
+        &[("info_hash", &info_hash), ("peer_id", &peer_id)],
+    )
 }
 
 #[cfg(test)]
