@@ -1,7 +1,7 @@
 ---
 layout: post
 title:  "Make HTTP request to the tracker"
-date: 2025-06-14
+date: 2025-06-17
 ---
 
 We left off our project at the point where we managed to [parse the torrent file (at least partially) and extract the tracker's announce URL][prev-post] from it. Now, it's time to make use of this URL and write some code to send an HTTP request to the torrent tracker.
