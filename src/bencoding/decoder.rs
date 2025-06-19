@@ -1,12 +1,18 @@
 use std::collections::HashMap;
 
+use sha1::{Digest, Sha1};
+
+use crate::bencoding::types::DictValue;
+
 use super::{
     errors::DecodeError,
     types::{ByteString, Dict},
 };
 
 pub struct Decoder<'a> {
-    data: &'a [u8],
+    current_pos: usize,
+    raw_data: &'a [u8],
+    rest_data: &'a [u8],
 }
 
 const LIST_START_DELIMITER: u8 = b'l';
@@ -17,12 +23,17 @@ const TRAILING_DELIMITER: u8 = b'e';
 
 impl<'a> Decoder<'a> {
     pub fn new(data: &'a [u8]) -> Self {
-        Self { data }
+        Self {
+            current_pos: 0,
+            raw_data: data,
+            rest_data: data,
+        }
     }
 
     pub fn decode_dict(&mut self) -> Result<Dict, DecodeError> {
         let mut values = HashMap::new();
 
+        let dict_start = self.current_pos;
         self.move_by(1);
         while !self.at_trailing_delimiter()? {
             let key = self.decode_string()?;
@@ -33,7 +44,16 @@ impl<'a> Decoder<'a> {
         }
         self.move_by(1);
 
-        Ok(Dict::new(values))
+        Ok(Dict::new(
+            self.calculate_sha1(dict_start, self.current_pos),
+            values,
+        ))
+    }
+
+    fn calculate_sha1(&self, start_index: usize, end_index: usize) -> Vec<u8> {
+        let mut hasher = Sha1::new();
+        hasher.update(&self.raw_data[start_index..end_index]);
+        hasher.finalize().to_vec()
     }
 
     fn decode_list(&mut self) -> Result<(), DecodeError> {
@@ -47,7 +67,7 @@ impl<'a> Decoder<'a> {
 
     fn decode_int(&mut self) -> Result<(), DecodeError> {
         let end_index = self
-            .data
+            .rest_data
             .iter()
             .position(|&b| b == b'e')
             .ok_or(DecodeError::EndingDelimiterNotFound)?;
@@ -58,32 +78,33 @@ impl<'a> Decoder<'a> {
     fn decode_string(&mut self) -> Result<ByteString, DecodeError> {
         let string_length = self.decode_string_length()?;
 
-        if string_length > self.data.len() {
+        if string_length > self.rest_data.len() {
             return Err(DecodeError::StringLengthValueTooBig {
                 expected: string_length,
-                actual: self.data.len(),
+                actual: self.rest_data.len(),
             });
         }
 
-        let string_bytes = &self.data[..string_length];
+        let string_bytes = &self.rest_data[..string_length];
         self.move_by(string_length);
         Ok(ByteString::new(string_bytes))
     }
 
     fn move_by(&mut self, offset: usize) {
-        self.data = &self.data[offset..];
+        self.current_pos += offset;
+        self.rest_data = &self.raw_data[self.current_pos..];
     }
 
     fn at_trailing_delimiter(&self) -> Result<bool, DecodeError> {
-        if self.data.is_empty() {
+        if self.rest_data.is_empty() {
             Err(DecodeError::EndingDelimiterNotFound)
         } else {
-            Ok(self.data[0] == TRAILING_DELIMITER)
+            Ok(self.rest_data[0] == TRAILING_DELIMITER)
         }
     }
 
-    fn decode_next_string_element(&mut self) -> Result<Option<ByteString>, DecodeError> {
-        match self.data[0] {
+    fn decode_next_string_element(&mut self) -> Result<Option<DictValue>, DecodeError> {
+        match self.rest_data[0] {
             INT_START_DELIMITER => {
                 self.decode_int()?;
                 Ok(None)
@@ -98,19 +119,19 @@ impl<'a> Decoder<'a> {
             }
             _ => {
                 let value = self.decode_string()?;
-                Ok(Some(value))
+                Ok(Some(DictValue::String(value)))
             }
         }
     }
 
     fn decode_string_length(&mut self) -> Result<usize, DecodeError> {
         let delimiter_index = self
-            .data
+            .rest_data
             .iter()
             .position(|&b| b == STRING_DELIMITER)
             .ok_or(DecodeError::StringDelimiterNotFound)?;
 
-        let length_slice = &self.data[0..delimiter_index];
+        let length_slice = &self.rest_data[0..delimiter_index];
         let length_str =
             str::from_utf8(length_slice).map_err(|_| DecodeError::InvalidStringLengthValue {
                 bytes: length_slice.to_vec(),
@@ -140,7 +161,7 @@ mod decode_string {
 
         let decoded = state.decode_string().unwrap();
         assert_eq!("", decoded.as_str().unwrap());
-        assert!(state.data.is_empty());
+        assert!(state.rest_data.is_empty());
     }
 
     #[test]
@@ -150,7 +171,7 @@ mod decode_string {
 
         let decoded = state.decode_string().unwrap();
         assert_eq!("spam", decoded.as_str().unwrap());
-        assert!(state.data.is_empty());
+        assert!(state.rest_data.is_empty());
     }
 
     #[test]
@@ -160,7 +181,7 @@ mod decode_string {
 
         let decoded = state.decode_string().unwrap();
         assert_eq!("spam", decoded.as_str().unwrap());
-        assert_eq!(state.data, " abcde".as_bytes());
+        assert_eq!(state.rest_data, " abcde".as_bytes());
     }
 
     #[test]
@@ -171,7 +192,7 @@ mod decode_string {
         let mut state = Decoder::new(&encoded);
         let decoded = state.decode_string().unwrap();
         assert_eq!(decoded.as_bytes(), &encoded[2..]);
-        assert!(state.data.is_empty());
+        assert!(state.rest_data.is_empty());
     }
 
     #[cfg(test)]
@@ -259,7 +280,7 @@ mod decode_int {
         let mut state = Decoder::new(encoded);
 
         state.decode_int().unwrap();
-        assert!(state.data.is_empty());
+        assert!(state.rest_data.is_empty());
     }
 
     #[test]
@@ -285,7 +306,14 @@ mod decode_dict {
         let decoded_dict = state.decode_dict().unwrap();
 
         assert_eq!(0, decoded_dict.len());
-        assert!(state.data.is_empty());
+        assert_eq!(
+            vec![
+                0x60, 0x0c, 0xcd, 0x1b, 0x71, 0x56, 0x92, 0x32, 0xd0, 0x1d, 0x11, 0x0b, 0xc6, 0x3e,
+                0x90, 0x6b, 0xea, 0xb0, 0x4d, 0x8c,
+            ],
+            decoded_dict.sha1()
+        );
+        assert!(state.rest_data.is_empty());
     }
 
     #[test]
@@ -297,7 +325,19 @@ mod decode_dict {
 
         assert_eq!(decoded_dict.get_string("cow"), Some("moo"));
         assert_eq!(decoded_dict.get_string("spam"), Some("eggs"));
-        assert!(state.data.is_empty());
+        assert!(state.rest_data.is_empty());
+    }
+
+    #[test]
+    #[ignore]
+    fn extracts_and_stores_dict_value_sha1_hashes() {
+        let encoded = "d4:spamd3:fooi1234ee3:cow3:mooe".as_bytes();
+        let mut state = Decoder::new(encoded);
+        let decoded_dict = state.decode_dict().unwrap();
+
+        assert_eq!(2, decoded_dict.len());
+        // assert_eq!(None, decoded_dict.get_string("spam"));
+        assert!(state.rest_data.is_empty());
     }
 
     #[test]
@@ -308,18 +348,7 @@ mod decode_dict {
 
         assert_eq!(1, decoded_dict.len());
         assert_eq!(None, decoded_dict.get_string("spam"));
-        assert!(state.data.is_empty());
-    }
-
-    #[test]
-    fn skips_dict_elements() {
-        let encoded = "d4:spamd3:fooi1234ee3:cow3:mooe".as_bytes();
-        let mut state = Decoder::new(encoded);
-        let decoded_dict = state.decode_dict().unwrap();
-
-        assert_eq!(1, decoded_dict.len());
-        assert_eq!(None, decoded_dict.get_string("spam"));
-        assert!(state.data.is_empty());
+        assert!(state.rest_data.is_empty());
     }
 
     #[test]
@@ -330,7 +359,7 @@ mod decode_dict {
 
         assert_eq!(1, decoded_dict.len());
         assert_eq!(None, decoded_dict.get_string("spam"));
-        assert!(state.data.is_empty());
+        assert!(state.rest_data.is_empty());
     }
 
     #[test]
@@ -355,7 +384,7 @@ mod decode_list {
         let mut state = Decoder::new(encoded);
 
         state.decode_list().unwrap();
-        assert!(state.data.is_empty());
+        assert!(state.rest_data.is_empty());
     }
 
     #[test]

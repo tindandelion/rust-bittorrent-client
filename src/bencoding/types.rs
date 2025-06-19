@@ -5,6 +5,17 @@ pub struct ByteString {
     value: Vec<u8>,
 }
 
+#[derive(Debug, PartialEq)]
+pub enum DictValue {
+    String(ByteString),
+}
+
+#[derive(Debug, PartialEq)]
+pub struct Dict {
+    sha1: Vec<u8>,
+    values: HashMap<ByteString, DictValue>,
+}
+
 impl ByteString {
     pub fn new(value: &[u8]) -> Self {
         Self {
@@ -22,20 +33,21 @@ impl ByteString {
     }
 }
 
-#[derive(Debug, PartialEq)]
-pub struct Dict {
-    values: HashMap<ByteString, ByteString>,
-}
-
 impl Dict {
-    pub fn new(values: HashMap<ByteString, ByteString>) -> Self {
-        Self { values }
+    pub fn new(sha1: Vec<u8>, values: HashMap<ByteString, DictValue>) -> Self {
+        Self { sha1, values }
     }
 
     pub fn get_string(&self, key: &str) -> Option<&str> {
         let key = ByteString::new(key.as_bytes());
         let value = self.values.get(&key)?;
-        value.as_str().ok()
+        match value {
+            DictValue::String(string) => string.as_str().ok(),
+        }
+    }
+
+    pub fn sha1(&self) -> &[u8] {
+        &self.sha1
     }
 
     #[cfg(test)]
