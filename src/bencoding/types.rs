@@ -8,6 +8,7 @@ pub struct ByteString {
 #[derive(Debug, PartialEq)]
 pub enum DictValue {
     String(ByteString),
+    Dict(Vec<u8>),
 }
 
 #[derive(Debug, PartialEq)]
@@ -43,6 +44,16 @@ impl Dict {
         let value = self.values.get(&key)?;
         match value {
             DictValue::String(string) => string.as_str().ok(),
+            _ => None,
+        }
+    }
+
+    pub fn get_dict_sha1(&self, key: &str) -> Option<&[u8]> {
+        let key = ByteString::new(key.as_bytes());
+        let value = self.values.get(&key)?;
+        match value {
+            DictValue::Dict(sha1) => Some(sha1),
+            _ => None,
         }
     }
 

@@ -37,7 +37,7 @@ impl<'a> Decoder<'a> {
         self.move_by(1);
         while !self.at_trailing_delimiter()? {
             let key = self.decode_string()?;
-            let value = self.decode_next_string_element()?;
+            let value = self.decode_next_element()?;
             if let Some(value) = value {
                 values.insert(key, value);
             }
@@ -59,7 +59,7 @@ impl<'a> Decoder<'a> {
     fn decode_list(&mut self) -> Result<(), DecodeError> {
         self.move_by(1);
         while !self.at_trailing_delimiter()? {
-            self.decode_next_string_element()?;
+            self.decode_next_element()?;
         }
         self.move_by(1);
         Ok(())
@@ -103,15 +103,15 @@ impl<'a> Decoder<'a> {
         }
     }
 
-    fn decode_next_string_element(&mut self) -> Result<Option<DictValue>, DecodeError> {
+    fn decode_next_element(&mut self) -> Result<Option<DictValue>, DecodeError> {
         match self.rest_data[0] {
             INT_START_DELIMITER => {
                 self.decode_int()?;
                 Ok(None)
             }
             DICT_START_DELIMITER => {
-                self.decode_dict()?;
-                Ok(None)
+                let value = self.decode_dict()?;
+                Ok(Some(DictValue::Dict(value.sha1().to_vec())))
             }
             LIST_START_DELIMITER => {
                 self.decode_list()?;
@@ -329,14 +329,17 @@ mod decode_dict {
     }
 
     #[test]
-    #[ignore]
     fn extracts_and_stores_dict_value_sha1_hashes() {
+        let expected_sha1 = [
+            0x95, 0x97, 0xa6, 0x26, 0xb9, 0x87, 0xb4, 0x83, 0x04, 0x41, 0x1a, 0xc5, 0xf2, 0x72,
+            0xac, 0xcf, 0x49, 0x52, 0xdf, 0x33,
+        ];
         let encoded = "d4:spamd3:fooi1234ee3:cow3:mooe".as_bytes();
         let mut state = Decoder::new(encoded);
         let decoded_dict = state.decode_dict().unwrap();
 
         assert_eq!(2, decoded_dict.len());
-        // assert_eq!(None, decoded_dict.get_string("spam"));
+        assert_eq!(Some(&expected_sha1[..]), decoded_dict.get_dict_sha1("spam"));
         assert!(state.rest_data.is_empty());
     }
 
