@@ -107,7 +107,7 @@ impl<'a> Decoder<'a> {
             }
             DICT_START_DELIMITER => {
                 let value = self.decode_dict()?;
-                Ok(Some(DictValue::Dict(value.sha1().clone())))
+                Ok(Some(DictValue::Dict(value)))
             }
             LIST_START_DELIMITER => {
                 self.decode_list()?;
