@@ -4,7 +4,7 @@ use crate::bencoding::types::{ByteString, Sha1};
 
 #[derive(Debug, PartialEq)]
 pub enum DictValue {
-    String(ByteString),
+    ByteString(ByteString),
     Dict(Dict),
 }
 
@@ -23,7 +23,7 @@ impl Dict {
         let key = ByteString::new(key.as_bytes());
         let value = self.values.get(&key)?;
         match value {
-            DictValue::String(string) => string.as_str().ok(),
+            DictValue::ByteString(string) => string.as_str().ok(),
             _ => None,
         }
     }

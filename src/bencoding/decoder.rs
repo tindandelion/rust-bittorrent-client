@@ -115,7 +115,7 @@ impl<'a> Decoder<'a> {
             }
             _ => {
                 let value = self.decode_string()?;
-                Ok(Some(DictValue::String(value)))
+                Ok(Some(DictValue::ByteString(value)))
             }
         }
     }
