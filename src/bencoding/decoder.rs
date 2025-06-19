@@ -1,8 +1,6 @@
 use std::collections::HashMap;
 
-use sha1::{Digest, Sha1};
-
-use crate::bencoding::types::DictValue;
+use crate::bencoding::types::{DictValue, Sha1};
 
 use super::{
     errors::DecodeError,
@@ -50,10 +48,8 @@ impl<'a> Decoder<'a> {
         ))
     }
 
-    fn calculate_sha1(&self, start_index: usize, end_index: usize) -> Vec<u8> {
-        let mut hasher = Sha1::new();
-        hasher.update(&self.raw_data[start_index..end_index]);
-        hasher.finalize().to_vec()
+    fn calculate_sha1(&self, start_index: usize, end_index: usize) -> Sha1 {
+        Sha1::calculate(&self.raw_data[start_index..end_index])
     }
 
     fn decode_list(&mut self) -> Result<(), DecodeError> {
@@ -111,7 +107,7 @@ impl<'a> Decoder<'a> {
             }
             DICT_START_DELIMITER => {
                 let value = self.decode_dict()?;
-                Ok(Some(DictValue::Dict(value.sha1().to_vec())))
+                Ok(Some(DictValue::Dict(value.sha1().clone())))
             }
             LIST_START_DELIMITER => {
                 self.decode_list()?;
@@ -306,13 +302,7 @@ mod decode_dict {
         let decoded_dict = state.decode_dict().unwrap();
 
         assert_eq!(0, decoded_dict.len());
-        assert_eq!(
-            vec![
-                0x60, 0x0c, 0xcd, 0x1b, 0x71, 0x56, 0x92, 0x32, 0xd0, 0x1d, 0x11, 0x0b, 0xc6, 0x3e,
-                0x90, 0x6b, 0xea, 0xb0, 0x4d, 0x8c,
-            ],
-            decoded_dict.sha1()
-        );
+        assert_eq!(&Sha1::calculate("de".as_bytes()), decoded_dict.sha1());
         assert!(state.rest_data.is_empty());
     }
 
@@ -330,16 +320,15 @@ mod decode_dict {
 
     #[test]
     fn extracts_and_stores_dict_value_sha1_hashes() {
-        let expected_sha1 = [
-            0x95, 0x97, 0xa6, 0x26, 0xb9, 0x87, 0xb4, 0x83, 0x04, 0x41, 0x1a, 0xc5, 0xf2, 0x72,
-            0xac, 0xcf, 0x49, 0x52, 0xdf, 0x33,
-        ];
         let encoded = "d4:spamd3:fooi1234ee3:cow3:mooe".as_bytes();
         let mut state = Decoder::new(encoded);
         let decoded_dict = state.decode_dict().unwrap();
 
         assert_eq!(2, decoded_dict.len());
-        assert_eq!(Some(&expected_sha1[..]), decoded_dict.get_dict_sha1("spam"));
+        assert_eq!(
+            Some(&Sha1::calculate("d3:fooi1234ee".as_bytes())),
+            decoded_dict.get_dict_sha1("spam")
+        );
         assert!(state.rest_data.is_empty());
     }
 

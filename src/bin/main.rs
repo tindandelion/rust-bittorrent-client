@@ -9,11 +9,12 @@ fn main() -> Result<(), Box<dyn Error>> {
         .expect("Unable to retrieve announce URL");
     let info_hash = torrent_file_contents
         .get_dict_sha1("info")
-        .expect("Unable to retrieve SHA-1 hash of `info` key");
+        .expect("Unable to retrieve SHA-1 hash of `info` key")
+        .clone();
     println!("\nYour announce url is: {}", announce_url);
 
     let announce_params = AnnounceParams {
-        info_hash: info_hash.to_vec(),
+        info_hash: info_hash,
         peer_id: vec![0x00; 20],
     };
     let response = make_announce_request(announce_url, &announce_params)?;
