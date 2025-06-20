@@ -45,7 +45,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
 # Extending the _Dict_ struct
 
-Recall that we [started to work on the `Dict` struct][dict-struct-first-iteration] a while ago. Back then, I decided to keep things very simple and only add functionality to store and access `ByteString` values. Now it seems that we need to add more power to this struct to support a new method:
+Recall that we [started to work on the `Dict` struct][dict-struct-first-iteration] a while ago. Back then, I decided to keep things very simple and only add functionality to store and access `ByteString` values. Now it seems that we need to add more power to this struct and support a new method:
 
 ```rust
 impl Dict {
@@ -113,7 +113,7 @@ With these changes done, it became easy to add the calculation of the SHA-1 hash
 
 Initially, I represented SHA-1 values using `Vec<u8>`, but I very quickly decided to come up with a specific type to represent them: the [`Sha1` struct][sha1-0.0.3]. This is an example of a [_newtype_ pattern][rust-design-patterns-newtype], sometimes also referred to as the [_TinyType_ pattern][tiny-type-pattern]. I've started to use that pattern quite a lot in my code lately, and I think it brings a few benefits to the code:
 
-* It allows me to avoid silly errors. Consider a function `login(user_name: &str, password: &str)`. It's quite easy to make a simple mistake and pass the parameters in the wrong order. If, instead, we have this function defined as `login(user_name: &UserName, password: &Password)`, the compiler will complain if we accidentally mix up the parameter order.
+* It helps me to avoid silly errors. Consider a function `login(user_name: &str, password: &str)`. It's quite easy to make a simple mistake and pass the parameters in the wrong order. If, instead, we have this function defined as `login(user_name: &UserName, password: &Password)`, the compiler will complain if we accidentally mix up the parameter order.
 * It creates a natural place to put domain-specific logic and constraints. For example, if password values were required to be non-empty strings, we could place that check into the `Password::from_str(value: &str)` constructor. Elsewhere in the code, we can rely on `Password` values always being valid and avoid unnecessary checks for non-empty strings in those places.
 * It makes function types more understandable. When defining function types, we mostly rely on a function signature to figure out what the function is supposed to do. Having a function type like `fn(&str) -> String` doesn't convey much information about the semantics of the argument and the result of such a function. On the other hand, the type `fn(&UserName) -> Password` makes it much clearer.
 
