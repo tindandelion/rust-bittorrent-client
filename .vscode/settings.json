@@ -60,6 +60,9 @@
         "Dict",
         "urlencoded",
         "Metainfo",
-        "SHA1"
+        "SHA1",
+        "newtypes",
+        "TinyType",
+        "Sha1"
     ]
 } 
