@@ -1,14 +1,10 @@
 #[derive(Debug, PartialEq)]
 pub enum DecodeError {
     StringDelimiterNotFound,
-    InvalidStringLengthValue {
-        bytes: Vec<u8>,
-        value: Option<String>,
-    },
-    StringLengthValueTooBig {
-        expected: usize,
-        actual: usize,
-    },
+    InvalidStringLengthValue(String),
+    StringLengthValueTooBig { expected: usize, actual: usize },
+
+    InvalidIntValue(String),
 
     EndingDelimiterNotFound,
 }
