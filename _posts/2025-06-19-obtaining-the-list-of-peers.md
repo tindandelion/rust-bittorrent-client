@@ -1,7 +1,7 @@
 ---
 layout: post
-title:  "Passing the correct torrent hash"
-date: 2025-06-19
+
+date: 2025-06-20
 ---
 
 In the [last chunk of work][prev-post], I achieved a milestone: making a request to the torrent tracker and getting back a meaningful response. The response is "torrent not found," though, because I'm still passing a fake torrent hash in the request parameters. Today, I want to fix this situation and make the program use the real hash value that it will obtain from the torrent file.
@@ -10,13 +10,13 @@ In the [last chunk of work][prev-post], I achieved a milestone: making a request
 
 # What needs to be done
 
-The [BitTorrent specification][bittorrent-spec] specifies what has to go into the `info_hash` parameter of the announce request:
+The [BitTorrent specification][bittorrent-spec] describes what has to go into the `info_hash` parameter of the announce request:
 
 > info_hash: urlencoded 20-byte SHA1 hash of the <b>value</b> of the <b>info</b> key from the Metainfo file. Note that the value will be a bencoded dictionary, given the definition of the info key above.
 
 So it sounds like we need to do some additional work when decoding the torrent file: for dictionary fields (which `info` is), we need to calculate and store the SHA-1 hash of their bencoded representation.
 
-Once we have that done, in our `main()` program we'll use the hash value of the `info` key and pass it to the `make_announce_request()` function, instead of a fake one. I'm thinking about something like this:
+Once we have that done, in our `main()` program we'll use the hash value of the `info` key and pass it to the `make_announce_request()` function, instead of a fake one. I'm thinking of something like this:
 
 ```rust
 fn main() -> Result<(), Box<dyn Error>> {
@@ -43,6 +43,8 @@ fn main() -> Result<(), Box<dyn Error>> {
 }
 ```
 
+Let's get it done!
+
 # Extending the _Dict_ struct
 
 Recall that we [started to work on the `Dict` struct][dict-struct-first-iteration] a while ago. Back then, I decided to keep things very simple and only add functionality to store and access `ByteString` values. Now it seems that we need to add more power to this struct and support a new method:
@@ -55,7 +57,7 @@ impl Dict {
 }
 ```
 
-Notice that I still keep things simple, almost to a fault. That `get_dict_sha1()` method looks a bit awkward, and rightly so: it looks too specific for a pretty generic data type like `Dict`. However, I still don't have a clear idea of what the fully-fledged `Dict` public interface should look like, so I'm resorting to the simplest thing that could possibly work in order to achieve the goal. Later on, as our `Dict` struct keeps growing in functionality, I'm going to revisit the interface and get rid of overly specific methods.
+Notice that I still keep things simple, almost to a fault. That `get_dict_sha1()` method looks a bit awkward, and rightly so: it looks too specific for a pretty generic data type like `Dict`. However, I still don't have a clear idea of what the fully-fledged `Dict` public interface should look like, so I resort to the simplest thing that could possibly work in order to achieve the goal. Later on, as our `Dict` struct keeps growing in functionality, I'm going to revisit the interface and get rid of overly specific methods.
 
 Also notice the result type, `Sha1`. I'll get back to that [later in this post](#sha1-struct-the-newtype-pattern).
 
@@ -111,7 +113,7 @@ With these changes done, it became easy to add the calculation of the SHA-1 hash
 
 # _Sha1_ struct: the _newtype_ pattern
 
-Initially, I represented SHA-1 values using `Vec<u8>`, but I very quickly decided to come up with a specific type to represent them: the [`Sha1` struct][sha1-0.0.3]. This is an example of a [_newtype_ pattern][rust-design-patterns-newtype], sometimes also referred to as the [_TinyType_ pattern][tiny-type-pattern]. I've started to use that pattern quite a lot in my code lately, and I think it brings a few benefits to the code:
+Initially, I passed SHA-1 values as `Vec<u8>`, but very quickly decided to come up with a specific type to represent them: the [`Sha1` struct][sha1-0.0.3]. This is an example of a [_newtype_ pattern][rust-design-patterns-newtype], sometimes also referred to as the [_TinyType_ pattern][tiny-type-pattern]. I've started to use that pattern quite a lot in my code lately, and I think it brings a few benefits to the code:
 
 * It helps me to avoid silly errors. Consider a function `login(user_name: &str, password: &str)`. It's quite easy to make a simple mistake and pass the parameters in the wrong order. If, instead, we have this function defined as `login(user_name: &UserName, password: &Password)`, the compiler will complain if we accidentally mix up the parameter order.
 * It creates a natural place to put domain-specific logic and constraints. For example, if password values were required to be non-empty strings, we could place that check into the `Password::from_str(value: &str)` constructor. Elsewhere in the code, we can rely on `Password` values always being valid and avoid unnecessary checks for non-empty strings in those places.
@@ -129,7 +131,7 @@ The only thing that bothers me about `Sha1` is the place where I put it. It's cu
 
 # Make it run!
 
-Finally, let's run the program and see what response we get from the torrent tracker now:
+Enough coding; let's run the program and see what response we get from the torrent tracker now:
 
 ```console
 [main] $ cargo run
@@ -142,7 +144,7 @@ Hooray! This time, we have a successful response from the tracker with a bunch o
 
 # Next steps
 
-So we've received the information about the peers from the torrent tracker, but it's still in bencoded format, and we can't access it easily yet. Our `Decoder` is not yet powerful enough to decode that structure. I think now is the high time to stop beating around the bush and add more beef to the `Decoder` struct so that we can finally get hold of the peers' IP addresses and ports.
+So we've received the information about the peers from the torrent tracker, but it's still in bencoded format, and we can't access it easily yet. Our `Decoder` is not powerful enough to decode that structure. I think now is the right time to stop beating around the bush and add more beef to the `Decoder` struct so that we can finally get hold of the peers' IP addresses and ports.
 
 [prev-post]: {{site.baseurl}}/{% post_url 2025-06-16-make-http-request %}
 [version-0.0.3]: https://github.com/tindandelion/rust-bittorrent-client/tree/0.0.3
