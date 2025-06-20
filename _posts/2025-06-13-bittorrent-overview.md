@@ -1,6 +1,6 @@
 ---
 layout: post
-title:  "BitTorrent: Key Concepts"
+title:  "BitTorrent: Key concepts"
 date: 2025-06-13
 ---
 
