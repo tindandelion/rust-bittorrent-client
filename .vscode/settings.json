@@ -63,6 +63,7 @@
         "SHA1",
         "newtypes",
         "TinyType",
-        "Sha1"
+        "Sha1",
+        "voilà"
     ]
 } 
