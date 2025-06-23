@@ -1,48 +1,27 @@
 use std::collections::HashMap;
 
-use crate::bencoding::types::{ByteString, Sha1};
-
-#[derive(Debug, PartialEq)]
-pub enum DictValue {
-    ByteString(ByteString),
-    Dict(Dict),
-    Int(i64),
-}
+use crate::bencoding::types::{BencValue, ByteString, Sha1};
 
 #[derive(Debug, PartialEq)]
 pub struct Dict {
     sha1: Sha1,
-    values: HashMap<ByteString, DictValue>,
+    values: HashMap<ByteString, BencValue>,
 }
 
 impl Dict {
-    pub fn new(sha1: Sha1, values: HashMap<ByteString, DictValue>) -> Self {
+    pub fn new(sha1: Sha1, values: HashMap<ByteString, BencValue>) -> Self {
         Self { sha1, values }
     }
 
-    pub fn get_string(&self, key: &str) -> Option<&str> {
-        let key = ByteString::new(key.as_bytes());
-        let value = self.values.get(&key)?;
-        match value {
-            DictValue::ByteString(string) => string.as_str().ok(),
-            _ => None,
-        }
-    }
-
-    pub fn get_int(&self, key: &str) -> Option<&i64> {
-        let key = ByteString::new(key.as_bytes());
-        let value = self.values.get(&key)?;
-        match value {
-            DictValue::Int(value) => Some(value),
-            _ => None,
-        }
+    pub fn get(&self, key: &str) -> Option<&BencValue> {
+        self.values.get(&key.into())
     }
 
     pub fn get_dict_sha1(&self, key: &str) -> Option<&Sha1> {
         let key = ByteString::new(key.as_bytes());
         let value = self.values.get(&key)?;
         match value {
-            DictValue::Dict(dict) => Some(dict.sha1()),
+            BencValue::Dict(dict) => Some(dict.sha1()),
             _ => None,
         }
     }
