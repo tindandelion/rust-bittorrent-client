@@ -1,7 +1,7 @@
 use core::fmt;
 use std::str::Utf8Error;
 
-#[derive(PartialEq, Hash, Eq, Clone)]
+#[derive(PartialEq, Hash, Eq)]
 pub struct ByteString(Vec<u8>);
 
 impl ByteString {

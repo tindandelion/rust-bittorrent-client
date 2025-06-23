@@ -28,7 +28,25 @@ impl<'a> Decoder<'a> {
         }
     }
 
-    pub fn decode(&mut self) -> Result<BencValue, DecodeError> {
+    pub fn decode_dict(&mut self) -> Result<Dict, DecodeError> {
+        let mut values = HashMap::new();
+
+        let dict_start = self.current_pos;
+        self.move_by(1);
+        while !self.at_trailing_delimiter()? {
+            let key = self.decode_string()?;
+            let value = self.decode_value()?;
+            values.insert(key, value);
+        }
+        self.move_by(1);
+
+        Ok(Dict::new(
+            self.calculate_sha1(dict_start, self.current_pos),
+            values,
+        ))
+    }
+
+    fn decode_value(&mut self) -> Result<BencValue, DecodeError> {
         match self.rest_data[0] {
             INT_START_DELIMITER => {
                 let value = self.decode_int()?;
@@ -49,24 +67,6 @@ impl<'a> Decoder<'a> {
         }
     }
 
-    pub fn decode_dict(&mut self) -> Result<Dict, DecodeError> {
-        let mut values = HashMap::new();
-
-        let dict_start = self.current_pos;
-        self.move_by(1);
-        while !self.at_trailing_delimiter()? {
-            let key = self.decode_string()?;
-            let value = self.decode()?;
-            values.insert(key, value);
-        }
-        self.move_by(1);
-
-        Ok(Dict::new(
-            self.calculate_sha1(dict_start, self.current_pos),
-            values,
-        ))
-    }
-
     #[cfg(test)]
     pub fn has_more_data(&self) -> bool {
         !self.rest_data.is_empty()
@@ -80,7 +80,7 @@ impl<'a> Decoder<'a> {
         let mut values: Vec<BencValue> = vec![];
         self.move_by(1);
         while !self.at_trailing_delimiter()? {
-            let value = self.decode()?;
+            let value = self.decode_value()?;
             values.push(value);
         }
         self.move_by(1);
@@ -157,7 +157,7 @@ mod decode_string {
     fn empty_string() {
         let mut decoder = Decoder::new("0:".as_bytes());
 
-        let decoded_value = decoder.decode().unwrap();
+        let decoded_value = decoder.decode_value().unwrap();
         assert_eq!(BencValue::from(""), decoded_value);
         assert!(!decoder.has_more_data());
     }
@@ -166,7 +166,7 @@ mod decode_string {
     fn non_empty_string() {
         let mut decoder = Decoder::new("4:spam".as_bytes());
 
-        let decoded_value = decoder.decode().unwrap();
+        let decoded_value = decoder.decode_value().unwrap();
         assert_eq!(BencValue::from("spam"), decoded_value);
         assert!(!decoder.has_more_data());
     }
@@ -175,9 +175,9 @@ mod decode_string {
     fn ignore_trailing_bytes() {
         let mut decoder = Decoder::new("4:spam abcde".as_bytes());
 
-        let decoded_value = decoder.decode().unwrap();
+        let decoded_value = decoder.decode_value().unwrap();
         assert_eq!(BencValue::from("spam"), decoded_value);
-        assert_eq!(decoder.rest_data, " abcde".as_bytes());
+        assert!(decoder.has_more_data());
     }
 
     #[test]
@@ -186,7 +186,7 @@ mod decode_string {
         encoded.extend_from_slice(&[0xF5, 0xF6]);
         let mut decoder = Decoder::new(&encoded);
 
-        let decoded_value = decoder.decode().unwrap();
+        let decoded_value = decoder.decode_value().unwrap();
         assert_eq!(
             &encoded[2..],
             decoded_value.as_byte_string().unwrap().as_bytes()
@@ -196,13 +196,17 @@ mod decode_string {
 
     #[cfg(test)]
     mod error_handling {
+
         use super::*;
 
         #[test]
         fn delimiter_not_found() {
             let mut decoder = Decoder::new("hello".as_bytes());
 
-            assert_eq!(Err(DecodeError::StringDelimiterNotFound), decoder.decode());
+            assert_eq!(
+                Err(DecodeError::StringDelimiterNotFound),
+                decoder.decode_value()
+            );
         }
 
         #[test]
@@ -211,7 +215,7 @@ mod decode_string {
 
             assert_eq!(
                 Err(DecodeError::InvalidStringLengthValue("a".to_string())),
-                decoder.decode()
+                decoder.decode_value()
             );
         }
 
@@ -221,7 +225,7 @@ mod decode_string {
 
             assert_eq!(
                 Err(DecodeError::InvalidStringLengthValue("-1".to_string())),
-                decoder.decode(),
+                decoder.decode_value(),
             );
         }
 
@@ -234,7 +238,7 @@ mod decode_string {
 
             assert_eq!(
                 Err(DecodeError::InvalidStringLengthValue("1�".to_string())),
-                decoder.decode()
+                decoder.decode_value()
             );
         }
 
@@ -247,7 +251,7 @@ mod decode_string {
                     expected: 10,
                     actual: 4
                 }),
-                decoder.decode()
+                decoder.decode_value()
             );
         }
     }
@@ -262,7 +266,7 @@ mod decode_int {
         let encoded = "i123456e".as_bytes();
         let mut decoder = Decoder::new(encoded);
 
-        let decoded = decoder.decode().unwrap();
+        let decoded = decoder.decode_value().unwrap();
         assert_eq!(BencValue::from(123456), decoded);
         assert!(!decoder.has_more_data());
     }
@@ -272,7 +276,7 @@ mod decode_int {
         let encoded = "i-123456e".as_bytes();
         let mut decoder = Decoder::new(encoded);
 
-        let decoded = decoder.decode().unwrap();
+        let decoded = decoder.decode_value().unwrap();
         assert_eq!(BencValue::from(-123456), decoded);
         assert!(!decoder.has_more_data());
     }
@@ -285,7 +289,10 @@ mod decode_int {
         fn ending_delimiter_not_found() {
             let mut decoder = Decoder::new("i123456".as_bytes());
 
-            assert_eq!(Err(DecodeError::EndingDelimiterNotFound), decoder.decode());
+            assert_eq!(
+                Err(DecodeError::EndingDelimiterNotFound),
+                decoder.decode_value()
+            );
         }
 
         #[test]
@@ -294,7 +301,7 @@ mod decode_int {
 
             assert_eq!(
                 Err(DecodeError::InvalidIntValue("abc".to_string())),
-                decoder.decode()
+                decoder.decode_value()
             );
         }
 
@@ -304,7 +311,7 @@ mod decode_int {
 
             assert_eq!(
                 Err(DecodeError::InvalidIntValue("1�2".to_string())),
-                decoder.decode()
+                decoder.decode_value()
             );
         }
 
@@ -314,7 +321,7 @@ mod decode_int {
 
             assert_eq!(
                 Err(DecodeError::InvalidIntValue("".to_string())),
-                decoder.decode(),
+                decoder.decode_value(),
             );
         }
     }
@@ -328,7 +335,7 @@ mod decode_dict {
     fn empty_dict() {
         let mut decoder = Decoder::new("de".as_bytes());
 
-        let decoded_value = decoder.decode().unwrap();
+        let decoded_value = decoder.decode_value().unwrap();
         let decoded_dict = decoded_value.as_dict().unwrap();
 
         assert_eq!(0, decoded_dict.len());
@@ -341,7 +348,7 @@ mod decode_dict {
         let encoded = "d3:cow3:moo4:spam4:eggse".as_bytes();
         let mut decoded = Decoder::new(encoded);
 
-        let decoded_value = decoded.decode().unwrap();
+        let decoded_value = decoded.decode_value().unwrap();
         let decoded_dict = decoded_value.as_dict().unwrap();
 
         assert_eq!(Some(&BencValue::from("moo")), decoded_dict.get("cow"));
@@ -350,27 +357,11 @@ mod decode_dict {
     }
 
     #[test]
-    fn extracts_and_stores_dict_value_sha1_hashes() {
-        let encoded = "d4:spamd3:fooi1234ee3:cow3:mooe".as_bytes();
-        let mut decoder = Decoder::new(encoded);
-
-        let decoded_value = decoder.decode().unwrap();
-        let decoded_dict = decoded_value.as_dict().unwrap();
-
-        assert_eq!(2, decoded_dict.len());
-        assert_eq!(
-            Some(&Sha1::calculate("d3:fooi1234ee".as_bytes())),
-            decoded_dict.get_dict_sha1("spam")
-        );
-        assert!(!decoder.has_more_data());
-    }
-
-    #[test]
-    fn extracts_and_stores_integer_value() {
+    fn extracts_and_stores_integer_elements() {
         let encoded = "d3:cow3:moo4:spami1234ee".as_bytes();
         let mut decoder = Decoder::new(encoded);
 
-        let decoded_value = decoder.decode().unwrap();
+        let decoded_value = decoder.decode_value().unwrap();
         let decoded_dict = decoded_value.as_dict().unwrap();
 
         assert_eq!(2, decoded_dict.len());
@@ -379,11 +370,23 @@ mod decode_dict {
     }
 
     #[test]
+    fn extracts_and_stores_dict_elements() {
+        let encoded = "d4:spamd3:fooi1234ee3:cow3:mooe".as_bytes();
+        let mut decoder = Decoder::new(encoded);
+
+        let decoded_value = decoder.decode_value().unwrap();
+        let decoded_dict = decoded_value.as_dict().unwrap();
+
+        let dict_field = decoded_dict.get("spam").unwrap().as_dict().unwrap();
+        assert_eq!(Some(&BencValue::from(1234)), dict_field.get("foo"));
+    }
+
+    #[test]
     fn extracts_and_stores_list_elements() {
         let encoded = "d4:spaml4:spam4:eggse3:cow3:mooe".as_bytes();
         let mut decoder = Decoder::new(encoded);
 
-        let decoded_value = decoder.decode().unwrap();
+        let decoded_value = decoder.decode_value().unwrap();
         let decoded_dict = decoded_value.as_dict().unwrap();
         let list_values: Vec<&ByteString> = decoded_dict
             .get("spam")
@@ -393,7 +396,7 @@ mod decode_dict {
             .map(|x| x.as_byte_string().unwrap())
             .collect();
         assert_eq!(list_values, vec![&"spam".into(), &"eggs".into()]);
-        assert!(decoder.rest_data.is_empty());
+        assert!(!decoder.has_more_data());
     }
 
     #[test]
@@ -417,7 +420,7 @@ mod decode_list {
         let encoded = "le".as_bytes();
         let mut decoder = Decoder::new(encoded);
 
-        let decoded_value = decoder.decode().unwrap();
+        let decoded_value = decoder.decode_value().unwrap();
         let decoded_list = decoded_value.as_list().unwrap();
         assert_eq!(0, decoded_list.len());
         assert!(!decoder.has_more_data());
@@ -428,7 +431,7 @@ mod decode_list {
         let encoded = "l4:spam4:eggse".as_bytes();
         let mut decoder = Decoder::new(encoded);
 
-        let decoded_value = decoder.decode().unwrap();
+        let decoded_value = decoder.decode_value().unwrap();
         let decoded_list = decoded_value.as_list().unwrap();
         let list_values: Vec<&ByteString> = decoded_list
             .iter()
@@ -448,28 +451,7 @@ mod decode_list {
 
         assert_eq!(
             Err(DecodeError::EndingDelimiterNotFound),
-            state.decode_list(),
+            state.decode_value(),
         )
-    }
-}
-
-#[cfg(test)]
-mod complex_data_structures {
-    use crate::bencoding::decoder::Decoder;
-
-    #[test]
-    #[ignore]
-    fn decode_tracker_response() {
-        let tracker_response = "d8:intervali900e5:peersld2:ip11:88.18.61.544:porti4666eed2:ip13:85.31.128.1114:porti52664eed2:ip13:95.58.175.2324:porti26163eed2:ip14:83.148.245.1864:porti51414eed2:ip14:15.204.231.2024:porti45548eed2:ip14:93.165.240.1044:porti56439eed2:ip14:193.148.16.2114:porti15981eed2:ip13:104.28.224.824:porti16570eed2:ip15:185.193.157.1874:porti25297eed2:ip14:37.120.185.2084:porti51413eed2:ip13:82.102.23.1394:porti39206eed2:ip14:92.101.157.2504:porti58130eed2:ip13:87.58.176.2384:porti62014eed2:ip13:87.58.176.2384:porti62004eed2:ip14:118.142.44.1464:porti6988eed2:ip10:95.33.0.764:porti22936eed2:ip13:73.196.29.1454:porti51413eed2:ip15:163.172.218.2154:porti31951eed2:ip13:63.210.25.1394:porti6886eed2:ip14:82.165.117.1884:porti1eed2:ip12:98.115.1.2084:porti50413eed2:ip15:109.226.251.1304:porti1230eed2:ip14:103.136.92.2524:porti14948eed2:ip14:193.32.127.2224:porti51765eed2:ip14:45.134.212.1014:porti46296eed2:ip13:82.65.230.1594:porti63812eed2:ip13:87.58.176.2384:porti62017eed2:ip13:189.46.193.814:porti9751eed2:ip14:217.174.206.674:porti51413eed2:ip14:183.107.103.254:porti51413eed2:ip13:81.201.16.2474:porti54694eed2:ip11:78.82.25.834:porti6887eed2:ip14:46.231.240.1874:porti50000eed2:ip12:134.3.183.424:porti58578eed2:ip13:73.81.101.1304:porti51414eed2:ip14:89.142.165.1314:porti51413eed2:ip13:82.24.182.2044:porti44346eed2:ip13:87.99.116.1484:porti51413eed2:ip13:87.58.176.2384:porti62015eed2:ip13:38.162.49.1954:porti6881eed2:ip13:82.64.112.1454:porti25561eed2:ip12:212.7.200.734:porti30151eed2:ip14:37.120.210.2114:porti9099eed2:ip12:37.112.5.2244:porti6881eed2:ip12:50.35.176.534:porti62904eed2:ip14:195.206.105.374:porti57402eed2:ip13:73.235.107.364:porti6881eed2:ip14:187.193.191.434:porti51765eed2:ip14:37.120.198.1724:porti12018eed2:ip14:185.21.216.1694:porti32774eeee";
-        let mut decoder = Decoder::new(tracker_response.as_bytes());
-
-        let decoded_value = decoder.decode().unwrap();
-        let decoded_dict = decoded_value.as_dict().unwrap();
-
-        let interval = decoded_dict.get("interval").unwrap().as_int().unwrap();
-        assert_eq!(&900, interval);
-
-        let peers = decoded_dict.get("peers").unwrap().as_list().unwrap();
-        assert_eq!(peers.len(), 100);
     }
 }

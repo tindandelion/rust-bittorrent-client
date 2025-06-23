@@ -1,16 +1,15 @@
 use std::fs;
 
-use crate::bencoding::{Decoder, types::Dict};
+use crate::bencoding::{decode_dict, types::Dict};
 mod bencoding;
 mod tracker;
-pub use tracker::{AnnounceParams, make_announce_request};
+pub use tracker::{AnnounceParams, get_peer_list_from_response, make_announce_request};
 
 const TORRENT_FILE: &str = "test-data/debian-12.11.0-amd64-netinst.iso.torrent";
 
 pub fn read_torrent_file() -> Dict {
     let contents = fs::read(TORRENT_FILE).unwrap();
-    let mut decoder = Decoder::new(&contents);
-    decoder.decode_dict().unwrap()
+    decode_dict(&contents).unwrap()
 }
 
 #[cfg(test)]
