@@ -27,7 +27,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let response = make_announce_request(&announce_url, &announce_params)?;
     let peers = get_peer_list_from_response(&response.as_bytes())?;
 
-    println!("Peer list:");
+    println!("Peer list ({} peers):", peers.len());
     for peer in peers {
         println!("{}:{}", peer.ip, peer.port);
     }

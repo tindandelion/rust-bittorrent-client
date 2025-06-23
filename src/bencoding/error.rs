@@ -1,5 +1,5 @@
 #[derive(Debug, PartialEq)]
-pub enum DecodeError {
+pub enum Error {
     StringDelimiterNotFound,
     InvalidStringLengthValue(String),
     StringLengthValueTooBig { expected: usize, actual: usize },
@@ -9,9 +9,9 @@ pub enum DecodeError {
     EndingDelimiterNotFound,
 }
 
-impl std::error::Error for DecodeError {}
+impl std::error::Error for Error {}
 
-impl std::fmt::Display for DecodeError {
+impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{:?}", self)
     }

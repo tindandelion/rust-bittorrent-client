@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use crate::bencoding::types::{BencValue, Sha1};
 
 use super::{
-    errors::DecodeError,
+    error::Error,
     types::{ByteString, Dict},
 };
 
@@ -28,7 +28,7 @@ impl<'a> Decoder<'a> {
         }
     }
 
-    pub fn decode_dict(&mut self) -> Result<Dict, DecodeError> {
+    pub fn decode_dict(&mut self) -> Result<Dict, Error> {
         let mut values = HashMap::new();
 
         let dict_start = self.current_pos;
@@ -46,7 +46,7 @@ impl<'a> Decoder<'a> {
         ))
     }
 
-    fn decode_value(&mut self) -> Result<BencValue, DecodeError> {
+    fn decode_value(&mut self) -> Result<BencValue, Error> {
         match self.rest_data[0] {
             INT_START_DELIMITER => {
                 let value = self.decode_int()?;
@@ -76,7 +76,7 @@ impl<'a> Decoder<'a> {
         Sha1::calculate(&self.raw_data[start_index..end_index])
     }
 
-    fn decode_list(&mut self) -> Result<Vec<BencValue>, DecodeError> {
+    fn decode_list(&mut self) -> Result<Vec<BencValue>, Error> {
         let mut values: Vec<BencValue> = vec![];
         self.move_by(1);
         while !self.at_trailing_delimiter()? {
@@ -87,27 +87,27 @@ impl<'a> Decoder<'a> {
         Ok(values)
     }
 
-    fn decode_int(&mut self) -> Result<i64, DecodeError> {
+    fn decode_int(&mut self) -> Result<i64, Error> {
         self.move_by(1);
         let end_index = self
             .rest_data
             .iter()
             .position(|&b| b == b'e')
-            .ok_or(DecodeError::EndingDelimiterNotFound)?;
+            .ok_or(Error::EndingDelimiterNotFound)?;
 
         let int_str = String::from_utf8_lossy(&self.rest_data[0..end_index]);
         self.move_by(end_index + 1);
 
         int_str
             .parse::<i64>()
-            .map_err(|_| DecodeError::InvalidIntValue(int_str.to_string()))
+            .map_err(|_| Error::InvalidIntValue(int_str.to_string()))
     }
 
-    fn decode_string(&mut self) -> Result<ByteString, DecodeError> {
+    fn decode_string(&mut self) -> Result<ByteString, Error> {
         let string_length = self.decode_string_length()?;
 
         if string_length > self.rest_data.len() {
-            return Err(DecodeError::StringLengthValueTooBig {
+            return Err(Error::StringLengthValueTooBig {
                 expected: string_length,
                 actual: self.rest_data.len(),
             });
@@ -123,26 +123,26 @@ impl<'a> Decoder<'a> {
         self.rest_data = &self.raw_data[self.current_pos..];
     }
 
-    fn at_trailing_delimiter(&self) -> Result<bool, DecodeError> {
+    fn at_trailing_delimiter(&self) -> Result<bool, Error> {
         if self.rest_data.is_empty() {
-            Err(DecodeError::EndingDelimiterNotFound)
+            Err(Error::EndingDelimiterNotFound)
         } else {
             Ok(self.rest_data[0] == TRAILING_DELIMITER)
         }
     }
 
-    fn decode_string_length(&mut self) -> Result<usize, DecodeError> {
+    fn decode_string_length(&mut self) -> Result<usize, Error> {
         let delimiter_index = self
             .rest_data
             .iter()
             .position(|&b| b == STRING_DELIMITER)
-            .ok_or(DecodeError::StringDelimiterNotFound)?;
+            .ok_or(Error::StringDelimiterNotFound)?;
 
         let length_slice = &self.rest_data[0..delimiter_index];
         let length_str = String::from_utf8_lossy(length_slice);
         let string_length = length_str
             .parse::<usize>()
-            .map_err(|_| DecodeError::InvalidStringLengthValue(length_str.to_string()))?;
+            .map_err(|_| Error::InvalidStringLengthValue(length_str.to_string()))?;
 
         self.move_by(delimiter_index + 1);
         Ok(string_length)
@@ -203,10 +203,7 @@ mod decode_string {
         fn delimiter_not_found() {
             let mut decoder = Decoder::new("hello".as_bytes());
 
-            assert_eq!(
-                Err(DecodeError::StringDelimiterNotFound),
-                decoder.decode_value()
-            );
+            assert_eq!(Err(Error::StringDelimiterNotFound), decoder.decode_value());
         }
 
         #[test]
@@ -214,7 +211,7 @@ mod decode_string {
             let mut decoder = Decoder::new("a:spam".as_bytes());
 
             assert_eq!(
-                Err(DecodeError::InvalidStringLengthValue("a".to_string())),
+                Err(Error::InvalidStringLengthValue("a".to_string())),
                 decoder.decode_value()
             );
         }
@@ -224,7 +221,7 @@ mod decode_string {
             let mut decoder = Decoder::new("-1:spam".as_bytes());
 
             assert_eq!(
-                Err(DecodeError::InvalidStringLengthValue("-1".to_string())),
+                Err(Error::InvalidStringLengthValue("-1".to_string())),
                 decoder.decode_value(),
             );
         }
@@ -237,7 +234,7 @@ mod decode_string {
             let mut decoder = Decoder::new(&encoded);
 
             assert_eq!(
-                Err(DecodeError::InvalidStringLengthValue("1�".to_string())),
+                Err(Error::InvalidStringLengthValue("1�".to_string())),
                 decoder.decode_value()
             );
         }
@@ -247,7 +244,7 @@ mod decode_string {
             let mut decoder = Decoder::new("10:spam".as_bytes());
 
             assert_eq!(
-                Err(DecodeError::StringLengthValueTooBig {
+                Err(Error::StringLengthValueTooBig {
                     expected: 10,
                     actual: 4
                 }),
@@ -289,10 +286,7 @@ mod decode_int {
         fn ending_delimiter_not_found() {
             let mut decoder = Decoder::new("i123456".as_bytes());
 
-            assert_eq!(
-                Err(DecodeError::EndingDelimiterNotFound),
-                decoder.decode_value()
-            );
+            assert_eq!(Err(Error::EndingDelimiterNotFound), decoder.decode_value());
         }
 
         #[test]
@@ -300,7 +294,7 @@ mod decode_int {
             let mut decoder = Decoder::new("iabce".as_bytes());
 
             assert_eq!(
-                Err(DecodeError::InvalidIntValue("abc".to_string())),
+                Err(Error::InvalidIntValue("abc".to_string())),
                 decoder.decode_value()
             );
         }
@@ -310,7 +304,7 @@ mod decode_int {
             let mut decoder = Decoder::new(&[b'i', b'1', 0xFE, b'2', b'e']);
 
             assert_eq!(
-                Err(DecodeError::InvalidIntValue("1�2".to_string())),
+                Err(Error::InvalidIntValue("1�2".to_string())),
                 decoder.decode_value()
             );
         }
@@ -320,7 +314,7 @@ mod decode_int {
             let mut decoder = Decoder::new("ie".as_bytes());
 
             assert_eq!(
-                Err(DecodeError::InvalidIntValue("".to_string())),
+                Err(Error::InvalidIntValue("".to_string())),
                 decoder.decode_value(),
             );
         }
@@ -404,10 +398,7 @@ mod decode_dict {
         let encoded = "d3:cow3:moo4:spam4:eggs".as_bytes();
         let mut state = Decoder::new(encoded);
 
-        assert_eq!(
-            state.decode_dict(),
-            Err(DecodeError::EndingDelimiterNotFound)
-        );
+        assert_eq!(state.decode_dict(), Err(Error::EndingDelimiterNotFound));
     }
 }
 
@@ -449,9 +440,6 @@ mod decode_list {
         let encoded = "l4:spam4:eggs".as_bytes();
         let mut state = Decoder::new(encoded);
 
-        assert_eq!(
-            Err(DecodeError::EndingDelimiterNotFound),
-            state.decode_value(),
-        )
+        assert_eq!(Err(Error::EndingDelimiterNotFound), state.decode_value(),)
     }
 }
