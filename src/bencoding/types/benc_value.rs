@@ -1,11 +1,11 @@
-use crate::bencoding::types::{ByteString, Dict};
+use crate::bencoding::types::{ByteString, Dict, List};
 
 #[derive(Debug, PartialEq)]
 pub enum BencValue {
     Int(i64),
     ByteString(ByteString),
     Dict(Dict),
-    List(Vec<BencValue>),
+    List(List),
 }
 
 impl BencValue {
@@ -30,7 +30,7 @@ impl BencValue {
         }
     }
 
-    pub fn as_list(&self) -> Option<&Vec<BencValue>> {
+    pub fn as_list(&self) -> Option<&List> {
         match self {
             BencValue::List(list) => Some(list),
             _ => None,

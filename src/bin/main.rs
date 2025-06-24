@@ -14,21 +14,21 @@ fn main() -> Result<(), Box<dyn Error>> {
     let info_hash = torrent_file_contents
         .get("info")
         .and_then(|v| v.as_dict())
-        .expect("Unable to retrieve SHA-1 hash of `info` key")
-        .sha1()
-        .clone();
+        .map(|v| v.sha1())
+        .expect("Unable to retrieve SHA-1 hash of `info` key");
 
     println!("\nYour announce url is: {}", announce_url);
 
     let announce_params = AnnounceParams {
-        info_hash: info_hash,
+        info_hash: info_hash.clone(),
         peer_id: vec![0x00; 20],
     };
     let response = make_announce_request(&announce_url, &announce_params)?;
     let peers = get_peer_list_from_response(&response.as_bytes())?;
 
-    println!("Peer list ({} peers):", peers.len());
-    for peer in peers {
+    println!("Peer list (total {} peers):", peers.len());
+    println!("Top 10 peers:");
+    for peer in &peers[..10] {
         println!("{}:{}", peer.ip, peer.port);
     }
     Ok(())

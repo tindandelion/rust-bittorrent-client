@@ -27,14 +27,19 @@ pub fn get_peer_list_from_response(tracker_response: &[u8]) -> Result<Vec<Peer>,
     let peers_list = decoded_response.get("peers").unwrap().as_list().unwrap();
     let x = peers_list
         .iter()
+        .map(|peer| peer.as_dict().unwrap())
         .map(|peer| {
-            let peer_dict = peer.as_dict().unwrap();
-            let ip = peer_dict.get("ip").unwrap().as_byte_string().unwrap();
-            let port = peer_dict.get("port").unwrap().as_int().unwrap();
-            Peer {
-                ip: ip.to_string(),
-                port: port.clone() as u16,
-            }
+            let ip = peer
+                .get("ip")
+                .and_then(|v| v.as_byte_string())
+                .map(|v| v.to_string())
+                .unwrap();
+            let port = peer
+                .get("port")
+                .and_then(|v| v.as_int())
+                .map(|v| *v as u16)
+                .unwrap();
+            Peer { ip, port }
         })
         .collect();
 
