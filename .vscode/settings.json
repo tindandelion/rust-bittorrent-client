@@ -66,6 +66,10 @@
         "Sha1",
         "voilà",
         "accessor",
-        "bueno"
+        "bueno",
+        "destructure",
+        "BencValue",
+        "structs",
+        "benc"
     ]
 } 
