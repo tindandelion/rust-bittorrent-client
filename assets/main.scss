@@ -45,4 +45,8 @@ code {
     border: none;
     background-color: transparent;
 }
-
+div.language-console pre.highlight {
+    white-space: pre-wrap !important;
+    word-break: break-all !important;
+    text-align: left !important;
+}
