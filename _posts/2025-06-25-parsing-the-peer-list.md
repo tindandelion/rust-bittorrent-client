@@ -6,6 +6,8 @@ date: 2025-06-25
 
 [Last time][prev-post], we managed to fetch the list of peers from the torrent tracker for our [sample torrent file][torrent-file-0.0.4]. I left off by simply dumping the response from the torrent tracker onto the screen, and now I would like to pick up on that and actually parse the tracker's response so that we can get our hands on peers' IP addresses and ports. That's going to be our next step towards making connections to peers. 
 
+[*Version 0.0.4 on GitHub*][version-0.0.4]{: .no-github-icon}
+
 # Tracker response structure 
 
 Looking at the [description of tracker response][wiki-tracker-response], we can see that it's a bencoded dictionary with a few fields. For us, the most interesting one is the `peers` field that contains a list of dictionaries, where each entry includes information about an individual peer: 
@@ -139,11 +141,10 @@ Top 10 peers:
 
 So, I managed to get the IP addresses and ports of the peers. In theory, I can go on to start peer-to-peer communication. But I'm a bit confused now about what the best course of action should be. For one, I'm worried that the code I wrote to communicate with the torrent tracker is not in the best shape. It's mostly ad-hoc experimental snippets of code that lack proper structure, tests, and error handling — all that constitutes good software in my opinion.
 
-I don't want to rush ahead. Instead, I think I need to do an intermediate reflection session and plan what to do next. 
+I don't want to rush ahead. Instead, I think I need to do an intermediate [reflection session][next-post] and plan what to do next. 
 
 
-
-
+[version-0.0.4]: https://github.com/tindandelion/rust-bittorrent-client/tree/0.0.4
 [prev-post]: {{site.baseurl}}/{% post_url 2025-06-19-obtaining-the-list-of-peers %}
 [torrent-file-0.0.4]: https://github.com/tindandelion/rust-bittorrent-client/blob/0.0.4/test-data/debian-12.11.0-amd64-netinst.iso.torrent
 [wiki-tracker-response]: https://wiki.theory.org/BitTorrentSpecification#Tracker_Response
@@ -157,3 +158,4 @@ I don't want to rush ahead. Instead, I think I need to do an intermediate reflec
 [handicapped-decoder]: {{site.baseurl}}/{% post_url 2025-06-14-obtain-announce-url %}#the-handicapped-decoder
 [dict-value-ref]: {{site.baseurl}}/{% post_url 2025-06-19-obtaining-the-list-of-peers %}#extending-the-internal-representation
 [info-hash-value]: {{site.baseurl}}/{% post_url 2025-06-19-obtaining-the-list-of-peers %}#what-needs-to-be-done
+[next-post]: {{site.baseurl}}/{% post_url 2025-06-26-intermediate-reflection %}

@@ -70,6 +70,9 @@
         "destructure",
         "BencValue",
         "structs",
-        "benc"
+        "benc",
+        "downloaders",
+        "downloader",
+        "uploader"
     ]
 } 
