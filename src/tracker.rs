@@ -1,5 +1,10 @@
 use crate::bencoding::{decode_dict, types::Sha1};
-use std::error::Error;
+use std::{
+    error::Error,
+    io,
+    net::{SocketAddr, TcpStream, ToSocketAddrs},
+    time::Duration,
+};
 use url::{ParseError, Url};
 
 pub struct AnnounceParams {
@@ -10,6 +15,19 @@ pub struct AnnounceParams {
 pub struct Peer {
     pub ip: String,
     pub port: u16,
+}
+
+impl Peer {
+    pub fn connect(&self, timeout: Duration) -> io::Result<TcpStream> {
+        let addr = self.to_socket_addr()?;
+        TcpStream::connect_timeout(&addr, timeout)
+    }
+
+    fn to_socket_addr(&self) -> io::Result<SocketAddr> {
+        (self.ip.as_str(), self.port)
+            .to_socket_addrs()
+            .map(|mut v| v.next().expect("Expected a single peer address"))
+    }
 }
 
 pub fn make_announce_request(

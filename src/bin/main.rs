@@ -1,7 +1,7 @@
-use std::error::Error;
+use std::{error::Error, net::TcpStream, time::Duration};
 
 use bt_client::{
-    AnnounceParams, get_peer_list_from_response, make_announce_request, read_torrent_file,
+    AnnounceParams, Peer, get_peer_list_from_response, make_announce_request, read_torrent_file,
 };
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -26,10 +26,18 @@ fn main() -> Result<(), Box<dyn Error>> {
     let response = make_announce_request(&announce_url, &announce_params)?;
     let peers = get_peer_list_from_response(&response.as_bytes())?;
 
-    println!("Peer list (total {} peers):", peers.len());
-    println!("Top 10 peers:");
-    for peer in &peers[..10] {
-        println!("{}:{}", peer.ip, peer.port);
-    }
+    println!("Total {} peers:", peers.len());
+    println!("Connecting to first available peer...");
+    let stream = connect_to_peers(&peers).unwrap();
+    println!("Connected to peer {}", stream.peer_addr().unwrap());
     Ok(())
+}
+
+fn connect_to_peers(peers: &[Peer]) -> Option<TcpStream> {
+    for peer in peers {
+        if let Ok(stream) = peer.connect(Duration::from_secs(5)) {
+            return Some(stream);
+        }
+    }
+    None
 }
