@@ -1,10 +1,12 @@
-use std::{error::Error, net::TcpStream, time::Duration};
+use std::error::Error;
 
 use bt_client::{
-    AnnounceParams, Peer, get_peer_list_from_response, make_announce_request, read_torrent_file,
+    AnnounceParams, connect_to_first_peer, get_peer_list_from_response, make_announce_request,
+    make_handshake, read_torrent_file,
 };
 
 fn main() -> Result<(), Box<dyn Error>> {
+    let peer_id = vec![0x00; 20];
     let torrent_file_contents = read_torrent_file();
     let announce_url = torrent_file_contents
         .get("announce")
@@ -21,23 +23,18 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let announce_params = AnnounceParams {
         info_hash: info_hash.clone(),
-        peer_id: vec![0x00; 20],
+        peer_id: peer_id.clone(),
     };
     let response = make_announce_request(&announce_url, &announce_params)?;
     let peers = get_peer_list_from_response(&response.as_bytes())?;
-
     println!("Total {} peers:", peers.len());
-    println!("Connecting to first available peer...");
-    let stream = connect_to_peers(&peers).unwrap();
-    println!("Connected to peer {}", stream.peer_addr().unwrap());
-    Ok(())
-}
 
-fn connect_to_peers(peers: &[Peer]) -> Option<TcpStream> {
-    for peer in peers {
-        if let Ok(stream) = peer.connect(Duration::from_secs(5)) {
-            return Some(stream);
-        }
-    }
-    None
+    println!("Connecting to first available peer...");
+    let mut stream = connect_to_first_peer(&peers).unwrap();
+    println!("Connected to peer {}", stream.peer_addr().unwrap());
+
+    println!("Handshaking...");
+    let response = make_handshake(&mut stream, info_hash.as_bytes(), peer_id.as_slice())?;
+    println!("Handshake response: {}", response);
+    Ok(())
 }
