@@ -16,13 +16,13 @@ fn main() -> Result<(), Box<dyn Error>> {
     let info_hash = torrent_file_contents
         .get("info")
         .and_then(|v| v.as_dict())
-        .map(|v| v.sha1())
+        .map(|v| *v.sha1())
         .expect("Unable to retrieve SHA-1 hash of `info` key");
 
     println!("\nYour announce url is: {}", announce_url);
 
     let announce_params = AnnounceParams {
-        info_hash: info_hash.clone(),
+        info_hash: info_hash,
         peer_id: peer_id.clone(),
     };
     let response = make_announce_request(&announce_url, &announce_params)?;
@@ -34,7 +34,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     println!("Connected to peer {}", stream.peer_addr().unwrap());
 
     println!("Handshaking...");
-    let response = make_handshake(&mut stream, info_hash.as_bytes(), peer_id.as_slice())?;
+    let response = make_handshake(&mut stream, &info_hash, peer_id.as_slice())?;
     println!("Handshake response: {}", response);
     Ok(())
 }

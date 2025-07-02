@@ -86,7 +86,7 @@ mod tests {
     fn make_simplest_tracker_request_url() {
         let tracker_url = "http://localhost:8000/announce";
         let request_params = AnnounceParams {
-            info_hash: Sha1::new(vec![
+            info_hash: Sha1::new([
                 0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf1, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd,
                 0xef, 0x12, 0x34, 0x56, 0x78, 0x9a,
             ]),
@@ -108,7 +108,7 @@ mod tests {
     fn invalid_tracker_url_returns_error() {
         let tracker_url = "http://localhost:blah/announce";
         let request_params = AnnounceParams {
-            info_hash: Sha1::new(vec![0x00; 20]),
+            info_hash: Sha1::new([0x00; 20]),
             peer_id: vec![0x00; 20],
         };
         let result = make_announce_url(tracker_url, &request_params);
