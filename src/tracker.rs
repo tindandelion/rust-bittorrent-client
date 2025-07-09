@@ -1,4 +1,7 @@
-use crate::bencoding::{decode_dict, types::Sha1};
+use crate::{
+    bencoding::{decode_dict, types::Sha1},
+    types::PeerId,
+};
 use std::{
     error::Error,
     io,
@@ -9,7 +12,7 @@ use url::{ParseError, Url};
 
 pub struct AnnounceParams {
     pub info_hash: Sha1,
-    pub peer_id: [u8; 20],
+    pub peer_id: PeerId,
 }
 
 pub struct Peer {
@@ -90,7 +93,7 @@ mod tests {
                 0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf1, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd,
                 0xef, 0x12, 0x34, 0x56, 0x78, 0x9a,
             ]),
-            peer_id: [0x00; 20],
+            peer_id: PeerId::default(),
         };
 
         let url = make_announce_url(tracker_url, &request_params).unwrap();
@@ -109,7 +112,7 @@ mod tests {
         let tracker_url = "http://localhost:blah/announce";
         let request_params = AnnounceParams {
             info_hash: Sha1::new([0x00; 20]),
-            peer_id: [0x00; 20],
+            peer_id: PeerId::default(),
         };
         let result = make_announce_url(tracker_url, &request_params);
         assert_eq!(Err(ParseError::InvalidPort), result);
