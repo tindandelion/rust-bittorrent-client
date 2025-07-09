@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::bencoding::types::{BencValue, Sha1};
+use crate::{bencoding::types::BencValue, types::Sha1};
 
 use super::{
     error::Error,

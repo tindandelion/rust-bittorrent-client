@@ -1,6 +1,6 @@
 use crate::{
-    bencoding::{decode_dict, types::Sha1},
-    types::PeerId,
+    bencoding::decode_dict,
+    types::{PeerId, Sha1},
 };
 use std::{
     error::Error,

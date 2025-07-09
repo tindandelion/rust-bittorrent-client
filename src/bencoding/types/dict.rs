@@ -1,6 +1,9 @@
 use std::collections::HashMap;
 
-use crate::bencoding::types::{BencValue, ByteString, Sha1};
+use crate::{
+    bencoding::types::{BencValue, ByteString},
+    types::Sha1,
+};
 
 #[derive(Debug, PartialEq)]
 pub struct Dict {

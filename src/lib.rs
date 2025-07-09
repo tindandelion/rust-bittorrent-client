@@ -5,9 +5,9 @@ use std::{
     net::TcpStream,
 };
 
-use crate::bencoding::{
-    decode_dict,
-    types::{Dict, Sha1},
+use crate::{
+    bencoding::{decode_dict, types::Dict},
+    types::Sha1,
 };
 mod bencoding;
 mod tracker;
@@ -23,7 +23,7 @@ pub fn read_torrent_file() -> Dict {
 
 #[cfg(test)]
 mod tests {
-    use crate::{bencoding::types::Sha1, types::PeerId};
+    use crate::types::{PeerId, Sha1};
 
     use super::*;
 
