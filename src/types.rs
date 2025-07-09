@@ -6,8 +6,17 @@ pub struct PeerId([u8; 20]);
 pub struct Sha1([u8; 20]);
 
 impl PeerId {
+    #[cfg(test)]
+    pub fn new(value: [u8; 20]) -> Self {
+        Self(value)
+    }
+
     pub fn to_vec(&self) -> Vec<u8> {
         self.0.to_vec()
+    }
+
+    pub fn as_bytes(&self) -> &[u8; 20] {
+        &self.0
     }
 }
 
@@ -23,7 +32,7 @@ impl Sha1 {
         Self(hasher.finalize().into())
     }
 
-    pub fn as_bytes(&self) -> &[u8] {
+    pub fn as_bytes(&self) -> &[u8; 20] {
         &self.0
     }
 

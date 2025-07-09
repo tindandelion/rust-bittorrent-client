@@ -26,7 +26,7 @@ impl Peer {
         TcpStream::connect_timeout(&addr, timeout)
     }
 
-    fn to_socket_addr(&self) -> io::Result<SocketAddr> {
+    pub fn to_socket_addr(&self) -> io::Result<SocketAddr> {
         (self.ip.as_str(), self.port)
             .to_socket_addrs()
             .map(|mut v| v.next().expect("Expected a single peer address"))
