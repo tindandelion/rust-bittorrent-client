@@ -6,7 +6,7 @@ mod downloader;
 mod tracker;
 pub mod types;
 pub use downloader::FileDownloader;
-pub use tracker::{AnnounceParams, Peer, get_peer_list_from_response, make_announce_request};
+pub use tracker::{AnnounceParams, get_peer_list_from_response, make_announce_request};
 
 const TORRENT_FILE: &str = "test-data/debian-12.11.0-amd64-netinst.iso.torrent";
 

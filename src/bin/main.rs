@@ -1,9 +1,9 @@
 use std::error::Error;
 
 use bt_client::{
-    AnnounceParams, FileDownloader, Peer, get_peer_list_from_response, make_announce_request,
+    AnnounceParams, FileDownloader, get_peer_list_from_response, make_announce_request,
     read_torrent_file,
-    types::{PeerId, Sha1},
+    types::{Peer, PeerId, Sha1},
 };
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -43,5 +43,5 @@ fn probe_peer(peer: &Peer, info_hash: Sha1, peer_id: PeerId) -> Result<String, B
     let peer_addr = peer.to_socket_addr()?;
     let mut downloader = FileDownloader::connect(&peer_addr)?;
     let handshake_result = downloader.handshake(info_hash, peer_id)?;
-    Ok(format!("{}", handshake_result))
+    Ok(format!("{:?}", handshake_result))
 }

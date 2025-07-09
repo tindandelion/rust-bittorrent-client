@@ -16,12 +16,12 @@ pub struct FileDownloader {
     stream: TcpStream,
 }
 
-const PROTO_ID: &[u8; 19] = b"BitTorrent protocol";
+const PROTOCOL_ID: &[u8; 19] = b"BitTorrent protocol";
 
 #[derive(Debug, Encode, Decode, PartialEq, Eq)]
 struct HandshakeMessage {
     pstrlen: u8,
-    pstr: [u8; PROTO_ID.len()],
+    pstr: [u8; PROTOCOL_ID.len()],
     reserved: [u8; 8],
     info_hash: [u8; 20],
     peer_id: [u8; 20],
@@ -30,8 +30,8 @@ struct HandshakeMessage {
 impl HandshakeMessage {
     fn new(info_hash: Sha1, peer_id: PeerId) -> Self {
         Self {
-            pstrlen: PROTO_ID.len() as u8,
-            pstr: *PROTO_ID,
+            pstrlen: PROTOCOL_ID.len() as u8,
+            pstr: *PROTOCOL_ID,
             reserved: [0; 8],
             info_hash: *info_hash.as_bytes(),
             peer_id: *peer_id.as_bytes(),
@@ -42,8 +42,8 @@ impl HandshakeMessage {
         bincode::decode_from_std_read(src, bincode::config::standard())
     }
 
-    fn send(&self, stream: &mut impl Write) -> Result<(), EncodeError> {
-        bincode::encode_into_std_write(self, stream, bincode::config::standard()).map(|_| ())
+    fn send(&self, stream: &mut impl Write) -> Result<usize, EncodeError> {
+        bincode::encode_into_std_write(self, stream, bincode::config::standard())
     }
 }
 
@@ -72,16 +72,20 @@ mod tests {
 
     #[test]
     fn test_send_and_receive_handshake_message() {
-        let info_hash = Sha1::new([0x01; 20]);
-        let peer_id = PeerId::new([0x02; 20]);
-        let message_to_send = HandshakeMessage::new(info_hash, peer_id);
-
         let mut buffer = Vec::new();
-        message_to_send.send(&mut buffer).unwrap();
-        let received_message: HandshakeMessage =
-            bincode::decode_from_std_read(&mut buffer.as_slice(), bincode::config::standard())
-                .unwrap();
 
+        let message_to_send = HandshakeMessage::new(Sha1::new([0x01; 20]), PeerId::new([0x02; 20]));
+        message_to_send.send(&mut buffer).unwrap();
+        assert_eq!(
+            vec![
+                19, 66, 105, 116, 84, 111, 114, 114, 101, 110, 116, 32, 112, 114, 111, 116, 111,
+                99, 111, 108, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+                1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2
+            ],
+            buffer
+        );
+
+        let received_message = HandshakeMessage::receive(&mut buffer.as_slice()).unwrap();
         assert_eq!(message_to_send, received_message);
     }
 }

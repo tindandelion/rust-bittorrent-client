@@ -1,36 +1,13 @@
 use crate::{
     bencoding::decode_dict,
-    types::{PeerId, Sha1},
+    types::{Peer, PeerId, Sha1},
 };
-use std::{
-    error::Error,
-    io,
-    net::{SocketAddr, TcpStream, ToSocketAddrs},
-    time::Duration,
-};
+use std::error::Error;
 use url::{ParseError, Url};
 
 pub struct AnnounceParams {
     pub info_hash: Sha1,
     pub peer_id: PeerId,
-}
-
-pub struct Peer {
-    pub ip: String,
-    pub port: u16,
-}
-
-impl Peer {
-    pub fn connect(&self, timeout: Duration) -> io::Result<TcpStream> {
-        let addr = self.to_socket_addr()?;
-        TcpStream::connect_timeout(&addr, timeout)
-    }
-
-    pub fn to_socket_addr(&self) -> io::Result<SocketAddr> {
-        (self.ip.as_str(), self.port)
-            .to_socket_addrs()
-            .map(|mut v| v.next().expect("Expected a single peer address"))
-    }
 }
 
 pub fn make_announce_request(
@@ -60,6 +37,7 @@ pub fn get_peer_list_from_response(tracker_response: &[u8]) -> Result<Vec<Peer>,
                 .and_then(|v| v.as_int())
                 .map(|v| *v as u16)
                 .unwrap();
+
             Peer { ip, port }
         })
         .collect();
