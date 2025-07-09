@@ -52,7 +52,7 @@ mod tests {
     fn test_make_announce_request() {
         let request_params = AnnounceParams {
             info_hash: Sha1::new([0x00; 20]),
-            peer_id: vec![0x00; 20],
+            peer_id: [0x00; 20],
         };
 
         let result = make_announce_request(TRACKER_URL, &request_params).unwrap();

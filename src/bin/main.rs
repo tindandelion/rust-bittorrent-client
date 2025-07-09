@@ -6,7 +6,7 @@ use bt_client::{
 };
 
 fn main() -> Result<(), Box<dyn Error>> {
-    let peer_id = vec![0x00; 20];
+    let peer_id = [0x00; 20];
     let torrent_file_contents = read_torrent_file();
     let announce_url = torrent_file_contents
         .get("announce")
@@ -23,7 +23,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let announce_params = AnnounceParams {
         info_hash: info_hash,
-        peer_id: peer_id.clone(),
+        peer_id: peer_id,
     };
     let response = make_announce_request(&announce_url, &announce_params)?;
     let peers = get_peer_list_from_response(&response.as_bytes())?;

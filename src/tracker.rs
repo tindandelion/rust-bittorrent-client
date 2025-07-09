@@ -9,7 +9,7 @@ use url::{ParseError, Url};
 
 pub struct AnnounceParams {
     pub info_hash: Sha1,
-    pub peer_id: Vec<u8>,
+    pub peer_id: [u8; 20],
 }
 
 pub struct Peer {
@@ -69,7 +69,7 @@ fn make_announce_url(
     announce_params: &AnnounceParams,
 ) -> Result<Url, ParseError> {
     let info_hash = unsafe { String::from_utf8_unchecked(announce_params.info_hash.to_vec()) };
-    let peer_id = unsafe { String::from_utf8_unchecked(announce_params.peer_id.clone()) };
+    let peer_id = unsafe { String::from_utf8_unchecked(announce_params.peer_id.to_vec()) };
     Url::parse_with_params(
         tracker_url,
         &[("info_hash", &info_hash), ("peer_id", &peer_id)],
@@ -90,7 +90,7 @@ mod tests {
                 0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf1, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd,
                 0xef, 0x12, 0x34, 0x56, 0x78, 0x9a,
             ]),
-            peer_id: vec![0x00; 20],
+            peer_id: [0x00; 20],
         };
 
         let url = make_announce_url(tracker_url, &request_params).unwrap();
@@ -109,7 +109,7 @@ mod tests {
         let tracker_url = "http://localhost:blah/announce";
         let request_params = AnnounceParams {
             info_hash: Sha1::new([0x00; 20]),
-            peer_id: vec![0x00; 20],
+            peer_id: [0x00; 20],
         };
         let result = make_announce_url(tracker_url, &request_params);
         assert_eq!(Err(ParseError::InvalidPort), result);
