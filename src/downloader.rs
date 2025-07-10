@@ -1,13 +1,8 @@
 use std::{
     error::Error,
-    io::{Read, Write},
+    io::{self, Read, Write},
     net::{SocketAddr, TcpStream},
     time::Duration,
-};
-
-use bincode::{
-    Decode, Encode,
-    error::{DecodeError, EncodeError},
 };
 
 use crate::types::{PeerId, Sha1};
@@ -18,7 +13,8 @@ pub struct FileDownloader {
 
 const PROTOCOL_ID: &[u8; 19] = b"BitTorrent protocol";
 
-#[derive(Debug, Encode, Decode, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Default)]
+#[repr(C, packed)]
 struct HandshakeMessage {
     pstrlen: u8,
     pstr: [u8; PROTOCOL_ID.len()],
@@ -38,12 +34,17 @@ impl HandshakeMessage {
         }
     }
 
-    fn receive(src: &mut impl Read) -> Result<Self, DecodeError> {
-        bincode::decode_from_std_read(src, bincode::config::standard())
+    fn receive(src: &mut impl Read) -> io::Result<Self> {
+        let mut instance = Self::default();
+        let buffer =
+            { unsafe { &mut *(&mut instance as *mut Self as *mut [u8; size_of::<Self>()]) } };
+        src.read_exact(buffer)?;
+        Ok(instance)
     }
 
-    fn send(&self, stream: &mut impl Write) -> Result<usize, EncodeError> {
-        bincode::encode_into_std_write(self, stream, bincode::config::standard())
+    fn send(&self, dst: &mut impl Write) -> io::Result<()> {
+        let buffer = unsafe { &*(self as *const Self as *const [u8; size_of::<Self>()]) };
+        dst.write_all(buffer)
     }
 }
 

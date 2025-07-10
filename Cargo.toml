@@ -8,4 +8,3 @@ default-run = "main"
 reqwest = { version = "0.12.20", features = ["blocking"] }
 url = "2.5.4"
 sha1 = "0.10.6"
-bincode = "2.0.1"
