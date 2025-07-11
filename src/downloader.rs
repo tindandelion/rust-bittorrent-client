@@ -13,7 +13,7 @@ pub struct FileDownloader {
 
 const PROTOCOL_ID: &[u8; 19] = b"BitTorrent protocol";
 
-#[derive(Debug, PartialEq, Eq, Default)]
+#[derive(Debug, PartialEq, Default)]
 #[repr(C, packed)]
 struct HandshakeMessage {
     pstrlen: u8,
@@ -36,23 +36,24 @@ impl HandshakeMessage {
 
     fn receive(src: &mut impl Read) -> io::Result<Self> {
         let mut instance = Self::default();
-        let buffer =
-            { unsafe { &mut *(&mut instance as *mut Self as *mut [u8; size_of::<Self>()]) } };
-        src.read_exact(buffer)?;
+        let buffer_ptr = &mut instance as *mut Self as *mut [u8; size_of::<Self>()];
+        unsafe { src.read_exact(&mut *buffer_ptr)? };
         Ok(instance)
     }
 
     fn send(&self, dst: &mut impl Write) -> io::Result<()> {
-        let buffer = unsafe { &*(self as *const Self as *const [u8; size_of::<Self>()]) };
-        dst.write_all(buffer)
+        let buffer_ptr = self as *const Self as *const [u8; size_of::<Self>()];
+        unsafe { dst.write_all(&*buffer_ptr) }
     }
 }
 
 impl FileDownloader {
     const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
+    const READ_TIMEOUT: Duration = Duration::from_secs(10);
 
     pub fn connect(addr: &SocketAddr) -> Result<FileDownloader, Box<dyn Error>> {
         let stream = TcpStream::connect_timeout(addr, Self::CONNECT_TIMEOUT)?;
+        stream.set_read_timeout(Some(Self::READ_TIMEOUT))?;
         Ok(FileDownloader { stream })
     }
 
