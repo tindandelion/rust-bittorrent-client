@@ -222,7 +222,7 @@ Probing peers...
 
 As we can see, there's a lot of failures, for various reasons: connection timeouts, connection resets, etc. But still, for some peers the handshake results in success, and we get the peer id back. At the bottom line, we got 13 successful response from the total of 50 peers. I call it a success!
 
-For those curious, a peer id staring with `-TR` means that there's [Transmission][transmission] BitTorrent application on the other side. 
+For those curious, a peer id starting with `"-TR"` means that there's [Transmission][transmission] BitTorrent application on the other side. 
 
 # Next steps 
 
