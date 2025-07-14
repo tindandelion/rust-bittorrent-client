@@ -1,7 +1,7 @@
 ---
 layout: post
 title:  "Shaking hands with peers"
-date: 2025-07-11
+date: 2025-07-14
 ---
 
 Our [last significant achievement][prev-post] was getting the list of peer IP addresses and ports from the torrent tracker. This is where the tracker's job ends, essentially. From here on, all communication happens directly between peers via TCP protocol. Our first task in this peer-to-peer exchange is to connect to peers and perform the initial handshake. 
