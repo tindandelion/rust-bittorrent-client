@@ -14,34 +14,59 @@ fn main() -> Result<(), Box<dyn Error>> {
         .and_then(|v| v.as_byte_string())
         .map(|v| v.to_string())
         .expect("Unable to retrieve announce URL");
-    let info_hash = torrent_file_contents
+    let info = torrent_file_contents
         .get("info")
         .and_then(|v| v.as_dict())
-        .map(|v| *v.sha1())
-        .expect("Unable to retrieve SHA-1 hash of `info` key");
+        .expect("Unable to retrieve `info` key");
+    let pieces = info
+        .get("pieces")
+        .and_then(|v| v.as_byte_string())
+        .expect("Unable to retrieve `pieces` key");
 
-    println!("\nYour announce url is: {}", announce_url);
+    println!("* Total pieces: {}", pieces.len() / 20);
+    println!("\n* Your announce url is: {}", announce_url);
 
+    let info_hash = *info.sha1();
     let announce_params = AnnounceParams { info_hash, peer_id };
     let response = make_announce_request(&announce_url, &announce_params)?;
     let peers = get_peer_list_from_response(&response.as_bytes())?;
-    println!("Total {} peers", peers.len());
+    println!("* Total {} peers", peers.len());
 
-    println!("Probing peers...");
-    for peer in peers {
-        print!("{}:{}\t-> ", peer.ip, peer.port);
-        match probe_peer(&peer, info_hash, peer_id) {
-            Ok(result) => println!("OK({})", result),
-            Err(e) => println!("Err({})", e),
-        }
+    println!("* Probing peers...");
+    if let Some(downloader) = connect_to_first_available_peer(&peers, info_hash, peer_id) {
+        println!("* Connected to peer: {:?}", downloader.peer_addr()?);
+    } else {
+        println!("* No peer responded");
     }
 
     Ok(())
 }
 
-fn probe_peer(peer: &Peer, info_hash: Sha1, peer_id: PeerId) -> Result<String, Box<dyn Error>> {
+fn connect_to_first_available_peer(
+    peers: &[Peer],
+    info_hash: Sha1,
+    peer_id: PeerId,
+) -> Option<FileDownloader> {
+    for peer in peers {
+        print!("{}:{}\t-> ", peer.ip, peer.port);
+        match probe_peer(&peer, info_hash, peer_id) {
+            Ok((result, downloader)) => {
+                println!("OK({})", result);
+                return Some(downloader);
+            }
+            Err(e) => println!("Err({})", e),
+        }
+    }
+    None
+}
+
+fn probe_peer(
+    peer: &Peer,
+    info_hash: Sha1,
+    peer_id: PeerId,
+) -> Result<(String, FileDownloader), Box<dyn Error>> {
     let peer_addr = peer.to_socket_addr()?;
     let mut downloader = FileDownloader::connect(&peer_addr)?;
     let handshake_result = downloader.handshake(info_hash, peer_id)?;
-    Ok(format!("{:?}", handshake_result))
+    Ok((format!("{:?}", handshake_result), downloader))
 }

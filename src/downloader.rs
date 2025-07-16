@@ -57,6 +57,10 @@ impl FileDownloader {
         Ok(FileDownloader { stream })
     }
 
+    pub fn peer_addr(&self) -> io::Result<SocketAddr> {
+        self.stream.peer_addr()
+    }
+
     pub fn handshake(
         &mut self,
         info_hash: Sha1,

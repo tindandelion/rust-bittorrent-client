@@ -9,6 +9,10 @@ impl ByteString {
         Self(value.to_vec())
     }
 
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
     pub fn as_str(&self) -> Result<&str, Utf8Error> {
         str::from_utf8(&self.0)
     }
