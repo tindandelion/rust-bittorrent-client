@@ -22,8 +22,16 @@ fn main() -> Result<(), Box<dyn Error>> {
         .get("pieces")
         .and_then(|v| v.as_byte_string())
         .expect("Unable to retrieve `pieces` key");
+    let piece_length = info
+        .get("piece length")
+        .and_then(|v| v.as_int())
+        .expect("Unable to retrieve `piece length` key");
 
-    println!("* Total pieces: {}", pieces.len() / 20);
+    println!(
+        "* Total pieces {}, piece length {}",
+        pieces.len() / 20,
+        piece_length
+    );
     println!("\n* Your announce url is: {}", announce_url);
 
     let info_hash = *info.sha1();
