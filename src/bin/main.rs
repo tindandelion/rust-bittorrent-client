@@ -2,7 +2,7 @@ use std::error::Error;
 
 use bt_client::{
     AnnounceParams, FileDownloader, get_peer_list_from_response, make_announce_request,
-    read_torrent_file,
+    read_sample_file_part, read_torrent_file,
     types::{Peer, PeerId, Sha1},
 };
 
@@ -45,23 +45,32 @@ fn main() -> Result<(), Box<dyn Error>> {
         println!("* Connected to peer: {:?}", downloader.peer_addr()?);
 
         let bitfield = downloader.receive_bitfield()?;
-        println!("* Received bitfield: {:?}", bitfield);
+        println!("* Received bitfield: {}", hex::encode(bitfield));
 
         println!("* Sending `interested` message");
         downloader.send_interested()?;
 
         println!("* Receiving `unchoke` message");
         downloader.receive_unchoke()?;
-        println!("* Unchoked, requesting data block");
 
+        println!("* Unchoked, requesting data block");
         downloader.request_block(0, 0, 128)?;
 
         println!("* Receiving `piece` message");
         let (piece_index, offset, block) = downloader.receive_piece()?;
         println!(
-            "* Received block of piece {} at offset {}: {:?} ",
-            piece_index, offset, block
+            "* Received block of piece {} at offset {}: {} ",
+            piece_index,
+            offset,
+            hex::encode(block.clone())
         );
+
+        let sample_data = read_sample_file_part(128);
+        if block == sample_data {
+            println!("\n\n* RECEIVED BLOCK MATCHES SAMPLE DATA");
+        } else {
+            println!("\n\n* RECEIVED BLOCK DOES NOT MATCH SAMPLE DATA");
+        }
     } else {
         println!("* No peer responded");
     }

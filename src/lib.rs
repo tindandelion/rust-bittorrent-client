@@ -9,10 +9,16 @@ pub use downloader::FileDownloader;
 pub use tracker::{AnnounceParams, get_peer_list_from_response, make_announce_request};
 
 const TORRENT_FILE: &str = "test-data/debian-12.11.0-amd64-netinst.iso.torrent";
+const SAMPLE_FILE_PART: &str = "test-data/debian-12.11.0-amd64-netinst-part.iso";
 
 pub fn read_torrent_file() -> Dict {
     let contents = fs::read(TORRENT_FILE).unwrap();
     decode_dict(&contents).unwrap()
+}
+
+pub fn read_sample_file_part(length: usize) -> Vec<u8> {
+    let content = fs::read(SAMPLE_FILE_PART).unwrap();
+    content[..length].to_vec()
 }
 
 #[cfg(test)]
