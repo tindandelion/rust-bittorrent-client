@@ -15,6 +15,10 @@ pub enum PeerMessage {
         offset: u32,
         block: Vec<u8>,
     },
+    Unknown {
+        id: u8,
+        payload: Vec<u8>,
+    },
 }
 
 impl PeerMessage {
@@ -34,10 +38,7 @@ impl PeerMessage {
                     block,
                 })
             }
-            _ => Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                format!("Unknown message id: {}", id),
-            )),
+            _ => Ok(Self::Unknown { id, payload }),
         }
     }
 

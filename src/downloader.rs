@@ -41,13 +41,9 @@ impl FileDownloader {
     }
 
     pub fn receive_bitfield(&mut self) -> io::Result<Vec<u8>> {
-        let msg = PeerMessage::receive(&mut self.stream)?;
-        match msg {
+        match PeerMessage::receive(&mut self.stream)? {
             PeerMessage::Bitfield(bitfield) => Ok(bitfield),
-            _ => Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "Expected bitfield message",
-            )),
+            _ => error_unexpected_message("bitfield"),
         }
     }
 
@@ -56,13 +52,20 @@ impl FileDownloader {
     }
 
     pub fn receive_unchoke(&mut self) -> io::Result<()> {
-        let msg = PeerMessage::receive(&mut self.stream)?;
-        match msg {
+        match PeerMessage::receive(&mut self.stream)? {
             PeerMessage::Unchoke => Ok(()),
-            _ => Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "Expected unchoke message",
-            )),
+            _ => error_unexpected_message("unchoke"),
+        }
+    }
+
+    pub fn receive_piece(&mut self) -> io::Result<(u32, u32, Vec<u8>)> {
+        match PeerMessage::receive(&mut self.stream)? {
+            PeerMessage::Piece {
+                piece_index,
+                offset,
+                block,
+            } => Ok((piece_index, offset, block)),
+            _ => error_unexpected_message("piece"),
         }
     }
 
@@ -74,19 +77,11 @@ impl FileDownloader {
         }
         .send(&mut self.stream)
     }
+}
 
-    pub fn receive_piece(&mut self) -> io::Result<(u32, u32, Vec<u8>)> {
-        let msg = PeerMessage::receive(&mut self.stream)?;
-        match msg {
-            PeerMessage::Piece {
-                piece_index,
-                offset,
-                block,
-            } => Ok((piece_index, offset, block)),
-            _ => Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "Expected piece message",
-            )),
-        }
-    }
+fn error_unexpected_message<T>(expected: &str) -> io::Result<T> {
+    Err(io::Error::new(
+        io::ErrorKind::Other,
+        format!("Expected `{}` message", expected),
+    ))
 }
