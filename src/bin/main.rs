@@ -41,8 +41,27 @@ fn main() -> Result<(), Box<dyn Error>> {
     println!("* Total {} peers", peers.len());
 
     println!("* Probing peers...");
-    if let Some(downloader) = connect_to_first_available_peer(&peers, info_hash, peer_id) {
+    if let Some(mut downloader) = connect_to_first_available_peer(&peers, info_hash, peer_id) {
         println!("* Connected to peer: {:?}", downloader.peer_addr()?);
+
+        let bitfield = downloader.receive_bitfield()?;
+        println!("* Received bitfield: {:?}", bitfield);
+
+        println!("* Sending `interested` message");
+        downloader.send_interested()?;
+
+        println!("* Receiving `unchoke` message");
+        downloader.receive_unchoke()?;
+        println!("* Unchoked, requesting data block");
+
+        downloader.request_block(0, 0, 128)?;
+
+        println!("* Receiving `piece` message");
+        let (piece_index, offset, block) = downloader.receive_piece()?;
+        println!(
+            "* Received block of piece {} at offset {}: {:?} ",
+            piece_index, offset, block
+        );
     } else {
         println!("* No peer responded");
     }
