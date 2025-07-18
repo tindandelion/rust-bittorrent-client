@@ -73,6 +73,12 @@
         "benc",
         "downloaders",
         "downloader",
-        "uploader"
+        "uploader",
+        "endian",
+        "bitfield",
+        "Endianness",
+        "unchoking",
+        "PeerMessage",
+        "deserialization"
     ]
 } 

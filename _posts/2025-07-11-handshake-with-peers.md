@@ -234,7 +234,7 @@ So, the main achievement of this section is that we managed to connect to the pe
 
 1. Continue working on the peer communication. After the initial handshake, we should be able to start downloading the file content. 
 2. We are now enumerating peers synchronously, which is quite time-consuming, provided that most peers don't even bother to accept the connection. A better approach would be to try to connect to multiple peers in parallel. That would lead us to the land of asynchronous Rust, which is still the unknown terrain for me.
-3. Our handshake handling is very simplistic now. We should make it more robust: at the very least, I need to check that the protocol version and the info hash returned by the peer match what we requested. Utimately, I'd like to write a test suite to cover various handshake scenarios. That's also an interesting task to tackle. 
+3. Our handshake handling is very simplistic now. We should make it more robust: at the very least, I need to check that the protocol version and the info hash returned by the peer match what we requested. Ultimately, I'd like to write a test suite to cover various handshake scenarios. That's also an interesting task to tackle. 
 
 I'm not sure yet which task to pick up next; that's yet to be decided. 
 
