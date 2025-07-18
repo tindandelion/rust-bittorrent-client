@@ -44,28 +44,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     if let Some(mut downloader) = connect_to_first_available_peer(&peers, info_hash, peer_id) {
         println!("* Connected to peer: {:?}", downloader.peer_addr()?);
 
-        let bitfield = downloader.receive_bitfield()?;
-        println!("* Received bitfield: {}", hex::encode(bitfield));
-
-        println!("* Sending `interested` message");
-        downloader.send_interested()?;
-
-        println!("* Receiving `unchoke` message");
-        downloader.receive_unchoke()?;
-
-        println!("* Unchoked, requesting data block");
-        downloader.request_block(0, 0, 128)?;
-
-        println!("* Receiving `piece` message");
-        let (piece_index, offset, block) = downloader.receive_piece()?;
-        println!(
-            "* Received block of piece {} at offset {}: {} ",
-            piece_index,
-            offset,
-            hex::encode(block.clone())
-        );
-
-        let sample_data = read_sample_file_part(128);
+        let block_length = 128;
+        let block = download_file_block(&mut downloader, block_length)?;
+        let sample_data = read_sample_file_part(block_length as usize);
         if block == sample_data {
             println!("\n\n* RECEIVED BLOCK MATCHES SAMPLE DATA");
         } else {
@@ -105,4 +86,31 @@ fn probe_peer(
     let mut downloader = FileDownloader::connect(&peer_addr)?;
     let handshake_result = downloader.handshake(info_hash, peer_id)?;
     Ok((format!("{:?}", handshake_result), downloader))
+}
+
+fn download_file_block(
+    downloader: &mut FileDownloader,
+    block_length: u32,
+) -> Result<Vec<u8>, Box<dyn Error>> {
+    let bitfield = downloader.receive_bitfield()?;
+    println!("* Received bitfield: {}", hex::encode(bitfield));
+
+    println!("* Sending `interested` message");
+    downloader.send_interested()?;
+
+    println!("* Receiving `unchoke` message");
+    downloader.receive_unchoke()?;
+
+    println!("* Unchoked, requesting data block");
+    downloader.request_block(0, 0, block_length)?;
+
+    println!("* Receiving `piece` message");
+    let (piece_index, offset, block) = downloader.receive_piece()?;
+    println!(
+        "* Received block of piece {} at offset {}: {} ",
+        piece_index,
+        offset,
+        hex::encode(block.clone())
+    );
+    Ok(block)
 }
