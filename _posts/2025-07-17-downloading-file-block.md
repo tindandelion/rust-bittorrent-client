@@ -1,7 +1,7 @@
 ---
 layout: post
 title:  "Downloading some data from the peer"
-date: 2025-07-14
+date: 2025-07-18
 ---
 
 [Last time][prev-post] we left off being able to exchange the initial handshake messages with some of the peers. By the end of the session, I had some doubts about what to do next: should I continue working on peer-to-peer communication, or should I elaborate on the code that we already had working? After some reflection, I realized that peer communication was more interesting to move forward with. 
