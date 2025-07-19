@@ -5,39 +5,42 @@ pub struct Block {
     pub data: Vec<u8>,
 }
 
-pub trait DownloadChannel {
+pub trait PieceDownloadChannel {
     fn request(&mut self, offset: usize, length: usize) -> io::Result<()>;
     fn receive(&mut self) -> io::Result<Block>;
 }
 
-pub struct PieceDownloader<T: DownloadChannel> {
+pub struct PieceDownloader<T: PieceDownloadChannel> {
     channel: T,
     block_length: usize,
-    buffer: Vec<u8>,
+    piece_length: usize,
 }
 
-impl<T: DownloadChannel> PieceDownloader<T> {
+impl<T: PieceDownloadChannel> PieceDownloader<T> {
     pub fn new(channel: T, piece_length: usize, block_length: usize) -> Self {
         Self {
             channel,
             block_length,
-            buffer: vec![0; piece_length],
+            piece_length,
         }
     }
 
-    fn download_piece(&mut self) -> io::Result<Vec<u8>> {
-        let block_count = (self.buffer.len() + self.block_length - 1) / self.block_length;
+    pub fn download_piece(&mut self) -> io::Result<Vec<u8>> {
+        let mut buffer = vec![0; self.piece_length];
+
+        let block_count = (self.piece_length + self.block_length - 1) / self.block_length;
         for block_index in 0..block_count {
             let (block_offset, block_length) = self.request_block(block_index)?;
             let data = self.receive_block(block_offset, block_length)?;
-            self.buffer[block_offset..block_offset + block_length].copy_from_slice(&data);
+            buffer[block_offset..block_offset + block_length].copy_from_slice(&data);
         }
-        Ok(self.buffer.clone())
+
+        Ok(buffer)
     }
 
     fn request_block(&mut self, block_index: usize) -> io::Result<(usize, usize)> {
         let block_offset = block_index * self.block_length;
-        let block_length = std::cmp::min(self.block_length, self.buffer.len() - block_offset);
+        let block_length = std::cmp::min(self.block_length, self.piece_length - block_offset);
 
         self.channel.request(block_offset, block_length)?;
         Ok((block_offset, block_length))
@@ -74,15 +77,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_create_piece_downloader() {
-        let channel = TestDownloadChannel::new(vec![]);
-        let piece_downloader = PieceDownloader::new(channel, 10, 2);
-        assert_eq!(vec![0; 10], piece_downloader.buffer);
-    }
-
-    #[test]
     fn test_download_piece() {
-        let channel = TestDownloadChannel::new(vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+        let channel = DownloadChannelFromVector::new(vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
         let mut piece_downloader = PieceDownloader::new(channel, 10, 3);
 
         let block_data = piece_downloader.download_piece().unwrap();
@@ -92,42 +88,41 @@ mod tests {
     #[test]
     #[should_panic]
     fn test_unexpected_offset_in_response() {
-        let mut channel = TestDownloadChannel::new(vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
-        channel.forced_offset = Some(1);
+        let channel = ErrorDownloadChannel {
+            offset: 1,
+            length: 3,
+        };
         let mut piece_downloader = PieceDownloader::new(channel, 10, 3);
-
         piece_downloader.download_piece().unwrap();
     }
 
     #[test]
     #[should_panic]
     fn test_unexpected_data_length_in_response() {
-        let mut channel = TestDownloadChannel::new(vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
-        channel.forced_data_length = Some(1);
-        let mut piece_downloader = PieceDownloader::new(channel, 10, 3);
+        let channel = ErrorDownloadChannel {
+            offset: 0,
+            length: 2,
+        };
 
+        let mut piece_downloader = PieceDownloader::new(channel, 10, 3);
         piece_downloader.download_piece().unwrap();
     }
 
-    struct TestDownloadChannel {
+    struct DownloadChannelFromVector {
         data: Vec<u8>,
         requested_block: Option<(usize, usize)>,
-        forced_offset: Option<usize>,
-        forced_data_length: Option<usize>,
     }
 
-    impl TestDownloadChannel {
+    impl DownloadChannelFromVector {
         fn new(data: Vec<u8>) -> Self {
             Self {
                 data,
                 requested_block: None,
-                forced_offset: None,
-                forced_data_length: None,
             }
         }
     }
 
-    impl DownloadChannel for TestDownloadChannel {
+    impl PieceDownloadChannel for DownloadChannelFromVector {
         fn request(&mut self, offset: usize, length: usize) -> io::Result<()> {
             assert!(self.requested_block.is_none());
             self.requested_block = Some((offset, length));
@@ -138,13 +133,29 @@ mod tests {
             if let Some((offset, length)) = self.requested_block {
                 self.requested_block = None;
 
-                let offset = self.forced_offset.unwrap_or(offset);
-                let length = self.forced_data_length.unwrap_or(length);
                 let data = self.data[offset..offset + length].to_vec();
                 Ok(Block { offset, data })
             } else {
                 Err(io::Error::new(io::ErrorKind::Other, "No block requested"))
             }
+        }
+    }
+
+    struct ErrorDownloadChannel {
+        offset: usize,
+        length: usize,
+    }
+
+    impl PieceDownloadChannel for ErrorDownloadChannel {
+        fn request(&mut self, _offset: usize, _length: usize) -> io::Result<()> {
+            Ok(())
+        }
+
+        fn receive(&mut self) -> io::Result<Block> {
+            Ok(Block {
+                offset: self.offset,
+                data: vec![0xff; self.length],
+            })
         }
     }
 }

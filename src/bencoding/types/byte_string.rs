@@ -17,8 +17,7 @@ impl ByteString {
         str::from_utf8(&self.0)
     }
 
-    #[cfg(test)]
-    pub fn as_bytes(&self) -> &[u8] {
+    pub fn as_slice(&self) -> &[u8] {
         &self.0
     }
 }

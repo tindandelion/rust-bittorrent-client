@@ -36,6 +36,14 @@ impl Sha1 {
         Self(value)
     }
 
+    pub fn from_bytes(value: &[u8]) -> Self {
+        Self(
+            value
+                .try_into()
+                .expect(&format!("Invalid SHA-1 length: {}", value.len())),
+        )
+    }
+
     pub fn calculate(value: &[u8]) -> Self {
         let mut hasher = sha1::Sha1::new();
         hasher.update(value);

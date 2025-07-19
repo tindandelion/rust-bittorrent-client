@@ -189,7 +189,7 @@ mod decode_string {
         let decoded_value = decoder.decode_value().unwrap();
         assert_eq!(
             &encoded[2..],
-            decoded_value.as_byte_string().unwrap().as_bytes()
+            decoded_value.as_byte_string().unwrap().as_slice()
         );
         assert!(!decoder.has_more_data());
     }
