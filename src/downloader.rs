@@ -142,7 +142,7 @@ impl Piece {
         &self.0
     }
 
-    pub fn verify_hash(self, hash: Sha1) -> bool {
-        hash == Sha1::calculate(&self.0)
+    pub fn verify_hash(&self, hash: &Sha1) -> bool {
+        hash == &Sha1::calculate(&self.0)
     }
 }

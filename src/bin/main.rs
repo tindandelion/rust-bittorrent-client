@@ -1,8 +1,8 @@
 use std::error::Error;
 
 use bt_client::{
-    AnnounceParams, FileDownloader, Piece, get_peer_list_from_response, make_announce_request,
-    read_torrent_file,
+    AnnounceParams, FileDownloader, Piece, get_peer_list_from_response, get_piece_hashes,
+    make_announce_request, read_torrent_file,
     types::{Peer, PeerId, Sha1},
 };
 
@@ -21,6 +21,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let pieces = info
         .get("pieces")
         .and_then(|v| v.as_byte_string())
+        .map(|v| get_piece_hashes(v))
         .expect("Unable to retrieve `pieces` key");
     let piece_length = info
         .get("piece length")
@@ -30,7 +31,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     println!(
         "* Total pieces {}, piece length {}",
-        pieces.len() / 20,
+        pieces.len(),
         piece_length
     );
     println!("\n* Your announce url is: {}", announce_url);
@@ -45,11 +46,11 @@ fn main() -> Result<(), Box<dyn Error>> {
     if let Some(mut downloader) = connect_to_first_available_peer(&peers, info_hash, peer_id) {
         println!("* Connected to peer: {:?}", downloader.peer_addr()?);
 
-        let expected_piece_hash = Sha1::from_bytes(&pieces.as_slice()[0..20]);
-        let piece = download_piece(&mut downloader, 0, piece_length)?;
+        let piece_index = 0;
+        let piece = download_piece(&mut downloader, piece_index, piece_length)?;
         println!("* Received piece: {}", hex::encode(&piece.bytes()[..128]));
 
-        if piece.verify_hash(expected_piece_hash) {
+        if piece.verify_hash(&pieces[piece_index]) {
             println!("* DOWNLOADED PIECE MATCHES EXPECTED HASH");
         } else {
             println!("* DOWNLOADED PIECE DOES NOT MATCH EXPECTED HASH");
@@ -92,7 +93,7 @@ fn probe_peer(
 
 fn download_piece(
     downloader: &mut FileDownloader,
-    piece_index: u32,
+    piece_index: usize,
     piece_length: usize,
 ) -> Result<Piece, Box<dyn Error>> {
     let bitfield = downloader.receive_bitfield()?;
@@ -105,6 +106,6 @@ fn download_piece(
     downloader.receive_unchoke()?;
 
     println!("* Unchoked, requesting data block");
-    let piece = downloader.download_piece(piece_index, piece_length)?;
+    let piece = downloader.download_piece(piece_index as u32, piece_length)?;
     Ok(piece)
 }
