@@ -18,7 +18,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         .get("info")
         .and_then(|v| v.as_dict())
         .expect("Unable to retrieve `info` key");
-    let pieces = info
+    let piece_hashes = info
         .get("pieces")
         .and_then(|v| v.as_byte_string())
         .map(|v| get_piece_hashes(v))
@@ -31,7 +31,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     println!(
         "* Total pieces {}, piece length {}",
-        pieces.len(),
+        piece_hashes.len(),
         piece_length
     );
     println!("\n* Your announce url is: {}", announce_url);
@@ -50,7 +50,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         let piece = download_piece(&mut downloader, piece_index, piece_length)?;
         println!("* Received piece: {}", hex::encode(&piece.bytes()[..128]));
 
-        if piece.verify_hash(&pieces[piece_index]) {
+        if piece.verify_hash(&piece_hashes[piece_index]) {
             println!("* DOWNLOADED PIECE MATCHES EXPECTED HASH");
         } else {
             println!("* DOWNLOADED PIECE DOES NOT MATCH EXPECTED HASH");
