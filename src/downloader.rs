@@ -24,12 +24,13 @@ pub struct FileDownloader {
 
 impl FileDownloader {
     const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
-    const READ_TIMEOUT: Duration = Duration::from_secs(10);
+    const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
+    const MESSAGE_READ_TIMEOUT: Duration = Duration::from_secs(60);
     const BLOCK_LENGTH: usize = 1 << 14;
 
     pub fn connect(addr: &SocketAddr) -> Result<FileDownloader, Box<dyn Error>> {
         let stream = TcpStream::connect_timeout(addr, Self::CONNECT_TIMEOUT)?;
-        stream.set_read_timeout(Some(Self::READ_TIMEOUT))?;
+        stream.set_read_timeout(Some(Self::MESSAGE_READ_TIMEOUT))?;
         Ok(FileDownloader { stream })
     }
 
@@ -37,14 +38,16 @@ impl FileDownloader {
         self.stream.peer_addr()
     }
 
-    pub fn handshake(
-        &mut self,
-        info_hash: Sha1,
-        peer_id: PeerId,
-    ) -> Result<String, Box<dyn Error>> {
+    pub fn handshake(&mut self, info_hash: Sha1, peer_id: PeerId) -> Result<String, io::Error> {
         HandshakeMessage::new(info_hash, peer_id).send(&mut self.stream)?;
-        let response = HandshakeMessage::receive(&mut self.stream)?;
-        Ok(String::from_utf8_lossy(&response.peer_id).to_string())
+
+        let current_timeout = self.stream.read_timeout()?;
+        self.stream
+            .set_read_timeout(Some(Self::HANDSHAKE_TIMEOUT))?;
+        let response = HandshakeMessage::receive(&mut self.stream);
+        self.stream.set_read_timeout(current_timeout)?;
+
+        response.map(|msg| String::from_utf8_lossy(&msg.peer_id).to_string())
     }
 
     pub fn receive_bitfield(&mut self) -> io::Result<Vec<u8>> {
