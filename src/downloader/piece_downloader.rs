@@ -40,7 +40,7 @@ impl<T: PieceDownloadChannel> PieceDownloader<T> {
 
     fn request_block(&mut self, block_index: usize) -> io::Result<(usize, usize)> {
         let block_offset = block_index * self.block_length;
-        let block_length = std::cmp::min(self.block_length, self.piece_length - block_offset);
+        let block_length = self.block_length.min(self.piece_length - block_offset);
 
         self.channel.request(block_offset, block_length)?;
         Ok((block_offset, block_length))
