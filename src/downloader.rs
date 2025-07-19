@@ -1,5 +1,6 @@
 mod handshake_message;
 mod peer_messages;
+mod piece_downloader;
 
 use std::{
     error::Error,
