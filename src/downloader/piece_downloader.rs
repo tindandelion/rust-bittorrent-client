@@ -1,23 +1,23 @@
 use std::io;
 
 pub struct Block {
-    pub offset: usize,
+    pub offset: u32,
     pub data: Vec<u8>,
 }
 
 pub trait PieceDownloadChannel {
-    fn request(&mut self, offset: usize, length: usize) -> io::Result<()>;
+    fn request(&mut self, offset: u32, length: u32) -> io::Result<()>;
     fn receive(&mut self) -> io::Result<Block>;
 }
 
 pub struct PieceDownloader<T: PieceDownloadChannel> {
     channel: T,
-    block_length: usize,
-    piece_length: usize,
+    block_length: u32,
+    piece_length: u32,
 }
 
 impl<T: PieceDownloadChannel> PieceDownloader<T> {
-    pub fn new(channel: T, piece_length: usize, block_length: usize) -> Self {
+    pub fn new(channel: T, piece_length: u32, block_length: u32) -> Self {
         Self {
             channel,
             block_length,
@@ -26,19 +26,20 @@ impl<T: PieceDownloadChannel> PieceDownloader<T> {
     }
 
     pub fn download_piece(&mut self) -> io::Result<Vec<u8>> {
-        let mut buffer = vec![0; self.piece_length];
+        let mut buffer = vec![0; self.piece_length as usize];
 
         let block_count = (self.piece_length + self.block_length - 1) / self.block_length;
         for block_index in 0..block_count {
             let (block_offset, block_length) = self.request_block(block_index)?;
             let data = self.receive_block(block_offset, block_length)?;
-            buffer[block_offset..block_offset + block_length].copy_from_slice(&data);
+            buffer[block_offset as usize..(block_offset + block_length) as usize]
+                .copy_from_slice(&data);
         }
 
         Ok(buffer)
     }
 
-    fn request_block(&mut self, block_index: usize) -> io::Result<(usize, usize)> {
+    fn request_block(&mut self, block_index: u32) -> io::Result<(u32, u32)> {
         let block_offset = block_index * self.block_length;
         let block_length = self.block_length.min(self.piece_length - block_offset);
 
@@ -46,7 +47,7 @@ impl<T: PieceDownloadChannel> PieceDownloader<T> {
         Ok((block_offset, block_length))
     }
 
-    fn receive_block(&mut self, block_offset: usize, block_length: usize) -> io::Result<Vec<u8>> {
+    fn receive_block(&mut self, block_offset: u32, block_length: u32) -> io::Result<Vec<u8>> {
         let block = self.channel.receive()?;
 
         if block.offset != block_offset {
@@ -58,7 +59,7 @@ impl<T: PieceDownloadChannel> PieceDownloader<T> {
                 ),
             ));
         }
-        if block.data.len() != block_length {
+        if block.data.len() != block_length as usize {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
                 format!(
@@ -110,7 +111,7 @@ mod tests {
 
     struct DownloadChannelFromVector {
         data: Vec<u8>,
-        requested_block: Option<(usize, usize)>,
+        requested_block: Option<(u32, u32)>,
     }
 
     impl DownloadChannelFromVector {
@@ -123,7 +124,7 @@ mod tests {
     }
 
     impl PieceDownloadChannel for DownloadChannelFromVector {
-        fn request(&mut self, offset: usize, length: usize) -> io::Result<()> {
+        fn request(&mut self, offset: u32, length: u32) -> io::Result<()> {
             assert!(self.requested_block.is_none());
             self.requested_block = Some((offset, length));
             Ok(())
@@ -133,7 +134,7 @@ mod tests {
             if let Some((offset, length)) = self.requested_block {
                 self.requested_block = None;
 
-                let data = self.data[offset..offset + length].to_vec();
+                let data = self.data[offset as usize..(offset + length) as usize].to_vec();
                 Ok(Block { offset, data })
             } else {
                 Err(io::Error::new(io::ErrorKind::Other, "No block requested"))
@@ -142,19 +143,19 @@ mod tests {
     }
 
     struct ErrorDownloadChannel {
-        offset: usize,
-        length: usize,
+        offset: u32,
+        length: u32,
     }
 
     impl PieceDownloadChannel for ErrorDownloadChannel {
-        fn request(&mut self, _offset: usize, _length: usize) -> io::Result<()> {
+        fn request(&mut self, _offset: u32, _length: u32) -> io::Result<()> {
             Ok(())
         }
 
         fn receive(&mut self) -> io::Result<Block> {
             Ok(Block {
                 offset: self.offset,
-                data: vec![0xff; self.length],
+                data: vec![0xff; self.length as usize],
             })
         }
     }

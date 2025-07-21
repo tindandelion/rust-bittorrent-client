@@ -26,7 +26,7 @@ impl FileDownloader {
     const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
     const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
     const MESSAGE_READ_TIMEOUT: Duration = Duration::from_secs(60);
-    const BLOCK_LENGTH: usize = 1 << 14;
+    const BLOCK_LENGTH: u32 = 1 << 14;
 
     pub fn connect(addr: &SocketAddr) -> Result<FileDownloader, Box<dyn Error>> {
         let stream = TcpStream::connect_timeout(addr, Self::CONNECT_TIMEOUT)?;
@@ -68,7 +68,7 @@ impl FileDownloader {
         }
     }
 
-    pub fn download_piece(&mut self, piece_index: u32, piece_length: usize) -> io::Result<Piece> {
+    pub fn download_piece(&mut self, piece_index: u32, piece_length: u32) -> io::Result<Piece> {
         let channel = TcpPieceDownloadChannel::new(&mut self.stream, piece_index);
         let mut downloader = PieceDownloader::new(channel, piece_length, Self::BLOCK_LENGTH);
         let piece = downloader.download_piece()?;
@@ -98,11 +98,11 @@ impl<'a> TcpPieceDownloadChannel<'a> {
 }
 
 impl PieceDownloadChannel for TcpPieceDownloadChannel<'_> {
-    fn request(&mut self, offset: usize, length: usize) -> io::Result<()> {
+    fn request(&mut self, offset: u32, length: u32) -> io::Result<()> {
         PeerMessage::Request {
             piece_index: self.piece_index,
-            offset: offset as u32,
-            length: length as u32,
+            offset,
+            length,
         }
         .send(self.stream)
     }
@@ -125,7 +125,7 @@ impl PieceDownloadChannel for TcpPieceDownloadChannel<'_> {
                     ));
                 }
                 Ok(piece_downloader::Block {
-                    offset: offset as usize,
+                    offset,
                     data: block,
                 })
             }

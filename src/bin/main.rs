@@ -26,7 +26,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let piece_length = info
         .get("piece length")
         .and_then(|v| v.as_int())
-        .map(|v| *v as usize)
+        .map(|v| *v as u32)
         .expect("Unable to retrieve `piece length` key");
 
     println!(
@@ -50,7 +50,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         let piece = download_piece(&mut downloader, piece_index, piece_length)?;
         println!("* Received piece: {}", hex::encode(&piece.bytes()[..128]));
 
-        if piece.verify_hash(&piece_hashes[piece_index]) {
+        if piece.verify_hash(&piece_hashes[piece_index as usize]) {
             println!("* DOWNLOADED PIECE MATCHES EXPECTED HASH");
         } else {
             println!("* DOWNLOADED PIECE DOES NOT MATCH EXPECTED HASH");
@@ -93,8 +93,8 @@ fn probe_peer(
 
 fn download_piece(
     downloader: &mut FileDownloader,
-    piece_index: usize,
-    piece_length: usize,
+    piece_index: u32,
+    piece_length: u32,
 ) -> Result<Piece, Box<dyn Error>> {
     let bitfield = downloader.receive_bitfield()?;
     println!("* Received bitfield: {}", hex::encode(bitfield));
@@ -106,6 +106,6 @@ fn download_piece(
     downloader.receive_unchoke()?;
 
     println!("* Unchoked, requesting data block");
-    let piece = downloader.download_piece(piece_index as u32, piece_length)?;
+    let piece = downloader.download_piece(piece_index, piece_length)?;
     Ok(piece)
 }
