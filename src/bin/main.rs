@@ -47,14 +47,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         println!("* Connected to peer: {:?}", downloader.peer_addr()?);
 
         let piece_index = 0;
-        let piece = download_piece(&mut downloader, piece_index, piece_length)?;
+        let piece = download_piece(&mut downloader, piece_hashes, piece_index, piece_length)?;
         println!("* Received piece: {}", hex::encode(&piece.bytes()[..128]));
-
-        if piece.verify_hash(&piece_hashes[piece_index as usize]) {
-            println!("* DOWNLOADED PIECE MATCHES EXPECTED HASH");
-        } else {
-            println!("* DOWNLOADED PIECE DOES NOT MATCH EXPECTED HASH");
-        }
     } else {
         println!("* No peer responded");
     }
@@ -93,6 +87,7 @@ fn probe_peer(
 
 fn download_piece(
     downloader: &mut FileDownloader,
+    piece_hashes: Vec<Sha1>,
     piece_index: u32,
     piece_length: u32,
 ) -> Result<Piece, Box<dyn Error>> {
@@ -106,6 +101,6 @@ fn download_piece(
     downloader.receive_unchoke()?;
 
     println!("* Unchoked, requesting data block");
-    let piece = downloader.download_piece(piece_index, piece_length)?;
+    let piece = downloader.download_piece(piece_hashes, piece_index, piece_length)?;
     Ok(piece)
 }

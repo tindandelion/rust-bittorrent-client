@@ -57,6 +57,10 @@ impl Sha1 {
     pub fn to_vec(&self) -> Vec<u8> {
         self.0.to_vec()
     }
+
+    pub fn verify(&self, data: &[u8]) -> bool {
+        self == &Self::calculate(data)
+    }
 }
 
 impl Peer {

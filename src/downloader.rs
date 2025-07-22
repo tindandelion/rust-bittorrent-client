@@ -26,7 +26,6 @@ impl FileDownloader {
     const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
     const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
     const MESSAGE_READ_TIMEOUT: Duration = Duration::from_secs(60);
-    const BLOCK_LENGTH: u32 = 1 << 14;
 
     pub fn connect(addr: &SocketAddr) -> Result<FileDownloader, Box<dyn Error>> {
         let stream = TcpStream::connect_timeout(addr, Self::CONNECT_TIMEOUT)?;
@@ -68,10 +67,15 @@ impl FileDownloader {
         }
     }
 
-    pub fn download_piece(&mut self, piece_index: u32, piece_length: u32) -> io::Result<Piece> {
-        let channel = TcpPieceDownloadChannel::new(&mut self.stream, piece_index);
-        let mut downloader = PieceDownloader::new(channel, piece_length, Self::BLOCK_LENGTH);
-        let piece = downloader.download_piece()?;
+    pub fn download_piece(
+        &mut self,
+        piece_hashes: Vec<Sha1>,
+        piece_index: u32,
+        piece_length: u32,
+    ) -> io::Result<Piece> {
+        let channel = TcpPieceDownloadChannel::new(&mut self.stream);
+        let mut downloader = PieceDownloader::new(channel, piece_hashes, piece_length);
+        let piece = downloader.download_piece(piece_index)?;
         Ok(Piece(piece))
     }
 }
@@ -85,22 +89,18 @@ fn error_unexpected_message<T>(expected: &str) -> io::Result<T> {
 
 struct TcpPieceDownloadChannel<'a> {
     stream: &'a mut TcpStream,
-    piece_index: u32,
 }
 
 impl<'a> TcpPieceDownloadChannel<'a> {
-    pub fn new(stream: &'a mut TcpStream, piece_index: u32) -> Self {
-        Self {
-            stream,
-            piece_index,
-        }
+    pub fn new(stream: &'a mut TcpStream) -> Self {
+        Self { stream }
     }
 }
 
 impl PieceDownloadChannel for TcpPieceDownloadChannel<'_> {
-    fn request(&mut self, offset: u32, length: u32) -> io::Result<()> {
+    fn request(&mut self, piece_index: u32, offset: u32, length: u32) -> io::Result<()> {
         PeerMessage::Request {
-            piece_index: self.piece_index,
+            piece_index: piece_index,
             offset,
             length,
         }
@@ -114,21 +114,11 @@ impl PieceDownloadChannel for TcpPieceDownloadChannel<'_> {
                 piece_index,
                 offset,
                 block,
-            } => {
-                if piece_index != self.piece_index {
-                    return Err(io::Error::new(
-                        io::ErrorKind::InvalidData,
-                        format!(
-                            "Unexpected piece index in response: expected {}, got {}",
-                            self.piece_index, piece_index
-                        ),
-                    ));
-                }
-                Ok(piece_downloader::Block {
-                    offset,
-                    data: block,
-                })
-            }
+            } => Ok(piece_downloader::Block {
+                piece_index,
+                offset,
+                data: block,
+            }),
             _ => Err(io::Error::new(
                 io::ErrorKind::InvalidData,
                 format!(
