@@ -37,11 +37,10 @@ impl Sha1 {
     }
 
     pub fn from_bytes(value: &[u8]) -> Self {
-        Self(
-            value
-                .try_into()
-                .expect(&format!("Invalid SHA-1 length: {}", value.len())),
-        )
+        if value.len() != 20 {
+            panic!("Invalid SHA-1 length: {}", value.len());
+        }
+        Self(value.try_into().unwrap())
     }
 
     pub fn calculate(value: &[u8]) -> Self {

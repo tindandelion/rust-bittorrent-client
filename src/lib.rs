@@ -24,7 +24,7 @@ pub fn get_piece_hashes(pieces: &ByteString) -> Vec<Sha1> {
     pieces
         .as_slice()
         .chunks_exact(20)
-        .map(|chunk| Sha1::from_bytes(chunk))
+        .map(Sha1::from_bytes)
         .collect()
 }
 

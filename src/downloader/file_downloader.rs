@@ -143,11 +143,7 @@ impl<'a, T: DownloadChannel> FileDownloader<'a, T> {
         if piece_end > self.file_length {
             piece_end = self.file_length;
         };
-        (
-            piece_start as usize,
-            piece_end as usize,
-            (piece_end - piece_start) as u32,
-        )
+        (piece_start, piece_end, (piece_end - piece_start) as u32)
     }
 
     fn download_piece_by_block(
@@ -157,7 +153,7 @@ impl<'a, T: DownloadChannel> FileDownloader<'a, T> {
     ) -> io::Result<Vec<u8>> {
         let mut buffer = vec![0; piece_length as usize];
 
-        let block_count = (piece_length + self.block_length - 1) / self.block_length;
+        let block_count = piece_length.div_ceil(self.block_length);
         for block_index in 0..block_count {
             let (block_offset, block_length) =
                 self.request_block(piece_index, block_index, piece_length)?;
@@ -170,7 +166,7 @@ impl<'a, T: DownloadChannel> FileDownloader<'a, T> {
 
     fn verify_piece_hash(&self, piece_index: u32, piece: &[u8]) -> io::Result<()> {
         let piece_hash = &self.piece_hashes[piece_index as usize];
-        if !piece_hash.verify(&piece) {
+        if !piece_hash.verify(piece) {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
                 "Downloaded piece does not match expected hash",

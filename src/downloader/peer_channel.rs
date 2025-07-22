@@ -64,7 +64,7 @@ impl PeerChannel {
 impl DownloadChannel for PeerChannel {
     fn request(&mut self, piece_index: u32, offset: u32, length: u32) -> io::Result<()> {
         PeerMessage::Request {
-            piece_index: piece_index,
+            piece_index,
             offset,
             length,
         }
@@ -89,8 +89,8 @@ impl DownloadChannel for PeerChannel {
 }
 
 fn error_unexpected_message<T>(expected: &str, received: &PeerMessage) -> io::Result<T> {
-    Err(io::Error::new(
-        io::ErrorKind::Other,
-        format!("Expected `{}` message, received: {:?}", expected, received),
-    ))
+    Err(io::Error::other(format!(
+        "Expected `{}` message, received: {:?}",
+        expected, received
+    )))
 }
