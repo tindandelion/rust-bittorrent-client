@@ -67,15 +67,28 @@ impl FileDownloader {
         }
     }
 
+    pub fn download_file(
+        &mut self,
+        piece_hashes: Vec<Sha1>,
+        piece_length: u32,
+        file_length: usize,
+    ) -> io::Result<Vec<u8>> {
+        let channel = TcpPieceDownloadChannel::new(&mut self.stream);
+        let mut downloader = PieceDownloader::new(channel, piece_hashes, piece_length, file_length);
+        let data = downloader.download_all()?;
+        Ok(data)
+    }
+
     pub fn download_piece(
         &mut self,
         piece_hashes: Vec<Sha1>,
         piece_index: u32,
         piece_length: u32,
+        file_length: usize,
     ) -> io::Result<Piece> {
         let channel = TcpPieceDownloadChannel::new(&mut self.stream);
-        let mut downloader = PieceDownloader::new(channel, piece_hashes, piece_length);
-        let piece = downloader.download_piece(piece_index)?;
+        let mut downloader = PieceDownloader::new(channel, piece_hashes, piece_length, file_length);
+        let piece = downloader.download_piece(piece_index, piece_length)?;
         Ok(Piece(piece))
     }
 }
