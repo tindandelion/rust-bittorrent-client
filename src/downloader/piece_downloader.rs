@@ -9,23 +9,28 @@ pub struct Block {
     pub data: Vec<u8>,
 }
 
-pub trait PieceDownloadChannel {
+pub trait DownloadChannel {
     fn request(&mut self, piece_index: u32, offset: u32, length: u32) -> io::Result<()>;
     fn receive(&mut self) -> io::Result<Block>;
 }
 
-pub struct PieceDownloader<T: PieceDownloadChannel> {
-    channel: T,
+pub struct PieceDownloader<'a, T: DownloadChannel> {
+    channel: &'a mut T,
     piece_hashes: Vec<Sha1>,
     file_length: usize,
     piece_length: u32,
     block_length: u32,
 }
 
-impl<T: PieceDownloadChannel> PieceDownloader<T> {
+impl<'a, T: DownloadChannel> PieceDownloader<'a, T> {
     const BLOCK_LENGTH: u32 = 1 << 14;
 
-    pub fn new(channel: T, piece_hashes: Vec<Sha1>, piece_length: u32, file_length: usize) -> Self {
+    pub fn new(
+        channel: &'a mut T,
+        piece_hashes: Vec<Sha1>,
+        piece_length: u32,
+        file_length: usize,
+    ) -> Self {
         Self {
             channel,
             piece_hashes,
@@ -48,7 +53,7 @@ impl<T: PieceDownloadChannel> PieceDownloader<T> {
         Ok(buffer)
     }
 
-    pub fn download_piece(&mut self, piece_index: u32, piece_length: u32) -> io::Result<Vec<u8>> {
+    fn download_piece(&mut self, piece_index: u32, piece_length: u32) -> io::Result<Vec<u8>> {
         let buffer = self.download_piece_by_block(piece_index, piece_length)?;
         self.verify_piece_hash(piece_index, &buffer)?;
 
@@ -202,9 +207,9 @@ mod tests {
             .map(|p| Sha1::calculate(p))
             .collect::<Vec<_>>();
 
-        let channel = DownloadChannelFromVector::new(pieces.clone());
+        let mut channel = DownloadChannelFromVector::new(pieces.clone());
         let mut piece_downloader =
-            PieceDownloader::new(channel, piece_hashes, piece_length, file_data.len())
+            PieceDownloader::new(&mut channel, piece_hashes, piece_length, file_data.len())
                 .with_block_length(3);
 
         let downloaded_data = piece_downloader.download_all().unwrap();
@@ -227,32 +232,13 @@ mod tests {
             .map(|p| Sha1::calculate(p))
             .collect::<Vec<_>>();
 
-        let channel = DownloadChannelFromVector::new(pieces.clone());
+        let mut channel = DownloadChannelFromVector::new(pieces.clone());
         let mut piece_downloader =
-            PieceDownloader::new(channel, piece_hashes, piece_length, file_data.len())
+            PieceDownloader::new(&mut channel, piece_hashes, piece_length, file_data.len())
                 .with_block_length(3);
 
         let downloaded_data = piece_downloader.download_all().unwrap();
         assert_eq!(file_data, downloaded_data);
-    }
-
-    #[test]
-    fn test_download_piece() {
-        let pieces = vec![
-            vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
-            vec![11, 12, 13, 14, 15, 16, 17, 18, 19, 20],
-        ];
-        let piece_hashes = pieces
-            .iter()
-            .map(|p| Sha1::calculate(p))
-            .collect::<Vec<_>>();
-
-        let channel = DownloadChannelFromVector::new(pieces.clone());
-        let mut piece_downloader =
-            PieceDownloader::new(channel, piece_hashes, 10, 20).with_block_length(3);
-
-        let downloaded_piece = piece_downloader.download_piece(1, 10).unwrap();
-        assert_eq!(pieces[1], downloaded_piece);
     }
 
     #[test]
@@ -264,17 +250,17 @@ mod tests {
         ];
         let piece_hashes = pieces.iter().map(|_p| zero_sha1()).collect::<Vec<_>>();
 
-        let channel = DownloadChannelFromVector::new(pieces.clone());
+        let mut channel = DownloadChannelFromVector::new(pieces.clone());
         let mut piece_downloader =
-            PieceDownloader::new(channel, piece_hashes, 10, 20).with_block_length(3);
+            PieceDownloader::new(&mut channel, piece_hashes, 10, 20).with_block_length(3);
 
-        piece_downloader.download_piece(0, 10).unwrap();
+        piece_downloader.download_all().unwrap();
     }
 
     #[test]
     #[should_panic]
     fn test_unexpected_offset_in_response() {
-        let channel = ErrorDownloadChannel {
+        let mut channel = ErrorDownloadChannel {
             block_to_send: Block {
                 piece_index: 0,
                 offset: 1,
@@ -283,15 +269,15 @@ mod tests {
         };
 
         let mut piece_downloader =
-            PieceDownloader::new(channel, vec![Sha1::new([0; 20])], 3, 3).with_block_length(3);
+            PieceDownloader::new(&mut channel, vec![Sha1::new([0; 20])], 3, 3).with_block_length(3);
 
-        piece_downloader.download_piece(0, 3).unwrap();
+        piece_downloader.download_all().unwrap();
     }
 
     #[test]
     #[should_panic]
     fn test_unexpected_data_length_in_response() {
-        let channel = ErrorDownloadChannel {
+        let mut channel = ErrorDownloadChannel {
             block_to_send: Block {
                 piece_index: 0,
                 offset: 0,
@@ -300,15 +286,15 @@ mod tests {
         };
 
         let mut piece_downloader =
-            PieceDownloader::new(channel, vec![zero_sha1()], 3, 3).with_block_length(3);
+            PieceDownloader::new(&mut channel, vec![zero_sha1()], 3, 3).with_block_length(3);
 
-        piece_downloader.download_piece(0, 3).unwrap();
+        piece_downloader.download_all().unwrap();
     }
 
     #[test]
     #[should_panic]
     fn test_unexpected_piece_index_in_response() {
-        let channel = ErrorDownloadChannel {
+        let mut channel = ErrorDownloadChannel {
             block_to_send: Block {
                 piece_index: 1,
                 offset: 0,
@@ -317,9 +303,9 @@ mod tests {
         };
 
         let mut piece_downloader =
-            PieceDownloader::new(channel, vec![zero_sha1()], 3, 3).with_block_length(3);
+            PieceDownloader::new(&mut channel, vec![zero_sha1()], 3, 3).with_block_length(3);
 
-        piece_downloader.download_piece(0, 3).unwrap();
+        piece_downloader.download_all().unwrap();
     }
 
     struct DownloadChannelFromVector {
@@ -336,7 +322,7 @@ mod tests {
         }
     }
 
-    impl PieceDownloadChannel for DownloadChannelFromVector {
+    impl DownloadChannel for DownloadChannelFromVector {
         fn request(&mut self, piece_index: u32, offset: u32, length: u32) -> io::Result<()> {
             assert!(self.requested_block.is_none());
             self.requested_block = Some((piece_index, offset, length));
@@ -364,7 +350,7 @@ mod tests {
         block_to_send: Block,
     }
 
-    impl PieceDownloadChannel for ErrorDownloadChannel {
+    impl DownloadChannel for ErrorDownloadChannel {
         fn request(&mut self, _piece_index: u32, _offset: u32, _length: u32) -> io::Result<()> {
             Ok(())
         }

@@ -1,5 +1,5 @@
 mod bencoding;
-mod downloader;
+pub mod downloader;
 mod tracker;
 pub mod types;
 
@@ -10,7 +10,6 @@ use crate::{
     },
     types::Sha1,
 };
-pub use downloader::{FileDownloader, Piece};
 use std::fs;
 pub use tracker::{AnnounceParams, get_peer_list_from_response, make_announce_request};
 

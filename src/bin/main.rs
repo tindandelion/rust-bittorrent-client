@@ -1,8 +1,9 @@
 use std::error::Error;
 
 use bt_client::{
-    AnnounceParams, FileDownloader, get_peer_list_from_response, get_piece_hashes,
-    make_announce_request, read_torrent_file,
+    AnnounceParams,
+    downloader::{self, PeerChannel},
+    get_peer_list_from_response, get_piece_hashes, make_announce_request, read_torrent_file,
     types::{Peer, PeerId, Sha1},
 };
 
@@ -67,7 +68,7 @@ fn connect_to_first_available_peer(
     peers: &[Peer],
     info_hash: Sha1,
     peer_id: PeerId,
-) -> Option<FileDownloader> {
+) -> Option<PeerChannel> {
     for peer in peers {
         print!("{}:{}\t-> ", peer.ip, peer.port);
         match probe_peer(&peer, info_hash, peer_id) {
@@ -85,29 +86,29 @@ fn probe_peer(
     peer: &Peer,
     info_hash: Sha1,
     peer_id: PeerId,
-) -> Result<(String, FileDownloader), Box<dyn Error>> {
+) -> Result<(String, PeerChannel), Box<dyn Error>> {
     let peer_addr = peer.to_socket_addr()?;
-    let mut downloader = FileDownloader::connect(&peer_addr)?;
-    let handshake_result = downloader.handshake(info_hash, peer_id)?;
-    Ok((format!("{:?}", handshake_result), downloader))
+    let mut channel = PeerChannel::connect(&peer_addr)?;
+    let handshake_result = channel.handshake(info_hash, peer_id)?;
+    Ok((format!("{:?}", handshake_result), channel))
 }
 
 fn download_file(
-    downloader: &mut FileDownloader,
+    channel: &mut PeerChannel,
     piece_hashes: Vec<Sha1>,
     piece_length: u32,
     file_length: usize,
 ) -> Result<Vec<u8>, Box<dyn Error>> {
-    let bitfield = downloader.receive_bitfield()?;
+    let bitfield = channel.receive_bitfield()?;
     println!("* Received bitfield: {}", hex::encode(bitfield));
 
     println!("* Sending `interested` message");
-    downloader.send_interested()?;
+    channel.send_interested()?;
 
     println!("* Receiving `unchoke` message");
-    downloader.receive_unchoke()?;
+    channel.receive_unchoke()?;
 
     println!("* Unchoked, requesting file");
-    let file_content = downloader.download_file(piece_hashes, piece_length, file_length)?;
+    let file_content = downloader::download_file(channel, piece_hashes, piece_length, file_length)?;
     Ok(file_content)
 }
