@@ -25,21 +25,22 @@ impl PeerMessage {
     pub fn receive(src: &mut impl io::Read) -> io::Result<Self> {
         let msg_len = Self::read_message_length(src)?;
         let (id, payload) = Self::read_message_payload(src, msg_len)?;
-        match id {
-            1 => Ok(Self::Unchoke),
-            5 => Ok(Self::Bitfield(payload)),
+        let received = match id {
+            1 => Self::Unchoke,
+            5 => Self::Bitfield(payload),
             7 => {
                 let piece_index = u32::from_be_bytes(payload[0..4].try_into().unwrap());
                 let offset = u32::from_be_bytes(payload[4..8].try_into().unwrap());
                 let block = payload[8..].to_vec();
-                Ok(Self::Piece {
+                Self::Piece {
                     piece_index,
                     offset,
                     block,
-                })
+                }
             }
-            _ => Ok(Self::Unknown { id, payload }),
-        }
+            _ => Self::Unknown { id, payload },
+        };
+        Ok(received)
     }
 
     pub fn send(self, dst: &mut impl io::Write) -> io::Result<()> {
@@ -68,8 +69,12 @@ impl PeerMessage {
 
     fn read_message_length(src: &mut impl io::Read) -> io::Result<usize> {
         let mut buffer = [0_u8; 4];
-        src.read_exact(&mut buffer)?;
-        Ok(u32::from_be_bytes(buffer) as usize)
+        let mut msg_len = 0;
+        while msg_len == 0 {
+            src.read_exact(&mut buffer)?;
+            msg_len = u32::from_be_bytes(buffer)
+        }
+        Ok(msg_len as usize)
     }
 
     fn read_message_payload(src: &mut impl io::Read, msg_len: usize) -> io::Result<(u8, Vec<u8>)> {
@@ -134,6 +139,28 @@ mod tests {
     #[test]
     fn receive_piece_message() {
         let buffer = vec![
+            0, 0, 0, 13, // Message length
+            7,  // Message id
+            0, 0, 0, 1, // Piece index
+            0, 0, 0, 10, // Offset
+            1, 2, 3, 4, // Block
+        ];
+        let message = PeerMessage::receive(&mut buffer.as_slice()).unwrap();
+        assert_eq!(
+            PeerMessage::Piece {
+                piece_index: 1,
+                offset: 10,
+                block: vec![1, 2, 3, 4]
+            },
+            message
+        );
+    }
+
+    #[test]
+    fn skip_keep_alive_messages() {
+        let buffer = vec![
+            0, 0, 0, 0, // First keep-alive
+            0, 0, 0, 0, // Second keep-alive
             0, 0, 0, 13, // Message length
             7,  // Message id
             0, 0, 0, 1, // Piece index

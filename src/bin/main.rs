@@ -1,4 +1,4 @@
-use std::error::Error;
+use std::{error::Error, time::Duration};
 
 use bt_client::{
     AnnounceParams,
@@ -52,10 +52,15 @@ fn main() -> Result<(), Box<dyn Error>> {
     if let Some(mut downloader) = connect_to_first_available_peer(&peers, info_hash, peer_id) {
         println!("* Connected to peer: {:?}", downloader.peer_addr()?);
 
-        let file_content = download_file(&mut downloader, piece_hashes, piece_length, file_length)?;
+        let (file_content, download_duration) =
+            download_file(&mut downloader, piece_hashes, piece_length, file_length)?;
         println!(
-            "* Received file, first 128 bytes: {}",
+            "* Received entire file, first 128 bytes: {}",
             hex::encode(&file_content[..128])
+        );
+        println!(
+            "* File size: {}, download duration: {:?}",
+            file_length, download_duration
         );
     } else {
         println!("* No peer responded");
@@ -98,7 +103,7 @@ fn download_file(
     piece_hashes: Vec<Sha1>,
     piece_length: u32,
     file_length: usize,
-) -> Result<Vec<u8>, Box<dyn Error>> {
+) -> Result<(Vec<u8>, Duration), Box<dyn Error>> {
     let bitfield = channel.receive_bitfield()?;
     println!("* Received bitfield: {}", hex::encode(bitfield));
 
@@ -109,6 +114,8 @@ fn download_file(
     channel.receive_unchoke()?;
 
     println!("* Unchoked, requesting file");
+    let download_start = std::time::Instant::now();
     let file_content = downloader::download_file(channel, piece_hashes, piece_length, file_length)?;
-    Ok(file_content)
+    let download_duration = download_start.elapsed();
+    Ok((file_content, download_duration))
 }
