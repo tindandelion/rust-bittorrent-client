@@ -7,9 +7,9 @@ use std::{
 
 use crate::types::{PeerId, Sha1};
 
+use super::file_downloader::{Block, DownloadChannel};
 use super::handshake_message::HandshakeMessage;
 use super::peer_messages::PeerMessage;
-use super::piece_downloader::{Block, DownloadChannel};
 
 pub struct PeerChannel {
     stream: TcpStream,
