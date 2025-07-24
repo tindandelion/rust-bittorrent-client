@@ -1,7 +1,7 @@
 ---
 layout: post
 title:  "Downloading the entire file"
-date: 2025-07-23
+date: 2025-07-24
 ---
 
 We've managed to [download and verify a single piece][prev-post]. After that, extending the code to download the entire file is quite a straightforward progression. Since we know how many pieces there are, we can simply download them one by one, similar to how we were downloading a single piece in 16Kb blocks. Only the last piece would require special care, because it can be shorter than the others. 
