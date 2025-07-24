@@ -6,6 +6,8 @@ date: 2025-07-18
 
 Now that we're able to [download a portion of the file][prev-post] from the remote peer, I'm tempted to milk this cow dry. Let's now download the entire file piece and verify its validity by checking its SHA-1 hash. 
 
+[*Version 0.0.7 on GitHub*](https://github.com/tindandelion/rust-bittorrent-client/tree/0.0.7){: .no-github-icon}
+
 # Some wild assumptions
 
 For the first version, I'm going to make a few important simplifications to the download algorithm: 
@@ -67,7 +69,8 @@ It took a couple of seconds in this run for our program to download the piece. A
 
 # Next steps 
 
-Since we have successfully downloaded a single piece, it's only natural to capitalize on this success. I think the next step is going to be downloading the entire file! 
+Since we have successfully downloaded a single piece, it's only natural to capitalize on this success. I think the [next step][next-post] is going to be downloading the entire file! 
 
 [prev-post]: {{site.baseurl}}/{% post_url 2025-07-17-downloading-file-block %}
 [bt-spec-info-dict]: https://wiki.theory.org/BitTorrentSpecification#Info_Dictionary
+[next-post]: {{site.baseurl}}/{% post_url 2025-07-23-download-the-whole-file %}

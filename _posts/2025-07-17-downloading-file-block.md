@@ -10,6 +10,8 @@ It's a bit of a diversion from my [original plan][original-plan], but I'm eager 
 
 So let's spearhead a little bit in this direction. The goal of this section is to be able to download at least a single byte of the file from the remote peer. Let's do it! 
 
+[*Version 0.0.6 on GitHub*](https://github.com/tindandelion/rust-bittorrent-client/tree/0.0.6){: .no-github-icon}
+
 # Peer message format 
 
 Once the TCP connection is established and peers have exchanged the handshake messages, they are ready to start collaborating. The communication is bi-directional and symmetrical, meaning that the messages sent in both directions look the same, and the data flow can go in either direction. On a low level, all peer messages [have the same format](https://wiki.theory.org/BitTorrentSpecification#Messages): 
