@@ -23,7 +23,7 @@ Writing a fully-fledged BitTorrent client is quite a big task, so for my pet pro
 
 ### Project blog
 
-Like in my [previous project][first-rust-project], I've decided to document my journey in a form of a [project diary][project-blog].
+Like in my [previous project][first-rust-project], I've decided to document my journey in a form of a [project diary][project-blog], to share what I've learned along the way.
 
 [first-rust-project]: https://www.tindandelion.com/rust-text-compression/
 [project-blog]: https://www.tindandelion.com/rust-bittorrent-client/
