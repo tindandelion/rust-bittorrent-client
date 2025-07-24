@@ -44,9 +44,15 @@ impl<'a, T: DownloadChannel> FileDownloader<'a, T> {
         let mut buffer = vec![0; self.file_length];
 
         for piece_index in 0..self.pieces_count() {
-            eprintln!("Downloading piece {}", piece_index);
+            println!("- Downloading piece {}", piece_index);
             let (piece_start, piece_end, piece_length) = self.calc_piece_bounds(piece_index);
+            let download_start = std::time::Instant::now();
             let piece = self.download_piece(piece_index, piece_length)?;
+            println!(
+                "- Downloaded piece {}, time: {} ms",
+                piece_index,
+                download_start.elapsed().as_millis()
+            );
             buffer[piece_start..piece_end].copy_from_slice(&piece);
         }
 
@@ -77,8 +83,11 @@ impl<'a, T: DownloadChannel> FileDownloader<'a, T> {
         let block_offset = block_index * self.block_length;
         let block_length = self.block_length.min(piece_length - block_offset);
 
+        let request_start = std::time::Instant::now();
+        print!("-- Requesting block: ");
         self.channel
             .request(piece_index, block_offset, block_length)?;
+        println!("{} ms", request_start.elapsed().as_millis());
         Ok((block_offset, block_length))
     }
 
@@ -88,7 +97,10 @@ impl<'a, T: DownloadChannel> FileDownloader<'a, T> {
         block_offset: u32,
         block_length: u32,
     ) -> io::Result<Vec<u8>> {
+        let receive_start = std::time::Instant::now();
+        print!("-- Receiving block: ");
         let block = self.channel.receive()?;
+        println!("{} ms", receive_start.elapsed().as_millis());
         self.verify_received_block(&block, piece_index, block_offset, block_length)?;
         Ok(block.data)
     }
