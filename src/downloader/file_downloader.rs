@@ -196,6 +196,8 @@ impl<'a, T: DownloadChannel> FileDownloader<'a, T> {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::VecDeque;
+
     use crate::types::Sha1;
 
     use super::*;
@@ -318,29 +320,26 @@ mod tests {
 
     struct DownloadChannelFromVector {
         pieces: Vec<Vec<u8>>,
-        requested_block: Option<(u32, u32, u32)>,
+        requests: VecDeque<(u32, u32, u32)>,
     }
 
     impl DownloadChannelFromVector {
         fn new(pieces: Vec<Vec<u8>>) -> Self {
             Self {
                 pieces,
-                requested_block: None,
+                requests: VecDeque::new(),
             }
         }
     }
 
     impl DownloadChannel for DownloadChannelFromVector {
         fn request(&mut self, piece_index: u32, offset: u32, length: u32) -> io::Result<()> {
-            assert!(self.requested_block.is_none());
-            self.requested_block = Some((piece_index, offset, length));
+            self.requests.push_back((piece_index, offset, length));
             Ok(())
         }
 
         fn receive(&mut self) -> io::Result<Block> {
-            if let Some((piece_index, offset, length)) = self.requested_block {
-                self.requested_block = None;
-
+            if let Some((piece_index, offset, length)) = self.requests.pop_front() {
                 let piece = &self.pieces[piece_index as usize];
                 let data = piece[offset as usize..(offset + length) as usize].to_vec();
                 Ok(Block {
