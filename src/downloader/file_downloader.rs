@@ -74,35 +74,18 @@ impl<'a, T: DownloadChannel> FileDownloader<'a, T> {
         Ok(buffer)
     }
 
-    fn request_block(
-        &mut self,
-        piece_index: u32,
-        block_index: u32,
-        piece_length: u32,
-    ) -> io::Result<(u32, u32)> {
-        let block_offset = block_index * self.block_length;
-        let block_length = self.block_length.min(piece_length - block_offset);
-
-        let request_start = std::time::Instant::now();
-        print!("-- Requesting block: ");
-        self.channel
-            .request(piece_index, block_offset, block_length)?;
-        println!("{} ms", request_start.elapsed().as_millis());
-        Ok((block_offset, block_length))
-    }
-
     fn receive_block(
         &mut self,
         piece_index: u32,
         block_offset: u32,
         block_length: u32,
-    ) -> io::Result<Vec<u8>> {
+    ) -> io::Result<Block> {
         let receive_start = std::time::Instant::now();
         print!("-- Receiving block: ");
         let block = self.channel.receive()?;
         println!("{} ms", receive_start.elapsed().as_millis());
         self.verify_received_block(&block, piece_index, block_offset, block_length)?;
-        Ok(block.data)
+        Ok(block)
     }
 
     fn verify_received_block(
@@ -113,32 +96,19 @@ impl<'a, T: DownloadChannel> FileDownloader<'a, T> {
         expected_length: u32,
     ) -> io::Result<()> {
         if block.piece_index != expected_piece_index {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                format!(
-                    "Unexpected piece index in response: expected {}, got {}",
-                    expected_piece_index, block.piece_index
-                ),
+            return Err(unexpected_piece_index(
+                expected_piece_index,
+                block.piece_index,
             ));
         }
 
         if block.offset != expected_offset {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                format!(
-                    "Unexpected block offset in response: expected {}, got {}",
-                    expected_offset, block.offset
-                ),
-            ));
+            return Err(unexpected_block_offset(expected_offset, block.offset));
         }
         if block.data.len() != expected_length as usize {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                format!(
-                    "Unexpected block data length in response: expected {}, got {}",
-                    expected_length,
-                    block.data.len()
-                ),
+            return Err(unexpected_block_length(
+                expected_length,
+                block.data.len() as u32,
             ));
         }
 
@@ -164,15 +134,14 @@ impl<'a, T: DownloadChannel> FileDownloader<'a, T> {
         piece_length: u32,
     ) -> io::Result<Vec<u8>> {
         let mut buffer = vec![0; piece_length as usize];
+        let mut emitter = RequestEmitter::new(self.block_length, piece_index, piece_length);
 
-        let block_count = piece_length.div_ceil(self.block_length);
-        for block_index in 0..block_count {
-            let (block_offset, block_length) =
-                self.request_block(piece_index, block_index, piece_length)?;
-            let data = self.receive_block(piece_index, block_offset, block_length)?;
+        while let Some((block_offset, block_length)) = emitter.request_next_block(self.channel)? {
+            let block = self.receive_block(piece_index, block_offset, block_length)?;
             buffer[block_offset as usize..(block_offset + block_length) as usize]
-                .copy_from_slice(&data);
+                .copy_from_slice(&block.data);
         }
+
         Ok(buffer)
     }
 
@@ -191,6 +160,77 @@ impl<'a, T: DownloadChannel> FileDownloader<'a, T> {
     fn with_block_length(mut self, block_length: u32) -> Self {
         self.block_length = block_length;
         self
+    }
+}
+
+fn unexpected_piece_index(expected: u32, actual: u32) -> io::Error {
+    io::Error::new(
+        io::ErrorKind::InvalidData,
+        format!(
+            "Unexpected piece index in response: expected {}, got {}",
+            expected, actual
+        ),
+    )
+}
+
+fn unexpected_block_offset(expected: u32, actual: u32) -> io::Error {
+    io::Error::new(
+        io::ErrorKind::InvalidData,
+        format!(
+            "Unexpected block offset in response: expected {}, got {}",
+            expected, actual
+        ),
+    )
+}
+
+fn unexpected_block_length(expected: u32, actual: u32) -> io::Error {
+    io::Error::new(
+        io::ErrorKind::InvalidData,
+        format!(
+            "Unexpected block data length in response: expected {}, got {}",
+            expected, actual
+        ),
+    )
+}
+
+struct RequestEmitter {
+    block_length: u32,
+    piece_index: u32,
+    piece_length: u32,
+    block_count: u32,
+    next_block_index: u32,
+}
+
+impl RequestEmitter {
+    fn new(block_length: u32, piece_index: u32, piece_length: u32) -> Self {
+        let block_count = piece_length.div_ceil(block_length);
+        Self {
+            block_length,
+            piece_index,
+            piece_length,
+            block_count,
+            next_block_index: 0,
+        }
+    }
+
+    fn request_next_block(
+        &mut self,
+        channel: &mut impl DownloadChannel,
+    ) -> io::Result<Option<(u32, u32)>> {
+        if self.next_block_index >= self.block_count {
+            return Ok(None);
+        }
+
+        let block_index = self.next_block_index;
+        let block_offset = block_index * self.block_length;
+        let block_length = self.block_length.min(self.piece_length - block_offset);
+
+        let request_start = std::time::Instant::now();
+        print!("-- Requesting block: ");
+        channel.request(self.piece_index, block_offset, block_length)?;
+        println!("{} ms", request_start.elapsed().as_millis());
+        self.next_block_index += 1;
+        Ok(Some((block_offset, block_length)))
     }
 }
 
@@ -268,7 +308,6 @@ mod tests {
     }
 
     #[test]
-    #[should_panic]
     fn test_unexpected_offset_in_response() {
         let mut channel = ErrorDownloadChannel {
             block_to_send: Block {
@@ -281,11 +320,11 @@ mod tests {
         let mut piece_downloader =
             FileDownloader::new(&mut channel, vec![Sha1::new([0; 20])], 3, 3).with_block_length(3);
 
-        piece_downloader.download().unwrap();
+        let error = piece_downloader.download().unwrap_err();
+        assert_eq!(unexpected_block_offset(0, 1).to_string(), error.to_string());
     }
 
     #[test]
-    #[should_panic]
     fn test_unexpected_data_length_in_response() {
         let mut channel = ErrorDownloadChannel {
             block_to_send: Block {
@@ -298,11 +337,11 @@ mod tests {
         let mut piece_downloader =
             FileDownloader::new(&mut channel, vec![zero_sha1()], 3, 3).with_block_length(3);
 
-        piece_downloader.download().unwrap();
+        let error = piece_downloader.download().unwrap_err();
+        assert_eq!(unexpected_block_length(3, 2).to_string(), error.to_string());
     }
 
     #[test]
-    #[should_panic]
     fn test_unexpected_piece_index_in_response() {
         let mut channel = ErrorDownloadChannel {
             block_to_send: Block {
@@ -315,7 +354,8 @@ mod tests {
         let mut piece_downloader =
             FileDownloader::new(&mut channel, vec![zero_sha1()], 3, 3).with_block_length(3);
 
-        piece_downloader.download().unwrap();
+        let error = piece_downloader.download().unwrap_err();
+        assert_eq!(unexpected_piece_index(0, 1).to_string(), error.to_string());
     }
 
     struct DownloadChannelFromVector {
