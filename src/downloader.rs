@@ -9,10 +9,10 @@ pub use file_downloader::DownloadChannel;
 use file_downloader::FileDownloader;
 pub use peer_channel::PeerChannel;
 
-use crate::types::Sha1;
+use crate::{downloader::file_downloader::RequestChannel, types::Sha1};
 
 pub fn download_file(
-    channel: &mut impl DownloadChannel,
+    channel: &mut (impl RequestChannel + DownloadChannel),
     piece_hashes: Vec<Sha1>,
     piece_length: u32,
     file_length: usize,

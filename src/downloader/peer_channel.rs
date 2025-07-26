@@ -7,7 +7,7 @@ use std::{
 
 use crate::types::{PeerId, Sha1};
 
-use super::file_downloader::{Block, DownloadChannel};
+use super::file_downloader::{Block, DownloadChannel, RequestChannel};
 use super::handshake_message::HandshakeMessage;
 use super::peer_messages::PeerMessage;
 
@@ -61,7 +61,7 @@ impl PeerChannel {
     }
 }
 
-impl DownloadChannel for PeerChannel {
+impl RequestChannel for PeerChannel {
     fn request(&mut self, piece_index: u32, offset: u32, length: u32) -> io::Result<()> {
         PeerMessage::Request {
             piece_index,
@@ -70,7 +70,9 @@ impl DownloadChannel for PeerChannel {
         }
         .send(&mut self.stream)
     }
+}
 
+impl DownloadChannel for PeerChannel {
     fn receive(&mut self) -> io::Result<Block> {
         let msg = PeerMessage::receive(&mut self.stream)?;
         match msg {

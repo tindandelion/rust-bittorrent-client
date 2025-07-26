@@ -9,12 +9,15 @@ pub struct Block {
     pub data: Vec<u8>,
 }
 
-pub trait DownloadChannel {
+pub trait RequestChannel {
     fn request(&mut self, piece_index: u32, offset: u32, length: u32) -> io::Result<()>;
+}
+
+pub trait DownloadChannel {
     fn receive(&mut self) -> io::Result<Block>;
 }
 
-pub struct FileDownloader<'a, T: DownloadChannel> {
+pub struct FileDownloader<'a, T: RequestChannel + DownloadChannel> {
     channel: &'a mut T,
     piece_hashes: Vec<Sha1>,
     file_length: usize,
@@ -22,7 +25,7 @@ pub struct FileDownloader<'a, T: DownloadChannel> {
     block_length: u32,
 }
 
-impl<'a, T: DownloadChannel> FileDownloader<'a, T> {
+impl<'a, T: RequestChannel + DownloadChannel> FileDownloader<'a, T> {
     const BLOCK_LENGTH: u32 = 1 << 14;
 
     pub fn new(
@@ -192,32 +195,29 @@ struct RequestEmitter {
     block_length: u32,
     piece_index: u32,
     piece_length: u32,
-    block_count: u32,
     next_block_index: u32,
 }
 
 impl RequestEmitter {
     fn new(block_length: u32, piece_index: u32, piece_length: u32) -> Self {
-        let block_count = piece_length.div_ceil(block_length);
         Self {
             block_length,
             piece_index,
             piece_length,
-            block_count,
             next_block_index: 0,
         }
     }
 
     fn request_next_block(
         &mut self,
-        channel: &mut impl DownloadChannel,
+        channel: &mut impl RequestChannel,
     ) -> io::Result<Option<(u32, u32)>> {
-        if self.next_block_index >= self.block_count {
+        let block_count = self.piece_length.div_ceil(self.block_length);
+        if self.next_block_index >= block_count {
             return Ok(None);
         }
 
-        let block_index = self.next_block_index;
-        let block_offset = block_index * self.block_length;
+        let block_offset = self.next_block_index * self.block_length;
         let block_length = self.block_length.min(self.piece_length - block_offset);
 
         let request_start = std::time::Instant::now();
@@ -226,6 +226,69 @@ impl RequestEmitter {
         println!("{} ms", request_start.elapsed().as_millis());
         self.next_block_index += 1;
         Ok(Some((block_offset, block_length)))
+    }
+}
+
+#[cfg(test)]
+mod request_emitter_tests {
+    use super::*;
+
+    #[test]
+    fn request_blocks_before_all_blocks_are_requested() {
+        let block_length = 10;
+        let piece_length = 100;
+        let mut emitter = RequestEmitter::new(block_length, 0, piece_length);
+        let mut channel = RequestRecorder::new();
+
+        emitter.request_next_block(&mut channel).unwrap();
+        emitter.request_next_block(&mut channel).unwrap();
+        assert_eq!(channel.requests, vec![(0, 0, 10), (0, 10, 10)]);
+    }
+
+    #[test]
+    fn request_blocks_until_end_of_piece() {
+        let block_length = 10;
+        let piece_length = 15;
+        let mut emitter = RequestEmitter::new(block_length, 0, piece_length);
+        let mut channel = RequestRecorder::new();
+
+        emitter.request_next_block(&mut channel).unwrap();
+        emitter.request_next_block(&mut channel).unwrap();
+        assert_eq!(channel.requests, vec![(0, 0, 10), (0, 10, 5)]);
+    }
+
+    #[test]
+    fn stop_requesting_blocks_past_end_of_piece() {
+        let block_length = 10;
+        let piece_length = 15;
+        let mut emitter = RequestEmitter::new(block_length, 0, piece_length);
+        let mut channel = RequestRecorder::new();
+
+        emitter.request_next_block(&mut channel).unwrap();
+        emitter.request_next_block(&mut channel).unwrap();
+        let final_result = emitter.request_next_block(&mut channel).unwrap();
+
+        assert_eq!(final_result, None);
+        assert_eq!(channel.requests, vec![(0, 0, 10), (0, 10, 5)]);
+    }
+
+    struct RequestRecorder {
+        requests: Vec<(u32, u32, u32)>,
+    }
+
+    impl RequestRecorder {
+        fn new() -> Self {
+            Self {
+                requests: Vec::new(),
+            }
+        }
+    }
+
+    impl RequestChannel for RequestRecorder {
+        fn request(&mut self, piece_index: u32, offset: u32, length: u32) -> io::Result<()> {
+            self.requests.push((piece_index, offset, length));
+            Ok(())
+        }
     }
 }
 
@@ -367,12 +430,14 @@ mod tests {
         }
     }
 
-    impl DownloadChannel for DownloadChannelFromVector {
+    impl RequestChannel for DownloadChannelFromVector {
         fn request(&mut self, piece_index: u32, offset: u32, length: u32) -> io::Result<()> {
             self.requests.push_back((piece_index, offset, length));
             Ok(())
         }
+    }
 
+    impl DownloadChannel for DownloadChannelFromVector {
         fn receive(&mut self) -> io::Result<Block> {
             if let Some((piece_index, offset, length)) = self.requests.pop_front() {
                 let piece = &self.pieces[piece_index as usize];
@@ -392,11 +457,13 @@ mod tests {
         block_to_send: Block,
     }
 
-    impl DownloadChannel for ErrorDownloadChannel {
+    impl RequestChannel for ErrorDownloadChannel {
         fn request(&mut self, _piece_index: u32, _offset: u32, _length: u32) -> io::Result<()> {
             Ok(())
         }
+    }
 
+    impl DownloadChannel for ErrorDownloadChannel {
         fn receive(&mut self) -> io::Result<Block> {
             Ok(self.block_to_send.clone())
         }
