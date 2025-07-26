@@ -74,17 +74,11 @@ impl<'a, T: DownloadChannel> FileDownloader<'a, T> {
         Ok(buffer)
     }
 
-    fn receive_block(
-        &mut self,
-        piece_index: u32,
-        block_offset: u32,
-        block_length: u32,
-    ) -> io::Result<Block> {
+    fn receive_block(&mut self) -> io::Result<Block> {
         let receive_start = std::time::Instant::now();
         print!("-- Receiving block: ");
         let block = self.channel.receive()?;
         println!("{} ms", receive_start.elapsed().as_millis());
-        self.verify_received_block(&block, piece_index, block_offset, block_length)?;
         Ok(block)
     }
 
@@ -137,7 +131,8 @@ impl<'a, T: DownloadChannel> FileDownloader<'a, T> {
         let mut emitter = RequestEmitter::new(self.block_length, piece_index, piece_length);
 
         while let Some((block_offset, block_length)) = emitter.request_next_block(self.channel)? {
-            let block = self.receive_block(piece_index, block_offset, block_length)?;
+            let block = self.receive_block()?;
+            self.verify_received_block(&block, piece_index, block_offset, block_length)?;
             buffer[block_offset as usize..(block_offset + block_length) as usize]
                 .copy_from_slice(&block.data);
         }
