@@ -17,12 +17,29 @@ pub trait DownloadChannel {
     fn receive(&mut self) -> io::Result<Block>;
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct FileInfo {
+    file_length: usize,
+    piece_length: u32,
+}
+
+impl FileInfo {
+    fn calc_piece_bounds(&self, piece_index: u32) -> (usize, usize, u32) {
+        let piece_start = piece_index as usize * self.piece_length as usize;
+        let mut piece_end = (piece_index as usize + 1) * self.piece_length as usize;
+        if piece_end > self.file_length {
+            piece_end = self.file_length;
+        };
+        (piece_start, piece_end, (piece_end - piece_start) as u32)
+    }
+}
+
 pub struct FileDownloader<'a, T: RequestChannel + DownloadChannel> {
     channel: &'a mut T,
     piece_hashes: Vec<Sha1>,
-    file_length: usize,
-    piece_length: u32,
     block_length: u32,
+    file_info: FileInfo,
+    composer: PieceComposer,
 }
 
 impl<'a, T: RequestChannel + DownloadChannel> FileDownloader<'a, T> {
@@ -34,21 +51,26 @@ impl<'a, T: RequestChannel + DownloadChannel> FileDownloader<'a, T> {
         piece_length: u32,
         file_length: usize,
     ) -> Self {
+        let file_info = FileInfo {
+            piece_length,
+            file_length,
+        };
         Self {
             channel,
             piece_hashes,
-            file_length,
-            piece_length,
+            file_info,
+            composer: PieceComposer::new(file_info),
             block_length: Self::BLOCK_LENGTH,
         }
     }
 
     pub fn download(&mut self) -> io::Result<Vec<u8>> {
-        let mut buffer = vec![0; self.file_length];
+        let mut buffer = vec![0; self.file_info.file_length];
 
         for piece_index in 0..self.pieces_count() {
             println!("- Downloading piece {}", piece_index);
-            let (piece_start, piece_end, piece_length) = self.calc_piece_bounds(piece_index);
+            let (piece_start, piece_end, piece_length) =
+                self.file_info.calc_piece_bounds(piece_index);
             let download_start = std::time::Instant::now();
             let piece = self.download_piece(piece_index, piece_length)?;
             println!(
@@ -85,27 +107,8 @@ impl<'a, T: RequestChannel + DownloadChannel> FileDownloader<'a, T> {
         Ok(block)
     }
 
-    fn verify_received_block(&self, block: &Block, expected_piece_index: u32) -> io::Result<()> {
-        if block.piece_index != expected_piece_index {
-            return Err(unexpected_piece_index(
-                expected_piece_index,
-                block.piece_index,
-            ));
-        }
-        Ok(())
-    }
-
     fn pieces_count(&self) -> u32 {
         self.piece_hashes.len() as u32
-    }
-
-    fn calc_piece_bounds(&self, piece_index: u32) -> (usize, usize, u32) {
-        let piece_start = piece_index as usize * self.piece_length as usize;
-        let mut piece_end = (piece_index as usize + 1) * self.piece_length as usize;
-        if piece_end > self.file_length {
-            piece_end = self.file_length;
-        };
-        (piece_start, piece_end, (piece_end - piece_start) as u32)
     }
 
     fn download_piece_by_block(
@@ -114,14 +117,11 @@ impl<'a, T: RequestChannel + DownloadChannel> FileDownloader<'a, T> {
         piece_length: u32,
     ) -> io::Result<Vec<u8>> {
         let mut emitter = RequestEmitter::new(self.block_length, piece_index, piece_length);
-        let mut composer = PieceComposer::new(piece_length);
-
         emitter.request_first_blocks(self.channel)?;
 
         loop {
             let block = self.receive_block()?;
-            self.verify_received_block(&block, piece_index)?;
-            if let Some(piece) = composer.append_block(&block)? {
+            if let Some(piece) = self.composer.append_block(&block)? {
                 return Ok(piece);
             }
             emitter.request_next_block(self.channel)?;
@@ -218,33 +218,57 @@ impl RequestEmitter {
 }
 
 struct PieceComposer {
+    piece_index: Option<u32>,
     buffer: Vec<u8>,
-    piece_length: u32,
+    file_info: FileInfo,
 }
 
 impl PieceComposer {
-    fn new(piece_length: u32) -> Self {
+    fn new(file_info: FileInfo) -> Self {
         Self {
-            piece_length,
-            buffer: Vec::with_capacity(piece_length as usize),
+            buffer: Vec::with_capacity(file_info.piece_length as usize),
+            file_info,
+            piece_index: None,
         }
     }
 
     fn append_block(&mut self, block: &Block) -> io::Result<Option<Vec<u8>>> {
+        if self.piece_index.is_none() {
+            self.piece_index = Some(block.piece_index);
+        }
+
+        self.verify_piece_index(block.piece_index)?;
         self.verify_block_offset(block.offset)?;
         self.buffer.extend(&block.data);
 
-        if self.buffer.len() >= self.piece_length as usize {
-            Ok(Some(self.buffer.clone()))
+        if self.buffer.len() >= self.calc_piece_length() as usize {
+            let result = Some(self.buffer.clone());
+            self.buffer.clear();
+            self.piece_index = None;
+            Ok(result)
         } else {
             Ok(None)
         }
+    }
+
+    fn calc_piece_length(&self) -> u32 {
+        let piece_index = self.piece_index.unwrap();
+        let (_, _, piece_length) = self.file_info.calc_piece_bounds(piece_index);
+        piece_length
     }
 
     fn verify_block_offset(&self, offset: u32) -> io::Result<()> {
         let expected_offset = self.buffer.len() as u32;
         if expected_offset != offset {
             return Err(unexpected_block_offset(expected_offset, offset));
+        }
+        Ok(())
+    }
+
+    fn verify_piece_index(&self, piece_index: u32) -> io::Result<()> {
+        let expected = self.piece_index.unwrap();
+        if expected != piece_index {
+            return Err(unexpected_piece_index(expected, piece_index));
         }
         Ok(())
     }
@@ -255,8 +279,11 @@ mod piece_composer_tests {
     use super::*;
 
     #[test]
-    fn append_block_appends_block_data_to_buffer() {
-        let mut composer = PieceComposer::new(10);
+    fn compose_piece_from_blocks() {
+        let mut composer = PieceComposer::new(FileInfo {
+            piece_length: 10,
+            file_length: 100,
+        });
         let first_block = Block {
             piece_index: 0,
             offset: 0,
@@ -277,8 +304,71 @@ mod piece_composer_tests {
     }
 
     #[test]
+    fn compose_last_piece_with_reduced_length_from_blocks() {
+        let mut composer = PieceComposer::new(FileInfo {
+            piece_length: 10,
+            file_length: 17,
+        });
+        let last_piece_index = 1;
+        let first_block = Block {
+            piece_index: last_piece_index,
+            offset: 0,
+            data: vec![1, 2, 3, 4, 5],
+        };
+
+        let second_block = Block {
+            piece_index: last_piece_index,
+            offset: 5,
+            data: vec![6, 7],
+        };
+
+        let buffer = composer.append_block(&first_block).unwrap();
+        assert_eq!(buffer, None);
+
+        let buffer = composer.append_block(&second_block).unwrap();
+        assert_eq!(buffer, Some(vec![1, 2, 3, 4, 5, 6, 7]));
+    }
+
+    #[test]
+    fn starts_composing_new_piece_when_current_is_finished() {
+        let mut composer = PieceComposer::new(FileInfo {
+            piece_length: 10,
+            file_length: 17,
+        });
+        let first_block = Block {
+            piece_index: 0,
+            offset: 0,
+            data: vec![1, 2, 3, 4, 5],
+        };
+
+        let second_block = Block {
+            piece_index: 0,
+            offset: 5,
+            data: vec![6, 7, 8, 9, 10],
+        };
+
+        let third_block = Block {
+            piece_index: 1,
+            offset: 0,
+            data: vec![11, 12, 13, 14, 15, 16, 17],
+        };
+
+        let buffer = composer.append_block(&first_block).unwrap();
+        assert_eq!(buffer, None);
+
+        let buffer = composer.append_block(&second_block).unwrap();
+        assert_eq!(buffer, Some(vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10]));
+
+        let buffer = composer.append_block(&third_block).unwrap();
+        assert_eq!(buffer, Some(vec![11, 12, 13, 14, 15, 16, 17]));
+    }
+
+    #[test]
     fn append_first_block_with_wrong_offset() {
-        let mut composer = PieceComposer::new(10);
+        let mut composer = PieceComposer::new(FileInfo {
+            piece_length: 10,
+            file_length: 100,
+        });
         let block = Block {
             piece_index: 0,
             offset: 1,
@@ -290,7 +380,10 @@ mod piece_composer_tests {
 
     #[test]
     fn append_next_block_with_wrong_offset() {
-        let mut composer = PieceComposer::new(10);
+        let mut composer = PieceComposer::new(FileInfo {
+            piece_length: 10,
+            file_length: 100,
+        });
         let first_block = Block {
             piece_index: 0,
             offset: 0,
@@ -306,6 +399,29 @@ mod piece_composer_tests {
         composer.append_block(&first_block).unwrap();
         let error = composer.append_block(&second_block).unwrap_err();
         assert_eq!(unexpected_block_offset(5, 3).to_string(), error.to_string());
+    }
+
+    #[test]
+    fn append_next_block_with_wrong_piece_index() {
+        let mut composer = PieceComposer::new(FileInfo {
+            piece_length: 10,
+            file_length: 100,
+        });
+        let first_block = Block {
+            piece_index: 0,
+            offset: 0,
+            data: vec![1, 2, 3, 4, 5],
+        };
+
+        let second_block = Block {
+            piece_index: 1,
+            offset: 5,
+            data: vec![6, 7, 8, 9, 10],
+        };
+
+        composer.append_block(&first_block).unwrap();
+        let error = composer.append_block(&second_block).unwrap_err();
+        assert_eq!(unexpected_piece_index(0, 1).to_string(), error.to_string());
     }
 }
 
@@ -472,23 +588,6 @@ mod tests {
 
         let error = piece_downloader.download().unwrap_err();
         assert_eq!(unexpected_block_offset(0, 1).to_string(), error.to_string());
-    }
-
-    #[test]
-    fn test_unexpected_piece_index_in_response() {
-        let mut channel = ErrorDownloadChannel {
-            block_to_send: Block {
-                piece_index: 1,
-                offset: 0,
-                data: vec![0xff; 3],
-            },
-        };
-
-        let mut piece_downloader =
-            FileDownloader::new(&mut channel, vec![zero_sha1()], 3, 3).with_block_length(3);
-
-        let error = piece_downloader.download().unwrap_err();
-        assert_eq!(unexpected_piece_index(0, 1).to_string(), error.to_string());
     }
 
     struct DownloadChannelFromVector {
