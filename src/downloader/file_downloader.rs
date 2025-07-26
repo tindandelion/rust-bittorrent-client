@@ -1,4 +1,4 @@
-use std::{io, time::Duration};
+use std::{io, time::Instant};
 
 use crate::types::Sha1;
 
@@ -36,6 +36,15 @@ pub struct FileInfo {
 }
 
 impl FileInfo {
+    fn piece_length(&self, piece_index: u32) -> u32 {
+        let (piece_start, piece_end) = self.piece_bounds(piece_index);
+        (piece_end - piece_start) as u32
+    }
+
+    fn piece_count(&self) -> u32 {
+        self.file_length.div_ceil(self.piece_length as usize) as u32
+    }
+
     fn piece_bounds(&self, piece_index: u32) -> (usize, usize) {
         let piece_start = piece_index as usize * self.piece_length as usize;
         let mut piece_end = (piece_index as usize + 1) * self.piece_length as usize;
@@ -44,14 +53,32 @@ impl FileInfo {
         };
         (piece_start, piece_end)
     }
+}
 
-    fn piece_length(&self, piece_index: u32) -> u32 {
-        let (piece_start, piece_end) = self.piece_bounds(piece_index);
-        (piece_end - piece_start) as u32
+struct DownloadReport {
+    start_timestamp: Option<Instant>,
+}
+
+impl DownloadReport {
+    fn new() -> Self {
+        Self {
+            start_timestamp: None,
+        }
     }
 
-    fn piece_count(&self) -> u32 {
-        self.file_length.div_ceil(self.piece_length as usize) as u32
+    fn download_started(&mut self) {
+        if self.start_timestamp.is_none() {
+            self.start_timestamp = Some(Instant::now());
+        }
+    }
+
+    fn download_finished(&mut self, piece_index: u32) {
+        let duration = self.start_timestamp.take().unwrap().elapsed();
+        println!(
+            "- Downloaded piece {}: {} ms",
+            piece_index,
+            duration.as_millis()
+        );
     }
 }
 
@@ -81,36 +108,34 @@ impl<'a, T: RequestChannel + DownloadChannel> FileDownloader<'a, T> {
             piece_hashes,
             file_info,
             piece_composer: PieceComposer::new(file_info),
-            request_emitter: RequestEmitter::new(Self::BLOCK_LENGTH, file_info),
+            request_emitter: RequestEmitter::new(Self::BLOCK_LENGTH, file_info)
+                .with_queue_length(150),
         }
     }
 
     pub fn download(&mut self) -> io::Result<Vec<u8>> {
         let mut buffer = vec![0; self.file_info.file_length];
         let mut downloaded_pieces_count = 0;
+        let mut download_report = DownloadReport::new();
 
         self.request_emitter.request_first_blocks(self.channel)?;
         while downloaded_pieces_count < self.file_info.piece_count() {
-            let block = self.receive_block()?;
+            download_report.download_started();
+            let block = self.channel.receive()?;
             self.request_emitter.request_next_block(self.channel)?;
 
             if let Some(piece) = self.piece_composer.append_block(&block)? {
                 self.verify_piece_hash(piece.index, &piece)?;
+
                 let (piece_start, piece_end) = self.file_info.piece_bounds(piece.index);
                 buffer[piece_start..piece_end].copy_from_slice(&piece.data);
+
+                download_report.download_finished(piece.index);
                 downloaded_pieces_count += 1;
             }
         }
 
         Ok(buffer)
-    }
-
-    fn receive_block(&mut self) -> io::Result<Block> {
-        let receive_start = std::time::Instant::now();
-        print!("-- Receiving block: ");
-        let block = self.channel.receive()?;
-        println!("{} ms", receive_start.elapsed().as_millis());
-        Ok(block)
     }
 
     fn verify_piece_hash(&self, piece_index: u32, piece: &Piece) -> io::Result<()> {
@@ -152,7 +177,7 @@ fn unexpected_block_offset(expected: u32, actual: u32) -> io::Error {
 }
 
 struct RequestEmitter {
-    queue_length: u8,
+    queue_length: u16,
     block_length: u32,
     piece_index: u32,
     next_block_index: u32,
@@ -180,10 +205,7 @@ impl RequestEmitter {
         let block_offset = self.next_block_index * self.block_length;
         let block_length = self.block_length.min(piece_length - block_offset);
 
-        let request_start = std::time::Instant::now();
-        print!("-- Requesting block: ");
         channel.request(self.piece_index, block_offset, block_length)?;
-        println!("{} ms", request_start.elapsed().as_millis());
 
         self.next_block_index += 1;
         if self.next_block_index >= block_count {
@@ -201,8 +223,7 @@ impl RequestEmitter {
         Ok(())
     }
 
-    #[cfg(test)]
-    fn with_queue_length(mut self, queue_length: u8) -> Self {
+    fn with_queue_length(mut self, queue_length: u16) -> Self {
         self.queue_length = queue_length;
         self
     }
