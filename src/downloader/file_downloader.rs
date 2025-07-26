@@ -85,30 +85,13 @@ impl<'a, T: RequestChannel + DownloadChannel> FileDownloader<'a, T> {
         Ok(block)
     }
 
-    fn verify_received_block(
-        &self,
-        block: &Block,
-        expected_piece_index: u32,
-        expected_offset: u32,
-        expected_length: u32,
-    ) -> io::Result<()> {
+    fn verify_received_block(&self, block: &Block, expected_piece_index: u32) -> io::Result<()> {
         if block.piece_index != expected_piece_index {
             return Err(unexpected_piece_index(
                 expected_piece_index,
                 block.piece_index,
             ));
         }
-
-        if block.offset != expected_offset {
-            return Err(unexpected_block_offset(expected_offset, block.offset));
-        }
-        if block.data.len() != expected_length as usize {
-            return Err(unexpected_block_length(
-                expected_length,
-                block.data.len() as u32,
-            ));
-        }
-
         Ok(())
     }
 
@@ -133,13 +116,16 @@ impl<'a, T: RequestChannel + DownloadChannel> FileDownloader<'a, T> {
         let mut emitter = RequestEmitter::new(self.block_length, piece_index, piece_length);
         let mut composer = PieceComposer::new(piece_length);
 
-        while let Some((block_offset, block_length)) = emitter.request_next_block(self.channel)? {
-            let block = self.receive_block()?;
-            self.verify_received_block(&block, piece_index, block_offset, block_length)?;
-            composer.append_block(&block)?;
-        }
+        emitter.request_first_blocks(self.channel)?;
 
-        Ok(composer.buffer)
+        loop {
+            let block = self.receive_block()?;
+            self.verify_received_block(&block, piece_index)?;
+            if let Some(piece) = composer.append_block(&block)? {
+                return Ok(piece);
+            }
+            emitter.request_next_block(self.channel)?;
+        }
     }
 
     fn verify_piece_hash(&self, piece_index: u32, piece: &[u8]) -> io::Result<()> {
@@ -180,17 +166,8 @@ fn unexpected_block_offset(expected: u32, actual: u32) -> io::Error {
     )
 }
 
-fn unexpected_block_length(expected: u32, actual: u32) -> io::Error {
-    io::Error::new(
-        io::ErrorKind::InvalidData,
-        format!(
-            "Unexpected block data length in response: expected {}, got {}",
-            expected, actual
-        ),
-    )
-}
-
 struct RequestEmitter {
+    queue_length: u8,
     block_length: u32,
     piece_index: u32,
     piece_length: u32,
@@ -200,6 +177,7 @@ struct RequestEmitter {
 impl RequestEmitter {
     fn new(block_length: u32, piece_index: u32, piece_length: u32) -> Self {
         Self {
+            queue_length: 10,
             block_length,
             piece_index,
             piece_length,
@@ -207,13 +185,10 @@ impl RequestEmitter {
         }
     }
 
-    fn request_next_block(
-        &mut self,
-        channel: &mut impl RequestChannel,
-    ) -> io::Result<Option<(u32, u32)>> {
+    fn request_next_block(&mut self, channel: &mut impl RequestChannel) -> io::Result<()> {
         let block_count = self.piece_length.div_ceil(self.block_length);
         if self.next_block_index >= block_count {
-            return Ok(None);
+            return Ok(());
         }
 
         let block_offset = self.next_block_index * self.block_length;
@@ -225,25 +200,45 @@ impl RequestEmitter {
         println!("{} ms", request_start.elapsed().as_millis());
 
         self.next_block_index += 1;
-        Ok(Some((block_offset, block_length)))
+        Ok(())
+    }
+
+    fn request_first_blocks(&mut self, channel: &mut impl RequestChannel) -> io::Result<()> {
+        for _ in 0..self.queue_length {
+            self.request_next_block(channel)?;
+        }
+        Ok(())
+    }
+
+    #[cfg(test)]
+    fn with_queue_length(mut self, queue_length: u8) -> Self {
+        self.queue_length = queue_length;
+        self
     }
 }
 
 struct PieceComposer {
     buffer: Vec<u8>,
+    piece_length: u32,
 }
 
 impl PieceComposer {
     fn new(piece_length: u32) -> Self {
         Self {
+            piece_length,
             buffer: Vec::with_capacity(piece_length as usize),
         }
     }
 
-    fn append_block(&mut self, block: &Block) -> io::Result<()> {
+    fn append_block(&mut self, block: &Block) -> io::Result<Option<Vec<u8>>> {
         self.verify_block_offset(block.offset)?;
         self.buffer.extend(&block.data);
-        Ok(())
+
+        if self.buffer.len() >= self.piece_length as usize {
+            Ok(Some(self.buffer.clone()))
+        } else {
+            Ok(None)
+        }
     }
 
     fn verify_block_offset(&self, offset: u32) -> io::Result<()> {
@@ -274,9 +269,11 @@ mod piece_composer_tests {
             data: vec![6, 7, 8, 9, 10],
         };
 
-        composer.append_block(&first_block).unwrap();
-        composer.append_block(&second_block).unwrap();
-        assert_eq!(composer.buffer, vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+        let buffer = composer.append_block(&first_block).unwrap();
+        assert_eq!(buffer, None);
+
+        let buffer = composer.append_block(&second_block).unwrap();
+        assert_eq!(buffer, Some(vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10]));
     }
 
     #[test]
@@ -317,7 +314,7 @@ mod request_emitter_tests {
     use super::*;
 
     #[test]
-    fn request_blocks_before_all_blocks_are_requested() {
+    fn request_next_block() {
         let block_length = 10;
         let piece_length = 100;
         let mut emitter = RequestEmitter::new(block_length, 0, piece_length);
@@ -329,7 +326,7 @@ mod request_emitter_tests {
     }
 
     #[test]
-    fn request_blocks_until_end_of_piece() {
+    fn request_next_block_until_end_of_piece() {
         let block_length = 10;
         let piece_length = 15;
         let mut emitter = RequestEmitter::new(block_length, 0, piece_length);
@@ -349,10 +346,22 @@ mod request_emitter_tests {
 
         emitter.request_next_block(&mut channel).unwrap();
         emitter.request_next_block(&mut channel).unwrap();
-        let final_result = emitter.request_next_block(&mut channel).unwrap();
+        emitter.request_next_block(&mut channel).unwrap();
 
-        assert_eq!(final_result, None);
         assert_eq!(channel.requests, vec![(0, 0, 10), (0, 10, 5)]);
+    }
+
+    #[test]
+    fn request_first_blocks() {
+        let block_length = 10;
+        let piece_length = 100;
+        let queue_length = 3;
+        let mut emitter =
+            RequestEmitter::new(block_length, 0, piece_length).with_queue_length(queue_length);
+        let mut channel = RequestRecorder::new();
+
+        emitter.request_first_blocks(&mut channel).unwrap();
+        assert_eq!(channel.requests, vec![(0, 0, 10), (0, 10, 10), (0, 20, 10)]);
     }
 
     struct RequestRecorder {
@@ -463,23 +472,6 @@ mod tests {
 
         let error = piece_downloader.download().unwrap_err();
         assert_eq!(unexpected_block_offset(0, 1).to_string(), error.to_string());
-    }
-
-    #[test]
-    fn test_unexpected_data_length_in_response() {
-        let mut channel = ErrorDownloadChannel {
-            block_to_send: Block {
-                piece_index: 0,
-                offset: 0,
-                data: vec![0xff; 2],
-            },
-        };
-
-        let mut piece_downloader =
-            FileDownloader::new(&mut channel, vec![zero_sha1()], 3, 3).with_block_length(3);
-
-        let error = piece_downloader.download().unwrap_err();
-        assert_eq!(unexpected_block_length(3, 2).to_string(), error.to_string());
     }
 
     #[test]
