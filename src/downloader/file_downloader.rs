@@ -116,8 +116,8 @@ impl<'a, T: RequestChannel + DownloadChannel> FileDownloader<'a, T> {
     pub fn download(&mut self) -> io::Result<Vec<u8>> {
         let mut buffer = vec![0; self.file_info.file_length];
         let mut downloaded_pieces_count = 0;
-        let mut download_report = DownloadReport::new();
 
+        let mut download_report = DownloadReport::new();
         self.request_emitter.request_first_blocks(self.channel)?;
         while downloaded_pieces_count < self.file_info.piece_count() {
             download_report.download_started();

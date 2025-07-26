@@ -63,18 +63,23 @@ impl PeerChannel {
 
 impl RequestChannel for PeerChannel {
     fn request(&mut self, piece_index: u32, offset: u32, length: u32) -> io::Result<()> {
-        PeerMessage::Request {
+        let start = std::time::Instant::now();
+        let result = PeerMessage::Request {
             piece_index,
             offset,
             length,
         }
-        .send(&mut self.stream)
+        .send(&mut self.stream);
+        println!("-- Request: {} ms", start.elapsed().as_millis());
+        result
     }
 }
 
 impl DownloadChannel for PeerChannel {
     fn receive(&mut self) -> io::Result<Block> {
+        let start = std::time::Instant::now();
         let msg = PeerMessage::receive(&mut self.stream)?;
+        println!("-- Receive: {} ms", start.elapsed().as_millis());
         match msg {
             PeerMessage::Piece {
                 piece_index,
