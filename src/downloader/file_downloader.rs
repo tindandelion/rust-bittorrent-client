@@ -130,17 +130,16 @@ impl<'a, T: RequestChannel + DownloadChannel> FileDownloader<'a, T> {
         piece_index: u32,
         piece_length: u32,
     ) -> io::Result<Vec<u8>> {
-        let mut buffer = vec![0; piece_length as usize];
         let mut emitter = RequestEmitter::new(self.block_length, piece_index, piece_length);
+        let mut composer = PieceComposer::new(piece_length);
 
         while let Some((block_offset, block_length)) = emitter.request_next_block(self.channel)? {
             let block = self.receive_block()?;
             self.verify_received_block(&block, piece_index, block_offset, block_length)?;
-            buffer[block_offset as usize..(block_offset + block_length) as usize]
-                .copy_from_slice(&block.data);
+            composer.append_block(&block)?;
         }
 
-        Ok(buffer)
+        Ok(composer.buffer)
     }
 
     fn verify_piece_hash(&self, piece_index: u32, piece: &[u8]) -> io::Result<()> {
@@ -224,8 +223,92 @@ impl RequestEmitter {
         print!("-- Requesting block: ");
         channel.request(self.piece_index, block_offset, block_length)?;
         println!("{} ms", request_start.elapsed().as_millis());
+
         self.next_block_index += 1;
         Ok(Some((block_offset, block_length)))
+    }
+}
+
+struct PieceComposer {
+    buffer: Vec<u8>,
+}
+
+impl PieceComposer {
+    fn new(piece_length: u32) -> Self {
+        Self {
+            buffer: Vec::with_capacity(piece_length as usize),
+        }
+    }
+
+    fn append_block(&mut self, block: &Block) -> io::Result<()> {
+        self.verify_block_offset(block.offset)?;
+        self.buffer.extend(&block.data);
+        Ok(())
+    }
+
+    fn verify_block_offset(&self, offset: u32) -> io::Result<()> {
+        let expected_offset = self.buffer.len() as u32;
+        if expected_offset != offset {
+            return Err(unexpected_block_offset(expected_offset, offset));
+        }
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod piece_composer_tests {
+    use super::*;
+
+    #[test]
+    fn append_block_appends_block_data_to_buffer() {
+        let mut composer = PieceComposer::new(10);
+        let first_block = Block {
+            piece_index: 0,
+            offset: 0,
+            data: vec![1, 2, 3, 4, 5],
+        };
+
+        let second_block = Block {
+            piece_index: 0,
+            offset: 5,
+            data: vec![6, 7, 8, 9, 10],
+        };
+
+        composer.append_block(&first_block).unwrap();
+        composer.append_block(&second_block).unwrap();
+        assert_eq!(composer.buffer, vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+    }
+
+    #[test]
+    fn append_first_block_with_wrong_offset() {
+        let mut composer = PieceComposer::new(10);
+        let block = Block {
+            piece_index: 0,
+            offset: 1,
+            data: vec![1, 2, 3, 4, 5],
+        };
+        let error = composer.append_block(&block).unwrap_err();
+        assert_eq!(unexpected_block_offset(0, 1).to_string(), error.to_string());
+    }
+
+    #[test]
+    fn append_next_block_with_wrong_offset() {
+        let mut composer = PieceComposer::new(10);
+        let first_block = Block {
+            piece_index: 0,
+            offset: 0,
+            data: vec![1, 2, 3, 4, 5],
+        };
+
+        let second_block = Block {
+            piece_index: 0,
+            offset: 3,
+            data: vec![6, 7, 8, 9, 10],
+        };
+
+        composer.append_block(&first_block).unwrap();
+        let error = composer.append_block(&second_block).unwrap_err();
+        assert_eq!(unexpected_block_offset(5, 3).to_string(), error.to_string());
     }
 }
 
