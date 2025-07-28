@@ -4,21 +4,21 @@ title:  "Speeding up the download"
 date: 2025-07-24
 ---
 
-TODO: Small summary 
+Previously we [discovered that the download speed was quite low][prev-post]. In this section, I'd like to explore the issue and try out some experiments to eliminate this bottleneck. To make the experimentation more reliable, I'm going to set up a BitTorrent client locally, so that our experiments are not influenced by random network delays or unpredictable peer settings. 
 
 # Local peer setup 
 
-It dawned on me that we can greatly simplify our experiments if we set up the BitTorrent client locally, and connect to it directly. After all, all we need to know is the IP address of the peer and the port on which it's listening for incoming requests. By running it locally we have the full control over the peer settings and network. 
+It dawned on me that we can greatly simplify our experiments if we set up the BitTorrent client locally and connect to it directly. After all, all we need to know is the IP address of the peer and the port on which it's listening for incoming requests. By running it locally, we have full control over the peer settings and network. 
 
-I'm using [Transmission] for MacOS as a reference client. I've registered our `.torrent` file in it, and waited until it finished downloading. So now we have a BitTorrent client running locally that serves the entire file: 
+I'm using [Transmission](https://transmissionbt.com/) for MacOS as a reference client. I've registered our `.torrent` file in it and waited until it finished downloading. So now we have a BitTorrent client running locally that serves the entire file: 
 
 ![Transmission main window]({{ site.baseurl }}/assets/images/improve-download-speed/transmission-main-window.png)
 
-The second thing is the port number on which it's listening for incoming connections. It can be specified in Transmission's settings, like that: 
+The second thing is the port number on which it's listening for incoming connections. It can be specified in Transmission's settings, like this: 
 
 ![Transmission settings]({{ site.baseurl }}/assets/images/improve-download-speed/transmission-settings.png)
 
-Now I should be able to connect to the local BitTorrent peer at the address `localhost:26408`. To run the experiments locally, I've created a separate binary crate called [`local_peer`][local-peer]. Essentially, I just copied the contents of the `main` crate, and removed everything related to the communication with the torrent tracker. It simply connects to the peer at the known address:
+Now I should be able to connect to the local BitTorrent peer at the address `localhost:26408`. To run the experiments locally, I've created a separate binary crate called `local_peer`. Essentially, I just copied the contents of the `main` crate and removed everything related to the communication with the torrent tracker. It simply connects to the peer at the known address:
 
 ```rust
 const LOCAL_PEER_PORT: u16 = 26408;
@@ -36,7 +36,7 @@ fn connect_to_local_peer(info_hash: Sha1, peer_id: PeerId) -> Result<PeerChannel
 
 # Request timing 
 
-With the local setup like this, we can start digging deeper into what's going with the download speed. The first experiment to make is to measure the time it takes to: 
+With a local setup like this, we can start digging deeper into what's going on with the download speed. The first experiment to make is to measure the time it takes to: 
 
 * send the `request` message to the peer; 
 * receive the corresponding `piece` response. 
@@ -92,21 +92,21 @@ Let's do it, printing the times to the console:
 [main] $ 
 ```
 
-That's a very interesting result! As we can see, the `request` message is sent instantaneously, but we wait for around 0.5 seconds to receive the `piece` message in response. And it happens for each block, resulting in 8 seconds to receive the entire piece! Also, remarkably, the delay is fairly constant around 500 milliseconds. It suggests that Transmission implements some sort of a forced delay on its end: it's highly improbable that downloading 16Kb of data via local connection could take almost half a second. 
+That's a very interesting result! As we can see, the `request` message is sent instantaneously, but we wait for around 0.5 seconds to receive the `piece` message in response. And it happens for each block, resulting in 8 seconds to receive the entire piece! Also, remarkably, the delay is fairly constant at around 500 milliseconds. It suggests that Transmission implements some sort of forced delay on its end: it's highly improbable that downloading 16Kb of data via local connection would take almost half a second. 
 
-Is there anything we can do about it? Obviously, we can't change the Transmission's behaviour, but there's one trick we can try on our side: _pipelining requests_
+Is there anything we can do about it? Obviously, we can't change Transmission's behavior, but there's one trick we can try on our side: _pipelining requests_
 
 # An experiment with pipelining requests 
 
-While figuring out the download rate issues, I came across the document written by Bram Cohen himself, the author of the BitTorrent protocol: [Incentives Build Robustness in BitTorrent](https://bittorrent.org/bittorrentecon.pdf). In Section 2.3 this document discusses the importance of _request pipelining_ to achieve good download rates: 
+While figuring out the download rate issues, I came across a document written by Bram Cohen himself, the author of the BitTorrent protocol: [Incentives Build Robustness in BitTorrent](https://bittorrent.org/bittorrentecon.pdf). In Section 2.3, this document discusses the importance of _request pipelining_ to achieve good download rates: 
 
-> When transferring data over TCP, like BitTorrent does, it is very important to always have several requests pending at once, to avoid a delay between pieces being sent, which is disastrous for transfer rates. BitTorrent facilitates this by breaking pieces further into sub-pieces over the wire, typically sixteen kilobytes in size, and always keeping some number,typically five, requests pipelined at once. Every time a sub-piece arrives a new request is sent. The amount of data to pipeline has been selected as a value which can reliably saturate most connections.
+> When transferring data over TCP, like BitTorrent does, it is very important to always have several requests pending at once, to avoid a delay between pieces being sent, which is disastrous for transfer rates. BitTorrent facilitates this by breaking pieces further into sub-pieces over the wire, typically sixteen kilobytes in size, and always keeping some number, typically five, requests pipelined at once. Every time a sub-piece arrives, a new request is sent. The amount of data to pipeline has been selected as a value which can reliably saturate most connections.
 
 The BitTorrent specification [also emphasizes](https://wiki.theory.org/BitTorrentSpecification#Queuing) queuing requests for good download rates, although it suggests keeping 10 requests in the queue, as opposed to 5 in the original paper.  
 
-So it looks like pipelining (or queuing) requests is a key to improving download rate. Let's run a quick'n'dirty experiment to prove that it's true. 
+So it looks like pipelining (or queuing) requests is key to improving download rate. Let's run a quick'n'dirty experiment to prove that it's true. 
 
-In this experiment, we'll request _all blocks for the piece at once at the beginning_, and then we'll just collect incoming `piece` messages, until all of them have arrived, by making a quick change to the code: 
+In this experiment, we'll request _all blocks for the piece at once at the beginning_, and then we'll just collect incoming `piece` messages until all of them have arrived, by making a quick change to the code: 
 
 ```rust 
 fn download_piece_by_block(
@@ -216,6 +216,10 @@ Running this version, we get the following output in the console:
 [main] $ 
 ```
 
-Wow, that's a dramatic difference! Now we waste no time waiting for file blocks to arrive, it happens instantly. The only time we still experience the delay is when receiving the very first block of a piece, again waiting for 500 milliseconds. I bet we can eliminate this delay as well if we also pipeline the requests across the piece boundaries! 
+Wow, that's a dramatic difference! Now we waste no time waiting for file blocks to arrive; it happens instantly. The only time we still experience the delay is when receiving the very first block of a piece, still waiting for 500 milliseconds. I bet we can eliminate this delay as well if we also pipeline the requests across the piece boundaries.
 
-That experiment has shown us that request pipelining is definitely a way to go. Now let's revert all experimental changes and focus on the proper implementation of this algorithm. 
+# Next step
+
+That experiment has shown us that request pipelining is definitely the way to go to improve the download rate. Now let's revert all experimental changes and focus on the proper implementation of this algorithm. 
+
+[prev-post]: {{site.baseurl}}/{% post_url 2025-07-23-download-the-whole-file %}
