@@ -79,6 +79,7 @@
         "Endianness",
         "unchoking",
         "PeerMessage",
-        "deserialization"
+        "deserialization",
+        "MacOS"
     ]
 } 

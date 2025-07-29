@@ -34,7 +34,7 @@ fn connect_to_local_peer(info_hash: Sha1, peer_id: PeerId) -> Result<PeerChannel
 }
 ```
 
-# Request timing 
+# Measuring request delays 
 
 With a local setup like this, we can start digging deeper into what's going on with the download speed. The first experiment to make is to measure the time it takes to: 
 
