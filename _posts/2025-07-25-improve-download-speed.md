@@ -1,16 +1,16 @@
 ---
 layout: post
-title:  "Speeding up the download"
-date: 2025-07-24
+title:  "Low download speed: looking into the issue"
+date: 2025-07-29
 ---
 
-Previously we [discovered that the download speed was quite low][prev-post]. In this section, I'd like to explore the issue and try out some experiments to eliminate this bottleneck. To make the experimentation more reliable, I'm going to set up a BitTorrent client locally, so that our experiments are not influenced by random network delays or unpredictable peer settings. 
+We reached the milestone when we [can download the entire file][prev-post], but the download speed was frustratingly low. In this section, I'd like to explore this issue and try out some experiments to eliminate the bottleneck. To make the experimentation more reliable, I'm going to set up a BitTorrent client locally so that our investigation is not influenced by random network delays and unpredictable remote peer settings. 
 
 # Local peer setup 
 
-It dawned on me that we can greatly simplify our experiments if we set up the BitTorrent client locally and connect to it directly. After all, all we need to know is the IP address of the peer and the port on which it's listening for incoming requests. By running it locally, we have full control over the peer settings and network. 
+It dawned on me that we could greatly simplify our experiments if we set up the BitTorrent client locally and connected to it directly. After all, all we need to know is the IP address of the peer and the port on which it's listening for incoming requests. By running it locally, we have full control over the peer settings and network. Having a local setup also enables writing integration tests that don't depend on anything external.
 
-I'm using [Transmission](https://transmissionbt.com/) for MacOS as a reference client. I've registered our `.torrent` file in it and waited until it finished downloading. So now we have a BitTorrent client running locally that serves the entire file: 
+I'm using [Transmission](https://transmissionbt.com/) for MacOS as a reference client. To complete the local setup, I've registered our `.torrent` file in the application and waited until it finished downloading. So now we have a BitTorrent client running locally that serves the entire file: 
 
 ![Transmission main window]({{ site.baseurl }}/assets/images/improve-download-speed/transmission-main-window.png)
 
@@ -18,7 +18,7 @@ The second thing is the port number on which it's listening for incoming connect
 
 ![Transmission settings]({{ site.baseurl }}/assets/images/improve-download-speed/transmission-settings.png)
 
-Now I should be able to connect to the local BitTorrent peer at the address `localhost:26408`. To run the experiments locally, I've created a separate binary crate called `local_peer`. Essentially, I just copied the contents of the `main` crate and removed everything related to the communication with the torrent tracker. It simply connects to the peer at the known address:
+Now I should be able to connect to the local BitTorrent peer at the address `localhost:26408`. To run the experiments locally, I've created a separate binary crate called `local_peer`. Essentially, I just copied the contents of the `main` crate and removed everything related to the communication with the torrent tracker. It simply connects to the local peer at the known port:
 
 ```rust
 const LOCAL_PEER_PORT: u16 = 26408;
@@ -92,9 +92,9 @@ Let's do it, printing the times to the console:
 [main] $ 
 ```
 
-That's a very interesting result! As we can see, the `request` message is sent instantaneously, but we wait for around 0.5 seconds to receive the `piece` message in response. And it happens for each block, resulting in 8 seconds to receive the entire piece! Also, remarkably, the delay is fairly constant at around 500 milliseconds. It suggests that Transmission implements some sort of forced delay on its end: it's highly improbable that downloading 16Kb of data via local connection would take almost half a second. 
+That's a very interesting result! As we can see, the `request` message is sent instantaneously, but we wait for around 0.5 seconds to receive the `piece` message in response. And it happens for each block, resulting in 8 seconds to receive the entire piece! Also, remarkably, the delay is fairly constant at around 500 milliseconds. This suggests that Transmission implements some sort of forced delay on its end: it's highly improbable that downloading 16KB of data via local connection would take almost half a second. 
 
-Is there anything we can do about it? Obviously, we can't change Transmission's behavior, but there's one trick we can try on our side: _pipelining requests_
+Is there anything we can do about it? Obviously, we can't change Transmission's behavior, but there's one trick we can try on our side: _pipelining requests_.
 
 # An experiment with pipelining requests 
 
@@ -106,7 +106,7 @@ The BitTorrent specification [also emphasizes](https://wiki.theory.org/BitTorren
 
 So it looks like pipelining (or queuing) requests is key to improving download rate. Let's run a quick'n'dirty experiment to prove that it's true. 
 
-In this experiment, we'll request _all blocks for the piece at once at the beginning_, and then we'll just collect incoming `piece` messages until all of them have arrived, by making a quick change to the code: 
+In this experiment, we'll request _all blocks for the piece at once at the beginning_, and then we'll just collect incoming `piece` messages until all of them have arrived. It's a simple change in the code: 
 
 ```rust 
 fn download_piece_by_block(

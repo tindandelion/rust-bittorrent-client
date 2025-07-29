@@ -6,7 +6,7 @@ date: 2025-07-24
 
 We've managed to [download and verify a single piece][prev-post]. After that, extending the code to download the entire file is quite a straightforward progression. Since we know how many pieces there are, we can simply download them one by one, similar to how we were downloading a single piece in 16Kb blocks. Only the last piece would require special care, because it can be shorter than the others. 
 
-We're still going to be working under the simplifications we [assumed previously][simplifications]. If we're lucky, we'll have the entire file downloaded by the end of this section, and gather more insights into the workings of the BitTorrent protocol! 
+We're still going to be working under the simplifications we [assumed previously][simplifications]. If we're lucky, we'll have the entire file downloaded by the end of this section and gather more insights into the workings of the BitTorrent protocol! 
 
 [*Version 0.0.8 on GitHub*](https://github.com/tindandelion/rust-bittorrent-client/tree/0.0.8){: .no-github-icon}
 
@@ -14,7 +14,7 @@ We're still going to be working under the simplifications we [assumed previously
 
 As I started to implement the whole file download, I had to make a choice about where to put this functionality: 
 
-1. We have a struct called [`FileDownloader`](https://github.com/tindandelion/rust-bittorrent-client/blob/0.0.7/src/downloader.rs#L21) that to some extent has become a kitchen sink for methods related to peer communication. The name suggests that it could be the place for new functionality. However, it's now a bit of a mix of different levels of abstraction.  
+1. We have a struct called [`FileDownloader`](https://github.com/tindandelion/rust-bittorrent-client/blob/0.0.7/src/downloader.rs#L21) that, to some extent, has become a kitchen sink for methods related to peer communication. The name suggests that it could be the place for new functionality. However, it's now a bit of a mix of different levels of abstraction.  
 2. Our other struct, [`PieceDownloader`](https://github.com/tindandelion/rust-bittorrent-client/blob/0.0.7/src/downloader/piece_downloader.rs#L13), does all the work related to downloading a single piece. We could extend its functionality to handle multiple pieces.
 3. We could come up with a separate abstraction for handling the file download. This option makes sense if the implementation is complicated or requires additional collaborators. 
 
