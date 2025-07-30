@@ -100,7 +100,7 @@ impl<'a, T: RequestChannel + DownloadChannel> FileDownloader<'a, T> {
             .request_first_blocks(Self::REQUEST_QUEUE_LENGTH, self.channel)?;
 
         while downloaded_pieces_count < self.file_info.piece_count() {
-            download_report.download_started();
+            download_report.waiting_for_block();
             let block = self.channel.receive()?;
             self.request_emitter.request_next_block(self.channel)?;
 
@@ -110,7 +110,7 @@ impl<'a, T: RequestChannel + DownloadChannel> FileDownloader<'a, T> {
                 let (piece_start, piece_end) = self.file_info.piece_bounds(piece.index);
                 buffer[piece_start..piece_end].copy_from_slice(&piece.data);
 
-                download_report.download_finished(piece.index);
+                download_report.piece_downloaded(piece.index);
                 downloaded_pieces_count += 1;
             }
         }
@@ -147,13 +147,13 @@ impl DownloadReport {
         }
     }
 
-    fn download_started(&mut self) {
+    fn waiting_for_block(&mut self) {
         if self.start_timestamp.is_none() {
             self.start_timestamp = Some(Instant::now());
         }
     }
 
-    fn download_finished(&mut self, piece_index: u32) {
+    fn piece_downloaded(&mut self, piece_index: u32) {
         let duration = self.start_timestamp.take().unwrap().elapsed();
         println!(
             "- Downloaded piece {}: {} ms",
