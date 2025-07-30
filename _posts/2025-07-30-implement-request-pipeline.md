@@ -6,9 +6,11 @@ date: 2025-07-30
 
 So our [quick experiments][prev-post] have shown that request pipelining does in fact improve the download speed. Now we can move forward and create a proper implementation for it. 
 
+[*Version 0.0.9 on GitHub*](https://github.com/tindandelion/rust-bittorrent-client/tree/0.0.9){: .no-github-icon}
+
 # General considerations 
 
-To implement request pipelining, we're going to break this tightly coupled loop in [FileDownloader::download_piece_by_block()](https://github.com/tindandelion/rust-bittorrent-client/blob/0.0.8/src/downloader/file_downloader.rs#L149): 
+To implement request pipelining, we're going to break this tightly coupled loop in [`FileDownloader::download_piece_by_block()`](https://github.com/tindandelion/rust-bittorrent-client/blob/0.0.8/src/downloader/file_downloader.rs#L149): 
 
 ```rust 
 fn download_piece_by_block(
@@ -30,18 +32,18 @@ fn download_piece_by_block(
 }
 ```
 
-The general structure of the pipelining algorithm works as follows: 
+Basically, the pipelining algorithm works as follows: 
 
-1. When the download starts, we send a bunch of `request` messages to the remote peer. The number of sent messages essentially defines the length of the request queue. 
+1. When the download starts, we send a series of `request` messages to the remote peer. The number of sent messages  defines the request queue length. 
 2. Next we start waiting for `piece` messages from the peer. When a `piece` message is received, we issue the next `request` message. 
 3. We repeat the step #2 in the loop until we receive all blocks. 
 
-Also, we'd like the request pipeline to work across the piece boundaries. That means that once we've finished sending requests for the current piece, we immediately pick the next one. In the first version, we'll just be requesting pieces in the order of their indexes. 
+Also, we'd like the request pipeline to work across the piece boundaries. That means that once we've finished sending requests for the current piece, we immediately pick the next one and start requesting its blocks. In the first version, we'll just order the pieces by their indexes. 
 
-The receiving algorithm also undergoes some changes. We're now working with the continuous stream of `piece` messages: 
+The receiving algorithm also undergoes some changes. We're now working with the continuous stream of `piece` messages, decoupled from the corresponding requests: 
 
 * We expect that `piece` messages for the same piece come in the pre-determined order. Each new incoming block must be a continuation of the previous one, without any gaps or overlaps. 
-* Once we've received all blocks for a piece, we consider that piece finished, and start receiving the next piece. 
+* Once we've received all blocks for a piece, we consider that piece finished, and start receiving the next piece. For the receiving algorithm, the order of pieces doesn't matter: we can detect the piece index from the `piece_index` field of the first received block. 
 
 
 # Implementation details 
@@ -50,7 +52,7 @@ In order to facilitate testing, I've extracted two helper structs, [`RequestEmit
 
 #### _RequestEmitter_
 
-[`RequestEmitter`][request-emitter] implements the algorithm for sending `request` messages to the peer, in a way described above. Internally, it keeps track of the current piece being requested, along with the next block inside that piece. Its method [`request_next_block()`]() does the bulk of work: 
+[`RequestEmitter`][request-emitter] implements the algorithm for sending `request` messages to the peer, in a way described above. Internally, it keeps track of the current piece being requested, along with the next block inside that piece. Its method [`request_next_block()`](https://github.com/tindandelion/rust-bittorrent-client/blob/0.0.9/src/downloader/file_downloader/request_emitter.rs#L22) does the bulk of work: 
 
 * It calculates the parameters `block_offset` and `block_length` for the next block and calls `RequestChannel::request()`; 
 * Once all blocks for the current piece have been requested, it increments the current piece index;
@@ -60,7 +62,7 @@ Its another method `request_first_blocks()` is supposed to be called when the do
 
 #### _PieceComposer_
 
-[`PieceComposer`][piece-composer] is responsible for reconstructing the piece from the incoming `piece` messages. Its main method [`append_block`] accepts the received file block and adds the block data to the current piece. If the appended block completes the current piece, `append_block` returns that piece as the result, and becomes ready to construct the next piece. Otherwise, it returns `None`. 
+[`PieceComposer`][piece-composer] is responsible for reconstructing the piece from the incoming `piece` messages. Its main method [`append_block`](https://github.com/tindandelion/rust-bittorrent-client/blob/0.0.9/src/downloader/file_downloader/piece_composer.rs#L19) accepts the received file block and adds the block data to the current piece. If the appended block completes the current piece, `append_block` returns that piece as the result, and becomes ready to construct the next piece. Otherwise, it returns `None`. 
 
 Additionally, `PieceComposer` verifies that blocks come in expected order: 
 * The `piece_index` of the block must match the index of the currently constructed piece; 
@@ -68,7 +70,7 @@ Additionally, `PieceComposer` verifies that blocks come in expected order:
 
 #### _FileDownloader_ 
 
-The new implementation of [`FileDownloader`]() now relies on `RequestEmitter` and `PieceComposer` to do the lion share of the job. Its main method [`download()`]() ties all pieces together: 
+The new implementation of [`FileDownloader`](https://github.com/tindandelion/rust-bittorrent-client/blob/0.0.9/src/downloader/file_downloader.rs#L63) now relies on `RequestEmitter` and `PieceComposer` to do the lion share of the job. Its main method [`download()`](https://github.com/tindandelion/rust-bittorrent-client/blob/0.0.9/src/downloader/file_downloader.rs#L94) ties all pieces together: 
 
 ```rust
 pub fn download(&mut self) -> io::Result<Vec<u8>> {
@@ -249,7 +251,7 @@ With the queue length equal to 150 requests I finally managed to reach the peak 
 * File size: 702545920, download duration: 16.494491333s
 ```
 
-Downloading the file in the local environment now takes 16 seconds, which gives us the download speed of almost **42 MB/sec**. What a dramatic change, compared to our [initial implementation][prev-post-download-speed]! 
+Downloading the file in the local environment now takes 16 seconds, which gives us the download speed of almost **42 MB/sec**. What a dramatic change, compared to our [initial implementation][prev-download-speed]! 
 
 #### My thoughts on the results
 
@@ -308,3 +310,8 @@ Obviously, the download speed from the remote peer was lower than in our local e
 # Next steps
 
 So let's conclude for now that we achieved satisfactory download speeds with request pipelining, and switch our attention to another topic that needs some optimization: picking the peer to download from. 
+
+[prev-post]: {{site.baseurl}}/{% post_url 2025-07-25-improve-download-speed %}
+[request-emitter]: https://github.com/tindandelion/rust-bittorrent-client/blob/0.0.9/src/downloader/file_downloader/request_emitter.rs
+[piece-composer]: https://github.com/tindandelion/rust-bittorrent-client/blob/0.0.9/src/downloader/file_downloader/piece_composer.rs
+[prev-download-speed]: {{site.baseurl}}/{% post_url 2025-07-23-download-the-whole-file %}#lets-try-it-out

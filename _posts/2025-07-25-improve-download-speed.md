@@ -220,6 +220,7 @@ Wow, that's a dramatic difference! Now we waste no time waiting for file blocks 
 
 # Next step
 
-That experiment has shown us that request pipelining is definitely the way to go to improve the download rate. Now let's revert all experimental changes and focus on the proper implementation of this algorithm. 
+This experiment has shown us that request pipelining is definitely the way to go to improve the download speed. Now, let's revert all experimental changes and focus on the proper [implementation of this algorithm][next-post]. 
 
 [prev-post]: {{site.baseurl}}/{% post_url 2025-07-23-download-the-whole-file %}
+[next-post]: {{site.baseurl}}/{% post_url 2025-07-30-implement-request-pipeline %}
