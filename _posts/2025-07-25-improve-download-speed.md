@@ -4,11 +4,11 @@ title:  "Low download speed: looking into the issue"
 date: 2025-07-29
 ---
 
-We reached the milestone when we [can download the entire file][prev-post], but the download speed was frustratingly low. In this section, I'd like to explore this issue and try out some experiments to eliminate the bottleneck. To make the experimentation more reliable, I'm going to set up a BitTorrent client locally so that our investigation is not influenced by random network delays and unpredictable remote peer settings. 
+We have reached the milestone when we [can download the entire file][prev-post], but the download speed was frustratingly low. In this section, I'd like to explore this issue and try out some experiments to eliminate the bottleneck. To make the experimentation more reliable, I'm going to set up a BitTorrent client locally so that our investigation is not influenced by random network delays and unpredictable remote peer settings. 
 
 # Local peer setup 
 
-It dawned on me that we could greatly simplify our experiments if we set up the BitTorrent client locally and connected to it directly. After all, all we need to know is the IP address of the peer and the port on which it's listening for incoming requests. By running it locally, we have full control over the peer settings and network. Having a local setup also enables writing integration tests that don't depend on anything external.
+I realized that we could greatly simplify our experiments if we set up the BitTorrent client locally and connected to it directly. After all, all we need to know is the IP address of the peer and the port on which it's listening for incoming requests. By running it locally, we have full control over the peer settings and network. Having a local setup also enables writing integration tests that don't depend on anything external.
 
 I'm using [Transmission](https://transmissionbt.com/) for MacOS as a reference client. To complete the local setup, I've registered our `.torrent` file in the application and waited until it finished downloading. So now we have a BitTorrent client running locally that serves the entire file: 
 

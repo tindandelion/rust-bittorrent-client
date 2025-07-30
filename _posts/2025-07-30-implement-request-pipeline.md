@@ -4,7 +4,7 @@ title:  "Request pipeline implementation"
 date: 2025-07-30
 ---
 
-So our [quick experiments][prev-post] have shown that request pipelining does in fact improve the download speed. Now we can move forward and create a proper implementation for it. 
+So our [quick experiments][prev-post] has shown that request pipelining does in fact improve the download speed. Now we can move forward and create a proper implementation for it. 
 
 [*Version 0.0.9 on GitHub*](https://github.com/tindandelion/rust-bittorrent-client/tree/0.0.9){: .no-github-icon}
 
@@ -34,8 +34,8 @@ fn download_piece_by_block(
 
 Basically, the pipelining algorithm works as follows: 
 
-1. When the download starts, we send a series of `request` messages to the remote peer. The number of sent messages  defines the request queue length. 
-2. Next we start waiting for `piece` messages from the peer. When a `piece` message is received, we issue the next `request` message. 
+1. When the download starts, we send a series of `request` messages to the remote peer. The number of sent messages defines the request queue length. 
+2. Next, we start waiting for `piece` messages from the peer. When a `piece` message is received, we issue the next `request` message. 
 3. We repeat the step #2 in the loop until we receive all blocks. 
 
 Also, we'd like the request pipeline to work across the piece boundaries. That means that once we've finished sending requests for the current piece, we immediately pick the next one and start requesting its blocks. In the first version, we'll just order the pieces by their indexes. 
@@ -152,7 +152,7 @@ I guess that value is a matter of trial and error in case of a static queue leng
 - Downloaded piece 1: 1002 ms
 ```
 
-The download speed has increased, but we still see 500 millisecond delays for every 10th piece. Let's increase the queue length to 20 then: 
+The download speed has increased, but we still see 500 millisecond delays for every 10th piece. Let's increase the queue length to 20, then: 
 
 ```console 
 * Total pieces 2680, piece length 262144
@@ -255,9 +255,9 @@ Downloading the file in the local environment now takes 16 seconds, which gives 
 
 #### My thoughts on the results
 
-This experiment got me thinking. It looks like the length of the request queue is predicated on the channel bandwidth: the wider the channel, the longer the queue should be. We've implemented the static queue with a predefined length, which we chose by trial and error in a local environment. I guess there should be an algorithm that would adjust the length of the queue dynamically, adapting to the current channel bandwidth. 
+This experiment got me thinking. It looks like the length of the request queue is predicated on the channel bandwidth: the wider the channel, the longer the queue should be. We've implemented the static queue with a predefined length, which we chose by trial and error in a local environment. I think there should be an algorithm that would adjust the length of the queue dynamically, adapting to the current channel bandwidth. 
 
-On the other hand, this whole experiment was based on the single BitTorrent client implementation: Transmission. I hypothesized that there should be some forced delay in Transmission side, according to the irregularities in `piece` message delays. Other BitTorrent clients may behave differently. 
+On the other hand, this whole experiment was based on the single BitTorrent client implementation: Transmission. I hypothesize that there should be some forced delay in Transmission side, according to the irregularities in `piece` message delays. Other BitTorrent clients may behave differently. 
 
 As a bottom line, I'd say that the static queue approach works fine for now, though its flexibility raises some concerns. Perhaps, later I could revisit the implementation, conduct some more experiments with various BitTorrent clients, and come up with a more flexible solution for request pipelining. 
 
