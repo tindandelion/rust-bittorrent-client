@@ -69,6 +69,7 @@ pub struct FileDownloader<'a, T: RequestChannel + DownloadChannel> {
 }
 
 impl<'a, T: RequestChannel + DownloadChannel> FileDownloader<'a, T> {
+    const REQUEST_QUEUE_LENGTH: u16 = 150;
     const BLOCK_LENGTH: u32 = 1 << 14;
 
     pub fn new(
@@ -86,17 +87,18 @@ impl<'a, T: RequestChannel + DownloadChannel> FileDownloader<'a, T> {
             piece_hashes,
             file_info,
             piece_composer: PieceComposer::new(file_info),
-            request_emitter: RequestEmitter::new(Self::BLOCK_LENGTH, file_info)
-                .with_queue_length(150),
+            request_emitter: RequestEmitter::new(Self::BLOCK_LENGTH, file_info),
         }
     }
 
     pub fn download(&mut self) -> io::Result<Vec<u8>> {
         let mut buffer = vec![0; self.file_info.file_length];
         let mut downloaded_pieces_count = 0;
-
         let mut download_report = DownloadReport::new();
-        self.request_emitter.request_first_blocks(self.channel)?;
+
+        self.request_emitter
+            .request_first_blocks(Self::REQUEST_QUEUE_LENGTH, self.channel)?;
+
         while downloaded_pieces_count < self.file_info.piece_count() {
             download_report.download_started();
             let block = self.channel.receive()?;

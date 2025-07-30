@@ -3,7 +3,6 @@ use std::io;
 use super::{FileInfo, RequestChannel};
 
 pub struct RequestEmitter {
-    queue_length: u16,
     block_length: u32,
     piece_index: u32,
     next_block_index: u32,
@@ -13,17 +12,11 @@ pub struct RequestEmitter {
 impl RequestEmitter {
     pub fn new(block_length: u32, file_info: FileInfo) -> Self {
         Self {
-            queue_length: 10,
             block_length,
             piece_index: 0,
             next_block_index: 0,
             file_info,
         }
-    }
-
-    pub fn with_queue_length(mut self, queue_length: u16) -> Self {
-        self.queue_length = queue_length;
-        self
     }
 
     pub fn request_next_block(&mut self, channel: &mut impl RequestChannel) -> io::Result<()> {
@@ -47,8 +40,12 @@ impl RequestEmitter {
         Ok(())
     }
 
-    pub fn request_first_blocks(&mut self, channel: &mut impl RequestChannel) -> io::Result<()> {
-        for _ in 0..self.queue_length {
+    pub fn request_first_blocks(
+        &mut self,
+        n_requests: u16,
+        channel: &mut impl RequestChannel,
+    ) -> io::Result<()> {
+        for _ in 0..n_requests {
             self.request_next_block(channel)?;
         }
         Ok(())
@@ -146,11 +143,12 @@ mod tests {
                 file_length: 1000,
                 piece_length: 100,
             },
-        )
-        .with_queue_length(queue_length);
+        );
         let mut channel = RequestRecorder::new();
 
-        emitter.request_first_blocks(&mut channel).unwrap();
+        emitter
+            .request_first_blocks(queue_length, &mut channel)
+            .unwrap();
         assert_eq!(channel.requests, vec![(0, 0, 10), (0, 10, 10), (0, 20, 10)]);
     }
 
