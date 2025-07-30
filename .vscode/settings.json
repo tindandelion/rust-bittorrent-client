@@ -80,6 +80,9 @@
         "unchoking",
         "PeerMessage",
         "deserialization",
-        "MacOS"
+        "MacOS",
+        "FileDownloader",
+        "RequestEmitter",
+        "PieceComposer"
     ]
 } 
