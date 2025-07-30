@@ -242,7 +242,7 @@ With the queue length equal to 150 requests I finally managed to reach the peak 
 -- Receive: 0 ms
 - Downloaded piece 1: 12 ms
 
-<... skipped >
+<< ...skipped... >> 
 
 - Downloaded piece 2679: 5 ms
 * Received entire file, first 128 bytes: 455208000000909000000000000000000000000000000000000000000000000033edfa8ed5bc007cfbfc6631db6631c96653665106578edd8ec552be007cbf0006b90001f3a5ea4b06000052b441bbaa5531c930f6f9cd13721681fb55aa751083e101740b66c706f306b442eb15eb0231c95a51b408cd135b0fb6c6405083e1
@@ -251,6 +251,60 @@ With the queue length equal to 150 requests I finally managed to reach the peak 
 
 Downloading the file in the local environment now takes 16 seconds, which gives us the download speed of almost **42 MB/sec**. What a dramatic change, compared to our [initial implementation][prev-post-download-speed]! 
 
+#### My thoughts on the results
+
+This experiment got me thinking. It looks like the length of the request queue is predicated on the channel bandwidth: the wider the channel, the longer the queue should be. We've implemented the static queue with a predefined length, which we chose by trial and error in a local environment. I guess there should be an algorithm that would adjust the length of the queue dynamically, adapting to the current channel bandwidth. 
+
+On the other hand, this whole experiment was based on the single BitTorrent client implementation: Transmission. I hypothesized that there should be some forced delay in Transmission side, according to the irregularities in `piece` message delays. Other BitTorrent clients may behave differently. 
+
+As a bottom line, I'd say that the static queue approach works fine for now, though its flexibility raises some concerns. Perhaps, later I could revisit the implementation, conduct some more experiments with various BitTorrent clients, and come up with a more flexible solution for request pipelining. 
+
 # Trying it all out 
 
+To conclude this part of work, let's remove all debug output from the code and see how request pipelining works with the remote peer from the wild: 
+
+```console
+* Total pieces 2680, piece length 262144
+
+* Your announce url is: http://bttracker.debian.org:6969/announce
+* Total 50 peers
+* Probing peers...
+87.58.176.238:62008	-> OK("-TR3000-0d2p8nysqd9z")
+* Connected to peer: 87.58.176.238:62008
+* Received bitfield: ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
+* Sending `interested` message
+* Receiving `unchoke` message
+* Unchoked, requesting file
+- Downloaded piece 0: 745 ms
+- Downloaded piece 1: 65 ms
+- Downloaded piece 2: 50 ms
+- Downloaded piece 3: 18 ms
+- Downloaded piece 4: 50 ms
+- Downloaded piece 5: 10 ms
+- Downloaded piece 6: 23 ms
+- Downloaded piece 7: 8 ms
+- Downloaded piece 8: 7 ms
+- Downloaded piece 9: 55 ms
+- Downloaded piece 10: 8 ms
+- Downloaded piece 11: 54 ms
+- Downloaded piece 12: 8 ms
+- Downloaded piece 13: 7 ms
+- Downloaded piece 14: 497 ms
+- Downloaded piece 15: 61 ms
+- Downloaded piece 16: 11 ms
+- Downloaded piece 17: 9 ms
+
+<< ...skipped... >> 
+
+- Downloaded piece 2677: 6 ms
+- Downloaded piece 2678: 384 ms
+- Downloaded piece 2679: 48 ms
+* Received entire file, first 128 bytes: 455208000000909000000000000000000000000000000000000000000000000033edfa8ed5bc007cfbfc6631db6631c96653665106578edd8ec552be007cbf0006b90001f3a5ea4b06000052b441bbaa5531c930f6f9cd13721681fb55aa751083e101740b66c706f306b442eb15eb0231c95a51b408cd135b0fb6c6405083e1
+* File size: 702545920, download duration: 145.052801s
+```
+
+Obviously, the download speed from the remote peer was lower than in our local environment. But nonetheless, we've downloaded the entire file in roughly 2.5 minutes, with the download speed of **4.6 MB/sec**. Impressive improvement! 
+
 # Next steps
+
+So let's conclude for now that we achieved satisfactory download speeds with request pipelining, and switch our attention to another topic that needs some optimization: picking the peer to download from. 
