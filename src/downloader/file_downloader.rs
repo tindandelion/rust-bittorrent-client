@@ -1,6 +1,11 @@
+mod piece_composer;
+mod request_emitter;
+
 use std::{io, time::Instant};
 
 use crate::types::Sha1;
+use piece_composer::PieceComposer;
+use request_emitter::RequestEmitter;
 
 #[derive(Debug, Clone)]
 pub struct Block {
@@ -52,33 +57,6 @@ impl FileInfo {
             piece_end = self.file_length;
         };
         (piece_start, piece_end)
-    }
-}
-
-struct DownloadReport {
-    start_timestamp: Option<Instant>,
-}
-
-impl DownloadReport {
-    fn new() -> Self {
-        Self {
-            start_timestamp: None,
-        }
-    }
-
-    fn download_started(&mut self) {
-        if self.start_timestamp.is_none() {
-            self.start_timestamp = Some(Instant::now());
-        }
-    }
-
-    fn download_finished(&mut self, piece_index: u32) {
-        let duration = self.start_timestamp.take().unwrap().elapsed();
-        println!(
-            "- Downloaded piece {}: {} ms",
-            piece_index,
-            duration.as_millis()
-        );
     }
 }
 
@@ -151,418 +129,41 @@ impl<'a, T: RequestChannel + DownloadChannel> FileDownloader<'a, T> {
 
     #[cfg(test)]
     fn with_block_length(mut self, block_length: u32) -> Self {
-        self.request_emitter.block_length = block_length;
+        self.request_emitter.set_block_length(block_length);
         self
     }
 }
 
-fn unexpected_piece_index(expected: u32, actual: u32) -> io::Error {
-    io::Error::new(
-        io::ErrorKind::InvalidData,
-        format!(
-            "Unexpected piece index in response: expected {}, got {}",
-            expected, actual
-        ),
-    )
+struct DownloadReport {
+    start_timestamp: Option<Instant>,
 }
 
-fn unexpected_block_offset(expected: u32, actual: u32) -> io::Error {
-    io::Error::new(
-        io::ErrorKind::InvalidData,
-        format!(
-            "Unexpected block offset in response: expected {}, got {}",
-            expected, actual
-        ),
-    )
-}
-
-struct RequestEmitter {
-    queue_length: u16,
-    block_length: u32,
-    piece_index: u32,
-    next_block_index: u32,
-    file_info: FileInfo,
-}
-
-impl RequestEmitter {
-    fn new(block_length: u32, file_info: FileInfo) -> Self {
+impl DownloadReport {
+    fn new() -> Self {
         Self {
-            queue_length: 10,
-            block_length,
-            piece_index: 0,
-            next_block_index: 0,
-            file_info,
+            start_timestamp: None,
         }
     }
 
-    fn request_next_block(&mut self, channel: &mut impl RequestChannel) -> io::Result<()> {
-        if self.piece_index >= self.file_info.piece_count() {
-            return Ok(());
-        }
-
-        let piece_length = self.file_info.piece_length(self.piece_index);
-        let block_count = piece_length.div_ceil(self.block_length);
-        let block_offset = self.next_block_index * self.block_length;
-        let block_length = self.block_length.min(piece_length - block_offset);
-
-        channel.request(self.piece_index, block_offset, block_length)?;
-
-        self.next_block_index += 1;
-        if self.next_block_index >= block_count {
-            self.next_block_index = 0;
-            self.piece_index += 1;
-        }
-
-        Ok(())
-    }
-
-    fn request_first_blocks(&mut self, channel: &mut impl RequestChannel) -> io::Result<()> {
-        for _ in 0..self.queue_length {
-            self.request_next_block(channel)?;
-        }
-        Ok(())
-    }
-
-    fn with_queue_length(mut self, queue_length: u16) -> Self {
-        self.queue_length = queue_length;
-        self
-    }
-}
-
-struct PieceComposer {
-    piece_index: Option<u32>,
-    buffer: Vec<u8>,
-    file_info: FileInfo,
-}
-
-impl PieceComposer {
-    fn new(file_info: FileInfo) -> Self {
-        Self {
-            buffer: Vec::with_capacity(file_info.piece_length as usize),
-            file_info,
-            piece_index: None,
+    fn download_started(&mut self) {
+        if self.start_timestamp.is_none() {
+            self.start_timestamp = Some(Instant::now());
         }
     }
 
-    fn append_block(&mut self, block: &Block) -> io::Result<Option<Piece>> {
-        if self.piece_index.is_none() {
-            self.piece_index = Some(block.piece_index);
-        }
-
-        self.verify_piece_index(block.piece_index)?;
-        self.verify_block_offset(block.offset)?;
-        self.buffer.extend(&block.data);
-
-        if self.buffer.len() >= self.current_piece_length() {
-            let piece = Piece::new(self.piece_index.unwrap(), self.buffer.clone());
-            self.buffer.clear();
-            self.piece_index = None;
-            Ok(Some(piece))
-        } else {
-            Ok(None)
-        }
-    }
-
-    fn current_piece_length(&self) -> usize {
-        self.file_info.piece_length(self.piece_index.unwrap()) as usize
-    }
-
-    fn verify_block_offset(&self, offset: u32) -> io::Result<()> {
-        let expected_offset = self.buffer.len() as u32;
-        if expected_offset != offset {
-            return Err(unexpected_block_offset(expected_offset, offset));
-        }
-        Ok(())
-    }
-
-    fn verify_piece_index(&self, piece_index: u32) -> io::Result<()> {
-        let expected = self.piece_index.unwrap();
-        if expected != piece_index {
-            return Err(unexpected_piece_index(expected, piece_index));
-        }
-        Ok(())
-    }
-}
-
-#[cfg(test)]
-mod piece_composer_tests {
-    use super::*;
-
-    #[test]
-    fn compose_piece_from_blocks() {
-        let mut composer = PieceComposer::new(FileInfo {
-            piece_length: 10,
-            file_length: 100,
-        });
-        let first_block = Block {
-            piece_index: 0,
-            offset: 0,
-            data: vec![1, 2, 3, 4, 5],
-        };
-
-        let second_block = Block {
-            piece_index: 0,
-            offset: 5,
-            data: vec![6, 7, 8, 9, 10],
-        };
-
-        let buffer = composer.append_block(&first_block).unwrap();
-        assert_eq!(buffer, None);
-
-        let buffer = composer.append_block(&second_block).unwrap();
-        assert_eq!(
-            buffer,
-            Some(Piece::new(0, vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10]))
+    fn download_finished(&mut self, piece_index: u32) {
+        let duration = self.start_timestamp.take().unwrap().elapsed();
+        println!(
+            "- Downloaded piece {}: {} ms",
+            piece_index,
+            duration.as_millis()
         );
-    }
-
-    #[test]
-    fn compose_last_piece_with_reduced_length_from_blocks() {
-        let mut composer = PieceComposer::new(FileInfo {
-            piece_length: 10,
-            file_length: 17,
-        });
-        let last_piece_index = 1;
-        let first_block = Block {
-            piece_index: last_piece_index,
-            offset: 0,
-            data: vec![1, 2, 3, 4, 5],
-        };
-
-        let second_block = Block {
-            piece_index: last_piece_index,
-            offset: 5,
-            data: vec![6, 7],
-        };
-
-        let buffer = composer.append_block(&first_block).unwrap();
-        assert_eq!(buffer, None);
-
-        let buffer = composer.append_block(&second_block).unwrap();
-        assert_eq!(
-            buffer,
-            Some(Piece::new(last_piece_index, vec![1, 2, 3, 4, 5, 6, 7]))
-        );
-    }
-
-    #[test]
-    fn starts_composing_new_piece_when_current_is_finished() {
-        let mut composer = PieceComposer::new(FileInfo {
-            piece_length: 10,
-            file_length: 17,
-        });
-        let first_block = Block {
-            piece_index: 0,
-            offset: 0,
-            data: vec![1, 2, 3, 4, 5],
-        };
-
-        let second_block = Block {
-            piece_index: 0,
-            offset: 5,
-            data: vec![6, 7, 8, 9, 10],
-        };
-
-        let third_block = Block {
-            piece_index: 1,
-            offset: 0,
-            data: vec![11, 12, 13, 14, 15, 16, 17],
-        };
-
-        let buffer = composer.append_block(&first_block).unwrap();
-        assert_eq!(buffer, None);
-
-        let buffer = composer.append_block(&second_block).unwrap();
-        assert_eq!(
-            buffer,
-            Some(Piece::new(0, vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10]))
-        );
-
-        let buffer = composer.append_block(&third_block).unwrap();
-        assert_eq!(
-            buffer,
-            Some(Piece::new(1, vec![11, 12, 13, 14, 15, 16, 17]))
-        );
-    }
-
-    #[test]
-    fn append_first_block_with_wrong_offset() {
-        let mut composer = PieceComposer::new(FileInfo {
-            piece_length: 10,
-            file_length: 100,
-        });
-        let block = Block {
-            piece_index: 0,
-            offset: 1,
-            data: vec![1, 2, 3, 4, 5],
-        };
-        let error = composer.append_block(&block).unwrap_err();
-        assert_eq!(unexpected_block_offset(0, 1).to_string(), error.to_string());
-    }
-
-    #[test]
-    fn append_next_block_with_wrong_offset() {
-        let mut composer = PieceComposer::new(FileInfo {
-            piece_length: 10,
-            file_length: 100,
-        });
-        let first_block = Block {
-            piece_index: 0,
-            offset: 0,
-            data: vec![1, 2, 3, 4, 5],
-        };
-
-        let second_block = Block {
-            piece_index: 0,
-            offset: 3,
-            data: vec![6, 7, 8, 9, 10],
-        };
-
-        composer.append_block(&first_block).unwrap();
-        let error = composer.append_block(&second_block).unwrap_err();
-        assert_eq!(unexpected_block_offset(5, 3).to_string(), error.to_string());
-    }
-
-    #[test]
-    fn append_next_block_with_wrong_piece_index() {
-        let mut composer = PieceComposer::new(FileInfo {
-            piece_length: 10,
-            file_length: 100,
-        });
-        let first_block = Block {
-            piece_index: 0,
-            offset: 0,
-            data: vec![1, 2, 3, 4, 5],
-        };
-
-        let second_block = Block {
-            piece_index: 1,
-            offset: 5,
-            data: vec![6, 7, 8, 9, 10],
-        };
-
-        composer.append_block(&first_block).unwrap();
-        let error = composer.append_block(&second_block).unwrap_err();
-        assert_eq!(unexpected_piece_index(0, 1).to_string(), error.to_string());
-    }
-}
-
-#[cfg(test)]
-mod request_emitter_tests {
-    use super::*;
-
-    #[test]
-    fn request_next_block() {
-        let block_length = 10;
-        let mut emitter = RequestEmitter::new(
-            block_length,
-            FileInfo {
-                file_length: 1000,
-                piece_length: 100,
-            },
-        );
-        let mut channel = RequestRecorder::new();
-
-        emitter.request_next_block(&mut channel).unwrap();
-        emitter.request_next_block(&mut channel).unwrap();
-        assert_eq!(channel.requests, vec![(0, 0, 10), (0, 10, 10)]);
-    }
-
-    #[test]
-    fn request_next_block_until_end_of_piece() {
-        let block_length = 10;
-        let mut emitter = RequestEmitter::new(
-            block_length,
-            FileInfo {
-                file_length: 1000,
-                piece_length: 15,
-            },
-        );
-        let mut channel = RequestRecorder::new();
-
-        emitter.request_next_block(&mut channel).unwrap();
-        emitter.request_next_block(&mut channel).unwrap();
-        assert_eq!(channel.requests, vec![(0, 0, 10), (0, 10, 5)]);
-    }
-
-    #[test]
-    fn proceeds_to_next_piece_when_current_is_finished() {
-        let block_length = 10;
-        let mut emitter = RequestEmitter::new(
-            block_length,
-            FileInfo {
-                file_length: 1000,
-                piece_length: 15,
-            },
-        );
-        let mut channel = RequestRecorder::new();
-
-        emitter.request_next_block(&mut channel).unwrap();
-        emitter.request_next_block(&mut channel).unwrap();
-        emitter.request_next_block(&mut channel).unwrap();
-
-        assert_eq!(channel.requests, vec![(0, 0, 10), (0, 10, 5), (1, 0, 10)]);
-    }
-
-    #[test]
-    fn stops_requesting_blocks_past_end_of_file() {
-        let block_length = 10;
-        let mut emitter = RequestEmitter::new(
-            block_length,
-            FileInfo {
-                file_length: 15,
-                piece_length: 10,
-            },
-        );
-        let mut channel = RequestRecorder::new();
-
-        emitter.request_next_block(&mut channel).unwrap();
-        emitter.request_next_block(&mut channel).unwrap();
-        emitter.request_next_block(&mut channel).unwrap();
-
-        assert_eq!(channel.requests, vec![(0, 0, 10), (1, 0, 5)]);
-    }
-
-    #[test]
-    fn request_first_blocks() {
-        let block_length = 10;
-        let queue_length = 3;
-        let mut emitter = RequestEmitter::new(
-            block_length,
-            FileInfo {
-                file_length: 1000,
-                piece_length: 100,
-            },
-        )
-        .with_queue_length(queue_length);
-        let mut channel = RequestRecorder::new();
-
-        emitter.request_first_blocks(&mut channel).unwrap();
-        assert_eq!(channel.requests, vec![(0, 0, 10), (0, 10, 10), (0, 20, 10)]);
-    }
-
-    struct RequestRecorder {
-        requests: Vec<(u32, u32, u32)>,
-    }
-
-    impl RequestRecorder {
-        fn new() -> Self {
-            Self {
-                requests: Vec::new(),
-            }
-        }
-    }
-
-    impl RequestChannel for RequestRecorder {
-        fn request(&mut self, piece_index: u32, offset: u32, length: u32) -> io::Result<()> {
-            self.requests.push((piece_index, offset, length));
-            Ok(())
-        }
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use piece_composer::unexpected_block_offset;
     use std::collections::VecDeque;
 
     use crate::types::Sha1;
