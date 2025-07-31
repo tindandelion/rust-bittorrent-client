@@ -37,10 +37,10 @@ It should be noted that I'm starting this project knowing _absolutely nothing_ a
 
 Obviously, I'm not the first person to implement a BitTorrent client. There are plenty of resources on the Web dedicated to this subject. Here, I'm going to put up a list of those that I use in the course of this project. The list will be updated as I move along. 
 
-* [Unofficial BitTorrent Protocol Specification][bittorrent-spec]
+* [Unofficial BitTorrent Protocol Specification](https://wiki.theory.org/BitTorrentSpecification)
+* [Incentives Build Robustness in BitTorrent](https://bittorrent.org/bittorrentecon.pdf), by Bram Cohen
 
 
 
 [first-rust-project]: https://www.tindandelion.com/rust-text-compression/
 [project-github]: https://github.com/tindandelion/rust-bittorrent-client
-[bittorrent-spec]: https://wiki.theory.org/BitTorrentSpecification

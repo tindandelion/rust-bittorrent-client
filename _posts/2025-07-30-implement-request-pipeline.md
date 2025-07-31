@@ -4,13 +4,13 @@ title:  "Request pipeline implementation"
 date: 2025-07-30
 ---
 
-So our [quick experiments][prev-post] has shown that request pipelining does in fact improve the download speed. Now we can move forward and create a proper implementation for it. 
+So, our [previous experiments][prev-post] have shown that request pipelining does in fact improve the download speed. Now we can move forward and create a proper implementation for it. 
 
 [*Version 0.0.9 on GitHub*](https://github.com/tindandelion/rust-bittorrent-client/tree/0.0.9){: .no-github-icon}
 
 # General considerations 
 
-To implement request pipelining, we're going to break this tightly coupled loop in [`FileDownloader::download_piece_by_block()`](https://github.com/tindandelion/rust-bittorrent-client/blob/0.0.8/src/downloader/file_downloader.rs#L149): 
+To implement request pipelining, we're going to break that tightly coupled loop in [`FileDownloader::download_piece_by_block()`](https://github.com/tindandelion/rust-bittorrent-client/blob/0.0.8/src/downloader/file_downloader.rs#L149): 
 
 ```rust 
 fn download_piece_by_block(
@@ -32,13 +32,13 @@ fn download_piece_by_block(
 }
 ```
 
-Basically, the pipelining algorithm works as follows: 
+Basically, the pipelining algorithm should work as follows: 
 
-1. When the download starts, we send a series of `request` messages to the remote peer. The number of sent messages defines the request queue length. 
-2. Next, we start waiting for `piece` messages from the peer. When a `piece` message is received, we issue the next `request` message. 
-3. We repeat the step #2 in the loop until we receive all blocks. 
+1. When the download starts, we send a series of `request` messages to the remote peer. The number of sent messages becomes the request queue length. 
+2. Next, we start waiting for `piece` messages from the peer. When a `piece` message is received, we issue the next `request` message, keeping the request queue full.
+3. We repeat the step #2 in the loop until we have received all blocks. 
 
-Also, we'd like the request pipeline to work across the piece boundaries. That means that once we've finished sending requests for the current piece, we immediately pick the next one and start requesting its blocks. In the first version, we'll just order the pieces by their indexes. 
+Also, we'd like to avoid delays between pieces. That means that once we've finished sending requests for the current piece, we immediately pick the next one and start requesting its blocks. In the first version, we'll just order the pieces by their indexes. 
 
 The receiving algorithm also undergoes some changes. We're now working with the continuous stream of `piece` messages, decoupled from the corresponding requests: 
 
@@ -48,29 +48,32 @@ The receiving algorithm also undergoes some changes. We're now working with the 
 
 # Implementation details 
 
-In order to facilitate testing, I've extracted two helper structs, [`RequestEmitter`][request-emitter] and [`PieceComposer`][piece-composer]. As their names suggest, they are responsible for sending `request` messages to the peer, and constructing the downloaded piece from incoming `piece` messages, respectively. 
+Implementing the pipelining correctly is crucial for the BitTorrent client. Especially when it comes to calculating piece boundaries and block offsets and lengths, it's very easy to make an error in those calculations, and end up requesting or receiving incorrect data. Therefore, it's very important that these parts are thoroughly tested, including different boundary conditions, such as last block and last piece boundaries, which may differ from "regular" intermediate blocks. 
+
+In order to facilitate testing, I've extracted two helper structs, [`RequestEmitter`][request-emitter] and [`PieceComposer`][piece-composer]. As their names suggest, they are responsible for sending `request` messages to the peer, and constructing the downloaded piece from incoming file blocks, respectively. 
 
 #### _RequestEmitter_
 
-[`RequestEmitter`][request-emitter] implements the algorithm for sending `request` messages to the peer, in a way described above. Internally, it keeps track of the current piece being requested, along with the next block inside that piece. Its method [`request_next_block()`](https://github.com/tindandelion/rust-bittorrent-client/blob/0.0.9/src/downloader/file_downloader/request_emitter.rs#L22) does the bulk of work: 
+[`RequestEmitter`][request-emitter] implements the algorithm for sending `request` messages to the peer, in a way I described earlier in this post. Internally, it keeps track of the current piece being requested, along with the next block inside that piece. The method [`request_next_block()`](https://github.com/tindandelion/rust-bittorrent-client/blob/0.0.9/src/downloader/file_downloader/request_emitter.rs#L22) does the most of work: 
 
 * It calculates the parameters `block_offset` and `block_length` for the next block and calls `RequestChannel::request()`; 
 * Once all blocks for the current piece have been requested, it increments the current piece index;
 * When all pieces have been requested, it doesn't send any more requests and simply returns `Ok(())`. 
 
-Its another method `request_first_blocks()` is supposed to be called when the download starts. It fills up the request pipeline by sending the first series of requests. The number of requests is determined by the parameter `n_requests`. 
+Its another method [`request_first_blocks()`](https://github.com/tindandelion/rust-bittorrent-client/blob/0.0.9/src/downloader/file_downloader/request_emitter.rs#L43) is intended to be called when the download starts. It fills up the request pipeline by sending the first series of requests. The number of requests is determined by the method parameter `n_requests`. 
 
 #### _PieceComposer_
 
-[`PieceComposer`][piece-composer] is responsible for reconstructing the piece from the incoming `piece` messages. Its main method [`append_block`](https://github.com/tindandelion/rust-bittorrent-client/blob/0.0.9/src/downloader/file_downloader/piece_composer.rs#L19) accepts the received file block and adds the block data to the current piece. If the appended block completes the current piece, `append_block` returns that piece as the result, and becomes ready to construct the next piece. Otherwise, it returns `None`. 
+[`PieceComposer`][piece-composer] is responsible for reconstructing the piece from the incoming `piece` messages. Its main method [`append_block`](https://github.com/tindandelion/rust-bittorrent-client/blob/0.0.9/src/downloader/file_downloader/piece_composer.rs#L19) accepts the received file block and adds the block data to the current piece. If the appended block completes the current piece, `append_block` returns that piece, and becomes ready to construct the next piece. Otherwise, it returns `None` and keeps appending data to the current piece. 
 
-Additionally, `PieceComposer` verifies that blocks come in expected order: 
-* The `piece_index` of the block must match the index of the currently constructed piece; 
-* The `offset` of the block must be equal to (`offset + length` of the previous block). Essentially, it checks that data is received without any gaps or overlaps.  
+Additionally, `PieceComposer` makes sure that blocks come in the expected order: 
+
+* The `piece_index` of the block must match the index of the currently constructed piece. It is overwritten each time we start constructing a new piece.  
+* The `offset` of the block must be equal to `(offset + length)` from the previous block. Essentially, we check that data is received without any gaps or overlaps.  
 
 #### _FileDownloader_ 
 
-The new implementation of [`FileDownloader`](https://github.com/tindandelion/rust-bittorrent-client/blob/0.0.9/src/downloader/file_downloader.rs#L63) now relies on `RequestEmitter` and `PieceComposer` to do the lion share of the job. Its main method [`download()`](https://github.com/tindandelion/rust-bittorrent-client/blob/0.0.9/src/downloader/file_downloader.rs#L94) ties all pieces together: 
+The new implementation of [`FileDownloader`](https://github.com/tindandelion/rust-bittorrent-client/blob/0.0.9/src/downloader/file_downloader.rs#L63) now relies on `RequestEmitter` and `PieceComposer` to do the lion share of the job. Its main method [`download()`](https://github.com/tindandelion/rust-bittorrent-client/blob/0.0.9/src/downloader/file_downloader.rs#L94) ties all parts together: 
 
 ```rust
 pub fn download(&mut self) -> io::Result<Vec<u8>> {
@@ -103,11 +106,11 @@ pub fn download(&mut self) -> io::Result<Vec<u8>> {
 
 # Choosing the request queue length 
 
-Once the implementation is in place, the question becomes: how many requests should we send beforehand? In other words, how long should the request queue be? 
+Once we have the implementation in place, the question becomes: how many requests should we send beforehand? In other words, how long should the request queue be? 
 
-The [original paper](https://bittorrent.org/bittorrentecon.pdf) by Bram Cohen suggests that keeping 5 requests in the queue should "reliably saturate most connections". The [discussion page](https://wiki.theory.org/Talk_BitTorrentSpecification.html#Algorithms:_Queuing) of BitTorrent specification, however, challenged that assumption, claiming that with modern high-speed Internet the value of 5 is too low, and suggested values of 30 requests or more. 
+The [original paper](https://bittorrent.org/bittorrentecon.pdf) by Bram Cohen suggests that keeping 5 requests in the queue should "reliably saturate most connections". The [discussion page](https://wiki.theory.org/Talk_BitTorrentSpecification.html#Algorithms:_Queuing) of BitTorrent specification, however, challenges that assumption, claiming that with modern high-speed Internet the value of 5 is too low, and suggests values of 30 requests or more. 
 
-I guess that value is a matter of trial and error in case of a static queue length. Let's try the queue length of 10 and see how much it improves the download speed in our local environment: 
+I guess that value is a matter of trial and error in case of a static queue length. Let's try the queue length of 10 and see how it affects the download speed in our local environment: 
 
 ```console
 * Total pieces 2680, piece length 262144
@@ -196,9 +199,10 @@ The download speed has increased, but we still see 500 millisecond delays for ev
 -- Receive: 0 ms
 - Downloaded piece 1: 498 ms
 ```
-That increased the download speed even more, but the delay is still there, only now it's every 20th request. 
 
-I've played with different values for the queue length for a while and finally settled on the value of **150**. It looks like with that value we don't see 500 ms delays anymore, whereas bigger values didn't affect the download speed. 
+Ok, that again increased the download speed, but the delay is still there, only now it's every 20th request. My guess is that longer request queues should improve the download speed even more. 
+
+I've played with different values for the queue length for a while and finally settled on the value of **150**. It looks like with that value we don't see 500 ms delays anymore and we reach the maximum download speed, because the bigger values I tried didn't affect the download speed at all. 
 
 With the queue length equal to 150 requests I finally managed to reach the peak download speed in the local environment: 
 
@@ -251,15 +255,15 @@ With the queue length equal to 150 requests I finally managed to reach the peak 
 * File size: 702545920, download duration: 16.494491333s
 ```
 
-Downloading the file in the local environment now takes 16 seconds, which gives us the download speed of almost **42 MB/sec**. What a dramatic change, compared to our [initial implementation][prev-download-speed]! 
+File download in the local environment now takes 16 seconds, which gives us the download speed of almost **42 MB/sec**. What a dramatic change, compared to the [initial implementation][prev-download-speed]! 
 
 #### My thoughts on the results
 
-This experiment got me thinking. It looks like the length of the request queue is predicated on the channel bandwidth: the wider the channel, the longer the queue should be. We've implemented the static queue with a predefined length, which we chose by trial and error in a local environment. I think there should be an algorithm that would adjust the length of the queue dynamically, adapting to the current channel bandwidth. 
+This experiment got me thinking. It looks like the length of the request queue is predicated on the channel bandwidth: the wider the channel, the longer the queue should be. We've implemented a static queue with a pre-defined length, by trying out different values in the local environment, and observing the effect. It feels kind of circumstantial: I think there should be an algorithm that would adjust the length of the queue dynamically, adapting to the current channel bandwidth. 
 
-On the other hand, this whole experiment was based on the single BitTorrent client implementation: Transmission. I hypothesize that there should be some forced delay in Transmission side, according to the irregularities in `piece` message delays. Other BitTorrent clients may behave differently. 
+On the other hand, this whole experiment was based on a single BitTorrent client implementation: Transmission. I hypothesized that there should be some forced delay in Transmission side, according to the regularities in `piece` message delays. Other BitTorrent clients may behave differently, though. 
 
-As a bottom line, I'd say that the static queue approach works fine for now, though its flexibility raises some concerns. Perhaps, later I could revisit the implementation, conduct some more experiments with various BitTorrent clients, and come up with a more flexible solution for request pipelining. 
+As a bottom line, I'd say that the static queue approach works fine for now, though its flexibility raises some concerns. Perhaps later I could revisit this implementation, do some more experiments with various BitTorrent clients, and come up with a more flexible solution for request pipelining. 
 
 # Trying it all out 
 
@@ -305,11 +309,11 @@ To conclude this part of work, let's remove all debug output from the code and s
 * File size: 702545920, download duration: 145.052801s
 ```
 
-Obviously, the download speed from the remote peer was lower than in our local environment. But nonetheless, we've downloaded the entire file in roughly 2.5 minutes, with the download speed of **4.6 MB/sec**. Impressive improvement! 
+Obviously, the download speed from the remote peer was lower than that in our local environment. But nonetheless, we've downloaded the entire file in roughly **2.5** minutes, with the download speed of **4.6 MB/sec**. Impressive improvement! 
 
 # Next steps
 
-So let's conclude for now that we achieved satisfactory download speeds with request pipelining, and switch our attention to another topic that needs some optimization: picking the peer to download from. 
+So, let's conclude for now that we have achieved quite satisfactory download speeds using request pipelining, and switch our attention to another area that needs some optimization: probing remote peers and picking the one to download from. 
 
 [prev-post]: {{site.baseurl}}/{% post_url 2025-07-25-improve-download-speed %}
 [request-emitter]: https://github.com/tindandelion/rust-bittorrent-client/blob/0.0.9/src/downloader/file_downloader/request_emitter.rs
