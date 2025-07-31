@@ -1,6 +1,6 @@
 ---
 layout: post
-title:  "Request pipeline implementation"
+title:  "Speeding up downloads: pipelining requests"
 date: 2025-07-31
 ---
 
