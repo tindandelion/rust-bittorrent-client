@@ -1,7 +1,7 @@
 ---
 layout: post
 title:  "Request pipeline implementation"
-date: 2025-07-30
+date: 2025-07-31
 ---
 
 So, our [previous experiments][prev-post] have shown that request pipelining does in fact improve the download speed. Now we can move forward and create a proper implementation for it. 
