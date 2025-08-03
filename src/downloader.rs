@@ -21,3 +21,16 @@ pub fn download_file(
         .download()
         .map_err(|e| e.into())
 }
+
+pub fn request_complete_file(channel: &mut PeerChannel) -> Result<(), Box<dyn Error>> {
+    let bitfield = channel.receive_bitfield()?;
+    println!("* Received bitfield: {}", hex::encode(bitfield));
+
+    println!("* Sending `interested` message");
+    channel.send_interested()?;
+
+    println!("* Receiving `unchoke` message");
+    channel.receive_unchoke()?;
+
+    Ok(())
+}

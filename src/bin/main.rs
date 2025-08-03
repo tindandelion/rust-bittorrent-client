@@ -104,14 +104,7 @@ fn download_file(
     piece_length: u32,
     file_length: usize,
 ) -> Result<(Vec<u8>, Duration), Box<dyn Error>> {
-    let bitfield = channel.receive_bitfield()?;
-    println!("* Received bitfield: {}", hex::encode(bitfield));
-
-    println!("* Sending `interested` message");
-    channel.send_interested()?;
-
-    println!("* Receiving `unchoke` message");
-    channel.receive_unchoke()?;
+    downloader::request_complete_file(channel)?;
 
     println!("* Unchoked, requesting file");
     let download_start = std::time::Instant::now();
