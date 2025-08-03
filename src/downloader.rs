@@ -17,6 +17,7 @@ pub fn download_file(
     piece_length: u32,
     file_length: usize,
 ) -> Result<Vec<u8>, Box<dyn Error>> {
-    let data = FileDownloader::new(channel, piece_hashes, piece_length, file_length).download()?;
-    Ok(data)
+    FileDownloader::new(channel, piece_hashes, piece_length, file_length)
+        .download()
+        .map_err(|e| e.into())
 }
