@@ -1,5 +1,4 @@
 use std::{
-    error::Error,
     io,
     net::{SocketAddr, TcpStream},
     time::Duration,
@@ -20,7 +19,7 @@ impl PeerChannel {
     const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
     const MESSAGE_READ_TIMEOUT: Duration = Duration::from_secs(60);
 
-    pub fn connect(addr: &SocketAddr) -> Result<PeerChannel, Box<dyn Error>> {
+    pub fn connect(addr: &SocketAddr) -> io::Result<PeerChannel> {
         let stream = TcpStream::connect_timeout(addr, Self::CONNECT_TIMEOUT)?;
         stream.set_read_timeout(Some(Self::MESSAGE_READ_TIMEOUT))?;
         Ok(PeerChannel { stream })
@@ -30,7 +29,7 @@ impl PeerChannel {
         self.stream.peer_addr()
     }
 
-    pub fn handshake(&mut self, info_hash: Sha1, peer_id: PeerId) -> Result<String, io::Error> {
+    pub fn handshake(&mut self, info_hash: Sha1, peer_id: PeerId) -> io::Result<String> {
         HandshakeMessage::new(info_hash, peer_id).send(&mut self.stream)?;
 
         let current_timeout = self.stream.read_timeout()?;
