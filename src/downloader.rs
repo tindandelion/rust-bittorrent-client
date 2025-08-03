@@ -1,15 +1,14 @@
 mod file_downloader;
 mod handshake_message;
 mod peer_channel;
-mod peer_messages;
+mod peer_comm;
+mod request_download;
 
 use std::error::Error;
 
-pub use file_downloader::DownloadChannel;
-use file_downloader::FileDownloader;
+use crate::types::Sha1;
+use file_downloader::{DownloadChannel, FileDownloader, RequestChannel};
 pub use peer_channel::PeerChannel;
-
-use crate::{downloader::file_downloader::RequestChannel, types::Sha1};
 
 pub fn download_file(
     channel: &mut (impl RequestChannel + DownloadChannel),
@@ -23,14 +22,5 @@ pub fn download_file(
 }
 
 pub fn request_complete_file(channel: &mut PeerChannel) -> Result<(), Box<dyn Error>> {
-    let bitfield = channel.receive_bitfield()?;
-    println!("* Received bitfield: {}", hex::encode(bitfield));
-
-    println!("* Sending `interested` message");
-    channel.send_interested()?;
-
-    println!("* Receiving `unchoke` message");
-    channel.receive_unchoke()?;
-
-    Ok(())
+    request_download::request_complete_file(channel).map_err(|e| e.into())
 }

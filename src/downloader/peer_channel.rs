@@ -4,11 +4,13 @@ use std::{
     time::Duration,
 };
 
-use crate::types::{PeerId, Sha1};
+use crate::{
+    downloader::peer_comm::{MessageChannel, PeerMessage},
+    types::{PeerId, Sha1},
+};
 
 use super::file_downloader::{Block, DownloadChannel, RequestChannel};
 use super::handshake_message::HandshakeMessage;
-use super::peer_messages::PeerMessage;
 
 pub struct PeerChannel {
     stream: TcpStream,
@@ -40,35 +42,26 @@ impl PeerChannel {
 
         response.map(|msg| String::from_utf8_lossy(&msg.peer_id).to_string())
     }
+}
 
-    pub fn receive_bitfield(&mut self) -> io::Result<Vec<u8>> {
-        match PeerMessage::receive(&mut self.stream)? {
-            PeerMessage::Bitfield(bitfield) => Ok(bitfield),
-            other => error_unexpected_message("bitfield", &other),
-        }
+impl MessageChannel for PeerChannel {
+    fn receive(&mut self) -> io::Result<PeerMessage> {
+        PeerMessage::receive(&mut self.stream)
     }
 
-    pub fn send_interested(&mut self) -> io::Result<()> {
-        PeerMessage::Interested.send(&mut self.stream)
-    }
-
-    pub fn receive_unchoke(&mut self) -> io::Result<()> {
-        match PeerMessage::receive(&mut self.stream)? {
-            PeerMessage::Unchoke => Ok(()),
-            other => error_unexpected_message("unchoke", &other),
-        }
+    fn send(&mut self, msg: &PeerMessage) -> io::Result<()> {
+        msg.send(&mut self.stream)
     }
 }
 
 impl RequestChannel for PeerChannel {
     fn request(&mut self, piece_index: u32, offset: u32, length: u32) -> io::Result<()> {
-        let result = PeerMessage::Request {
+        PeerMessage::Request {
             piece_index,
             offset,
             length,
         }
-        .send(&mut self.stream);
-        result
+        .send(&mut self.stream)
     }
 }
 

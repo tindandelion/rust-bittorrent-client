@@ -1,6 +1,6 @@
 use std::io;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum PeerMessage {
     Bitfield(Vec<u8>),
     Interested,
@@ -19,6 +19,11 @@ pub enum PeerMessage {
         id: u8,
         payload: Vec<u8>,
     },
+}
+
+pub trait MessageChannel {
+    fn receive(&mut self) -> io::Result<PeerMessage>;
+    fn send(&mut self, msg: &PeerMessage) -> io::Result<()>;
 }
 
 impl PeerMessage {
@@ -43,7 +48,7 @@ impl PeerMessage {
         Ok(received)
     }
 
-    pub fn send(self, dst: &mut impl io::Write) -> io::Result<()> {
+    pub fn send(&self, dst: &mut impl io::Write) -> io::Result<()> {
         match self {
             Self::Interested => {
                 let msg = vec![0, 0, 0, 1, 2];
