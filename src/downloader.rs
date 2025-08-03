@@ -21,6 +21,9 @@ pub fn download_file(
         .map_err(|e| e.into())
 }
 
-pub fn request_complete_file(channel: &mut PeerChannel) -> Result<(), Box<dyn Error>> {
-    request_download::request_complete_file(channel).map_err(|e| e.into())
+pub fn request_complete_file(
+    channel: &mut PeerChannel,
+    piece_count: usize,
+) -> Result<(), Box<dyn Error>> {
+    request_download::request_complete_file(channel, piece_count).map_err(|e| e.into())
 }

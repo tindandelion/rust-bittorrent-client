@@ -104,7 +104,7 @@ fn download_file(
     piece_length: u32,
     file_length: usize,
 ) -> Result<(Vec<u8>, Duration), Box<dyn Error>> {
-    downloader::request_complete_file(channel)?;
+    downloader::request_complete_file(channel, piece_hashes.len())?;
 
     println!("* Unchoked, requesting file");
     let download_start = std::time::Instant::now();
