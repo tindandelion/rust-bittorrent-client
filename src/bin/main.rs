@@ -1,10 +1,10 @@
-use std::{error::Error, time::Duration};
+use std::{error::Error, net::SocketAddr, time::Duration};
 
 use bt_client::{
     AnnounceParams,
     downloader::{self, PeerChannel},
     get_peer_list_from_response, get_piece_hashes, make_announce_request, read_torrent_file,
-    types::{Peer, PeerId, Sha1},
+    types::{PeerId, Sha1},
 };
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -45,11 +45,11 @@ fn main() -> Result<(), Box<dyn Error>> {
     let info_hash = *info.sha1();
     let announce_params = AnnounceParams { info_hash, peer_id };
     let response = make_announce_request(&announce_url, &announce_params)?;
-    let peers = get_peer_list_from_response(response.as_bytes())?;
-    println!("* Total {} peers", peers.len());
+    let peer_addrs = get_peer_list_from_response(response.as_bytes())?;
+    println!("* Total {} peers", peer_addrs.len());
 
     println!("* Probing peers...");
-    if let Some(mut downloader) = connect_to_first_available_peer(&peers, info_hash, peer_id) {
+    if let Some(mut downloader) = connect_to_first_available_peer(&peer_addrs, info_hash, peer_id) {
         println!("* Connected to peer: {:?}", downloader.peer_addr()?);
 
         let (file_content, download_duration) =
@@ -70,13 +70,13 @@ fn main() -> Result<(), Box<dyn Error>> {
 }
 
 fn connect_to_first_available_peer(
-    peers: &[Peer],
+    peers: &[SocketAddr],
     info_hash: Sha1,
     peer_id: PeerId,
 ) -> Option<PeerChannel> {
-    for peer in peers {
-        print!("{}:{}\t-> ", peer.ip, peer.port);
-        match probe_peer(peer, info_hash, peer_id) {
+    for addr in peers {
+        print!("{addr}\t-> ");
+        match probe_peer(addr, info_hash, peer_id) {
             Ok((result, downloader)) => {
                 println!("OK({})", result);
                 return Some(downloader);
@@ -88,12 +88,11 @@ fn connect_to_first_available_peer(
 }
 
 fn probe_peer(
-    peer: &Peer,
+    peer_addr: &SocketAddr,
     info_hash: Sha1,
     peer_id: PeerId,
 ) -> Result<(String, PeerChannel), Box<dyn Error>> {
-    let peer_addr = peer.to_socket_addr()?;
-    let mut channel = PeerChannel::connect(&peer_addr)?;
+    let mut channel = PeerChannel::connect(peer_addr)?;
     let handshake_result = channel.handshake(info_hash, peer_id)?;
     Ok((format!("{:?}", handshake_result), channel))
 }

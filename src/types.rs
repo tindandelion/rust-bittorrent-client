@@ -1,19 +1,9 @@
-use std::{
-    io,
-    net::{SocketAddr, ToSocketAddrs},
-};
-
 use sha1::Digest;
 #[derive(Debug, Clone, Copy, Default)]
 pub struct PeerId([u8; 20]);
 
 #[derive(Debug, PartialEq, Hash, Eq, Clone, Copy)]
 pub struct Sha1([u8; 20]);
-
-pub struct Peer {
-    pub ip: String,
-    pub port: u16,
-}
 
 impl PeerId {
     #[cfg(test)]
@@ -59,13 +49,5 @@ impl Sha1 {
 
     pub fn verify(&self, data: &[u8]) -> bool {
         self == &Self::calculate(data)
-    }
-}
-
-impl Peer {
-    pub fn to_socket_addr(&self) -> io::Result<SocketAddr> {
-        (self.ip.as_str(), self.port)
-            .to_socket_addrs()
-            .map(|mut v| v.next().expect("Expected a single peer address"))
     }
 }

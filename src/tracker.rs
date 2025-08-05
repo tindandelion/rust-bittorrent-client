@@ -1,8 +1,11 @@
 use crate::{
     bencoding::decode_dict,
-    types::{Peer, PeerId, Sha1},
+    types::{PeerId, Sha1},
 };
-use std::error::Error;
+use std::{
+    error::Error,
+    net::{SocketAddr, ToSocketAddrs},
+};
 use url::{ParseError, Url};
 
 pub struct AnnounceParams {
@@ -19,7 +22,9 @@ pub fn make_announce_request(
     Ok(response.text()?)
 }
 
-pub fn get_peer_list_from_response(tracker_response: &[u8]) -> Result<Vec<Peer>, Box<dyn Error>> {
+pub fn get_peer_list_from_response(
+    tracker_response: &[u8],
+) -> Result<Vec<SocketAddr>, Box<dyn Error>> {
     let decoded_response = decode_dict(tracker_response)?;
 
     let peers_list = decoded_response.get("peers").unwrap().as_list().unwrap();
@@ -38,10 +43,14 @@ pub fn get_peer_list_from_response(tracker_response: &[u8]) -> Result<Vec<Peer>,
                 .map(|v| *v as u16)
                 .unwrap();
 
-            Peer { ip, port }
+            (ip, port)
+        })
+        .flat_map(|(ip, port)| {
+            (ip.as_str(), port)
+                .to_socket_addrs()
+                .unwrap_or_else(|e| panic!("Can't get the peer address from {ip}:{port}: {e:?}"))
         })
         .collect();
-
     Ok(x)
 }
 
@@ -102,7 +111,7 @@ mod tests {
         let peers = get_peer_list_from_response(tracker_response.as_bytes()).unwrap();
 
         assert_eq!(50, peers.len());
-        assert_eq!("88.18.61.54", peers[0].ip);
-        assert_eq!(4666, peers[0].port);
+        assert_eq!("88.18.61.54", peers[0].ip().to_string());
+        assert_eq!(4666, peers[0].port());
     }
 }
