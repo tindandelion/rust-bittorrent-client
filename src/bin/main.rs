@@ -50,7 +50,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     println!("* Probing peers...");
     if let Some(mut downloader) = connect_to_first_available_peer(&peer_addrs, info_hash, peer_id) {
-        println!("* Connected to peer: {:?}", downloader.peer_addr()?);
+        println!("* Connected to peer: {:?}", downloader.peer_addr());
 
         let (file_content, download_duration) =
             download_file(&mut downloader, piece_hashes, piece_length, file_length)?;
@@ -76,25 +76,15 @@ fn connect_to_first_available_peer(
 ) -> Option<PeerChannel> {
     for addr in peers {
         print!("{addr}\t-> ");
-        match probe_peer(addr, info_hash, peer_id) {
-            Ok((result, downloader)) => {
-                println!("OK({})", result);
-                return Some(downloader);
+        match PeerChannel::connect(addr, &info_hash, &peer_id) {
+            Ok(channel) => {
+                println!("OK({})", channel.remote_id().to_string());
+                return Some(channel);
             }
             Err(e) => println!("Err({})", e),
         }
     }
     None
-}
-
-fn probe_peer(
-    peer_addr: &SocketAddr,
-    info_hash: Sha1,
-    peer_id: PeerId,
-) -> Result<(String, PeerChannel), Box<dyn Error>> {
-    let mut channel = PeerChannel::connect(peer_addr)?;
-    let handshake_result = channel.handshake(info_hash, peer_id)?;
-    Ok((format!("{:?}", handshake_result), channel))
 }
 
 fn download_file(

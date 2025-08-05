@@ -6,7 +6,6 @@ pub struct PeerId([u8; 20]);
 pub struct Sha1([u8; 20]);
 
 impl PeerId {
-    #[cfg(test)]
     pub fn new(value: [u8; 20]) -> Self {
         Self(value)
     }
@@ -17,6 +16,12 @@ impl PeerId {
 
     pub fn as_bytes(&self) -> &[u8; 20] {
         &self.0
+    }
+}
+
+impl std::fmt::Display for PeerId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", String::from_utf8_lossy(&self.0))
     }
 }
 

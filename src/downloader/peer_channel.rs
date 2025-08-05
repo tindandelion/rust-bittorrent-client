@@ -13,6 +13,8 @@ use super::file_downloader::{Block, DownloadChannel, RequestChannel};
 use super::handshake_message::HandshakeMessage;
 
 pub struct PeerChannel {
+    peer_addr: SocketAddr,
+    remote_id: PeerId,
     stream: TcpStream,
 }
 
@@ -21,26 +23,34 @@ impl PeerChannel {
     const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
     const MESSAGE_READ_TIMEOUT: Duration = Duration::from_secs(60);
 
-    pub fn connect(addr: &SocketAddr) -> io::Result<PeerChannel> {
-        let stream = TcpStream::connect_timeout(addr, Self::CONNECT_TIMEOUT)?;
+    pub fn connect(
+        addr: &SocketAddr,
+        info_hash: &Sha1,
+        peer_id: &PeerId,
+    ) -> io::Result<PeerChannel> {
+        let mut stream = TcpStream::connect_timeout(addr, Self::CONNECT_TIMEOUT)?;
+        stream.set_read_timeout(Some(Self::HANDSHAKE_TIMEOUT))?;
+        let remote_id = Self::handshake(&mut stream, info_hash, peer_id)?;
         stream.set_read_timeout(Some(Self::MESSAGE_READ_TIMEOUT))?;
-        Ok(PeerChannel { stream })
+
+        Ok(PeerChannel {
+            stream,
+            remote_id,
+            peer_addr: *addr,
+        })
     }
 
-    pub fn peer_addr(&self) -> io::Result<SocketAddr> {
-        self.stream.peer_addr()
+    pub fn peer_addr(&self) -> &SocketAddr {
+        &self.peer_addr
     }
 
-    pub fn handshake(&mut self, info_hash: Sha1, peer_id: PeerId) -> io::Result<String> {
-        HandshakeMessage::new(info_hash, peer_id).send(&mut self.stream)?;
+    pub fn remote_id(&self) -> &PeerId {
+        &self.remote_id
+    }
 
-        let current_timeout = self.stream.read_timeout()?;
-        self.stream
-            .set_read_timeout(Some(Self::HANDSHAKE_TIMEOUT))?;
-        let response = HandshakeMessage::receive(&mut self.stream);
-        self.stream.set_read_timeout(current_timeout)?;
-
-        response.map(|msg| String::from_utf8_lossy(&msg.peer_id).to_string())
+    fn handshake(stream: &mut TcpStream, info_hash: &Sha1, peer_id: &PeerId) -> io::Result<PeerId> {
+        HandshakeMessage::new(info_hash, peer_id).send(stream)?;
+        HandshakeMessage::receive(stream).map(|msg| PeerId::new(msg.peer_id))
     }
 }
 

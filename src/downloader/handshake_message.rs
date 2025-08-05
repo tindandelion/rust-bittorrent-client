@@ -15,7 +15,7 @@ pub struct HandshakeMessage {
 }
 
 impl HandshakeMessage {
-    pub fn new(info_hash: Sha1, peer_id: PeerId) -> Self {
+    pub fn new(info_hash: &Sha1, peer_id: &PeerId) -> Self {
         Self {
             pstrlen: PROTOCOL_ID.len() as u8,
             pstr: *PROTOCOL_ID,
@@ -46,7 +46,8 @@ mod tests {
     fn test_send_and_receive_handshake_message() {
         let mut buffer = Vec::new();
 
-        let message_to_send = HandshakeMessage::new(Sha1::new([0x01; 20]), PeerId::new([0x02; 20]));
+        let message_to_send =
+            HandshakeMessage::new(&Sha1::new([0x01; 20]), &PeerId::new([0x02; 20]));
         message_to_send.send(&mut buffer).unwrap();
         assert_eq!(
             vec![

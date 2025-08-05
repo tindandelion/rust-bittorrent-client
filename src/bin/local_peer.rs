@@ -1,4 +1,8 @@
-use std::{error::Error, net::ToSocketAddrs, time::Duration};
+use std::{
+    error::Error,
+    net::{SocketAddr, ToSocketAddrs},
+    time::Duration,
+};
 
 use bt_client::{
     downloader::{self, PeerChannel},
@@ -36,8 +40,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     );
 
     let info_hash = *info.sha1();
-    let mut local_peer = connect_to_local_peer(info_hash, peer_id)?;
-    println!("* Connected to local peer: {:?}", local_peer.peer_addr()?);
+    let mut local_peer = PeerChannel::connect(&local_address(), &info_hash, &peer_id)?;
+    println!("* Connected to local peer: {:?}", local_peer.peer_addr());
 
     let (file_content, download_duration) =
         download_file(&mut local_peer, piece_hashes, piece_length, file_length)?;
@@ -53,13 +57,6 @@ fn main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn connect_to_local_peer(info_hash: Sha1, peer_id: PeerId) -> Result<PeerChannel, Box<dyn Error>> {
-    let socket_addr = "127.0.0.1:26408".to_socket_addrs()?.next().unwrap();
-    let mut channel = PeerChannel::connect(&socket_addr)?;
-    channel.handshake(info_hash, peer_id)?;
-    Ok(channel)
-}
-
 fn download_file(
     channel: &mut PeerChannel,
     piece_hashes: Vec<Sha1>,
@@ -73,4 +70,8 @@ fn download_file(
     let file_content = downloader::download_file(channel, piece_hashes, piece_length, file_length)?;
     let download_duration = download_start.elapsed();
     Ok((file_content, download_duration))
+}
+
+fn local_address() -> SocketAddr {
+    "127.0.0.1:26408".to_socket_addrs().unwrap().next().unwrap()
 }
