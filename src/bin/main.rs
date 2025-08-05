@@ -4,6 +4,7 @@ use bt_client::{
     AnnounceParams,
     downloader::{self, PeerChannel},
     get_peer_list_from_response, get_piece_hashes, make_announce_request, read_torrent_file,
+    request_complete_file,
     types::{PeerId, Sha1},
 };
 
@@ -49,7 +50,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     println!("* Total {} peers", peer_addrs.len());
 
     println!("* Probing peers...");
-    if let Some(mut downloader) = connect_to_first_available_peer(&peer_addrs, info_hash, peer_id) {
+    if let Some(mut downloader) =
+        connect_to_first_available_peer(&peer_addrs, info_hash, peer_id, piece_hashes.len())
+    {
         println!("* Connected to peer: {:?}", downloader.peer_addr());
 
         let (file_content, download_duration) =
@@ -73,15 +76,14 @@ fn connect_to_first_available_peer(
     peers: &[SocketAddr],
     info_hash: Sha1,
     peer_id: PeerId,
+    piece_count: usize,
 ) -> Option<PeerChannel> {
     for addr in peers {
-        print!("{addr}\t-> ");
-        match PeerChannel::connect(addr, &info_hash, &peer_id) {
+        match request_complete_file(addr, &info_hash, &peer_id, piece_count) {
             Ok(channel) => {
-                println!("OK({})", channel.remote_id().to_string());
                 return Some(channel);
             }
-            Err(e) => println!("Err({})", e),
+            Err(_) => {}
         }
     }
     None
@@ -93,8 +95,6 @@ fn download_file(
     piece_length: u32,
     file_length: usize,
 ) -> Result<(Vec<u8>, Duration), Box<dyn Error>> {
-    downloader::request_complete_file(channel, piece_hashes.len())?;
-
     println!("* Unchoked, requesting file");
     let download_start = std::time::Instant::now();
     let file_content = downloader::download_file(channel, piece_hashes, piece_length, file_length)?;

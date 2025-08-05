@@ -6,7 +6,7 @@ use std::{
 
 use bt_client::{
     downloader::{self, PeerChannel},
-    get_piece_hashes, read_torrent_file,
+    get_piece_hashes, read_torrent_file, request_complete_file,
     types::{PeerId, Sha1},
 };
 
@@ -40,7 +40,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     );
 
     let info_hash = *info.sha1();
-    let mut local_peer = PeerChannel::connect(&local_address(), &info_hash, &peer_id)?;
+    let mut local_peer =
+        request_complete_file(&local_address(), &info_hash, &peer_id, piece_hashes.len())?;
     println!("* Connected to local peer: {:?}", local_peer.peer_addr());
 
     let (file_content, download_duration) =
@@ -63,8 +64,6 @@ fn download_file(
     piece_length: u32,
     file_length: usize,
 ) -> Result<(Vec<u8>, Duration), Box<dyn Error>> {
-    downloader::request_complete_file(channel, piece_hashes.len())?;
-
     println!("* Unchoked, requesting file");
     let download_start = std::time::Instant::now();
     let file_content = downloader::download_file(channel, piece_hashes, piece_length, file_length)?;
