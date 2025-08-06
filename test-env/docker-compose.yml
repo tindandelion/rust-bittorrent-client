@@ -1,0 +1,11 @@
+services:
+  transmission:
+    build: .
+    container_name: transmission
+    ports:
+      - "9091:9091"
+      - "51413:51413"
+      - "51413:51413/udp"
+    environment:
+      - TZ=Europe/Madrid
+    restart: unless-stopped
