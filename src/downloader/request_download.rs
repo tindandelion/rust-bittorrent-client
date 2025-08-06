@@ -20,7 +20,7 @@ type Result<T> = std::result::Result<T, Error>;
 
 pub fn request_complete_file(channel: &mut impl MessageChannel, piece_count: usize) -> Result<()> {
     match channel.receive()? {
-        PeerMessage::Bitfield(bitfield) => check_bitfield_size(&bitfield, piece_count)
+        PeerMessage::Bitfield(bitfield) => check_bitfield_size(bitfield.len(), piece_count)
             .and_then(|_| check_bitfield_completeness(&bitfield, piece_count)),
         other => unexpected_message_error("bitfield", other),
     }?;
@@ -35,12 +35,12 @@ pub fn request_complete_file(channel: &mut impl MessageChannel, piece_count: usi
     Ok(())
 }
 
-fn check_bitfield_size(bitfield: &[u8], piece_count: usize) -> std::result::Result<(), Error> {
+fn check_bitfield_size(bitfield_size: usize, piece_count: usize) -> std::result::Result<(), Error> {
     let expected_bitfield_size = piece_count.div_ceil(8);
-    if bitfield.len() != expected_bitfield_size {
+    if bitfield_size != expected_bitfield_size {
         Err(Error::BitfieldSizeMismatch {
             expected: expected_bitfield_size,
-            received: bitfield.len(),
+            received: bitfield_size,
         })
     } else {
         Ok(())
