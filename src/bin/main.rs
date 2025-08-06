@@ -1,10 +1,11 @@
-use std::{error::Error, net::SocketAddr, time::Duration};
+use std::{error::Error, time::Duration};
 
 use bt_client::{
     AnnounceParams,
     downloader::{self, PeerChannel},
-    get_peer_list_from_response, get_piece_hashes, make_announce_request, read_torrent_file,
-    request_complete_file,
+    get_peer_list_from_response, get_piece_hashes, make_announce_request,
+    probe_peers::probe_peers_sequential,
+    read_torrent_file, request_complete_file,
     types::{PeerId, Sha1},
 };
 
@@ -50,13 +51,13 @@ fn main() -> Result<(), Box<dyn Error>> {
     println!("* Total {} peers", peer_addrs.len());
 
     println!("* Probing peers...");
-    if let Some(mut downloader) =
-        connect_to_first_available_peer(&peer_addrs, info_hash, peer_id, piece_hashes.len())
-    {
-        println!("* Connected to peer: {:?}", downloader.peer_addr());
+    if let Some(mut channel) = probe_peers_sequential(&peer_addrs, |addr| {
+        request_complete_file(addr, &info_hash, &peer_id, piece_hashes.len())
+    }) {
+        println!("* Connected to peer: {:?}", channel.peer_addr());
 
         let (file_content, download_duration) =
-            download_file(&mut downloader, piece_hashes, piece_length, file_length)?;
+            download_file(&mut channel, piece_hashes, piece_length, file_length)?;
         println!(
             "* Received entire file, first 128 bytes: {}",
             hex::encode(&file_content[..128])
@@ -72,30 +73,13 @@ fn main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn connect_to_first_available_peer(
-    peers: &[SocketAddr],
-    info_hash: Sha1,
-    peer_id: PeerId,
-    piece_count: usize,
-) -> Option<PeerChannel> {
-    for addr in peers {
-        match request_complete_file(addr, &info_hash, &peer_id, piece_count) {
-            Ok(channel) => {
-                return Some(channel);
-            }
-            Err(_) => {}
-        }
-    }
-    None
-}
-
 fn download_file(
     channel: &mut PeerChannel,
     piece_hashes: Vec<Sha1>,
     piece_length: u32,
     file_length: usize,
 ) -> Result<(Vec<u8>, Duration), Box<dyn Error>> {
-    println!("* Unchoked, requesting file");
+    println!("* Requesting file");
     let download_start = std::time::Instant::now();
     let file_content = downloader::download_file(channel, piece_hashes, piece_length, file_length)?;
     let download_duration = download_start.elapsed();

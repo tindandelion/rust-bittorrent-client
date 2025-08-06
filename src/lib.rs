@@ -1,5 +1,6 @@
 mod bencoding;
 pub mod downloader;
+pub mod probe_peers;
 mod tracker;
 pub mod types;
 
