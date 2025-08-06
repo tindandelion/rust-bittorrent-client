@@ -54,6 +54,19 @@ pub fn request_complete_file(
     Ok(channel)
 }
 
+pub fn download_file(
+    channel: &mut PeerChannel,
+    piece_hashes: Vec<Sha1>,
+    piece_length: u32,
+    file_length: usize,
+) -> Result<(Vec<u8>, std::time::Duration), Box<dyn std::error::Error>> {
+    eprintln!("* Downloading file");
+    let download_start = std::time::Instant::now();
+    let file_content = downloader::download_file(channel, piece_hashes, piece_length, file_length)?;
+    let download_duration = download_start.elapsed();
+    Ok((file_content, download_duration))
+}
+
 #[cfg(test)]
 mod tests {
     use crate::types::{PeerId, Sha1};

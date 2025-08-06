@@ -1,13 +1,10 @@
 use std::{
     error::Error,
     net::{SocketAddr, ToSocketAddrs},
-    time::Duration,
 };
 
 use bt_client::{
-    downloader::{self, PeerChannel},
-    get_piece_hashes, read_torrent_file, request_complete_file,
-    types::{PeerId, Sha1},
+    download_file, get_piece_hashes, read_torrent_file, request_complete_file, types::PeerId,
 };
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -56,19 +53,6 @@ fn main() -> Result<(), Box<dyn Error>> {
     );
 
     Ok(())
-}
-
-fn download_file(
-    channel: &mut PeerChannel,
-    piece_hashes: Vec<Sha1>,
-    piece_length: u32,
-    file_length: usize,
-) -> Result<(Vec<u8>, Duration), Box<dyn Error>> {
-    println!("* Unchoked, requesting file");
-    let download_start = std::time::Instant::now();
-    let file_content = downloader::download_file(channel, piece_hashes, piece_length, file_length)?;
-    let download_duration = download_start.elapsed();
-    Ok((file_content, download_duration))
 }
 
 fn local_address() -> SocketAddr {

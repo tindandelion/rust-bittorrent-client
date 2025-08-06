@@ -1,12 +1,9 @@
-use std::{error::Error, time::Duration};
+use std::error::Error;
 
 use bt_client::{
-    AnnounceParams,
-    downloader::{self, PeerChannel},
-    get_peer_list_from_response, get_piece_hashes, make_announce_request,
-    probe_peers::probe_peers_sequential,
-    read_torrent_file, request_complete_file,
-    types::{PeerId, Sha1},
+    AnnounceParams, download_file, get_peer_list_from_response, get_piece_hashes,
+    make_announce_request, probe_peers::probe_peers_sequential, read_torrent_file,
+    request_complete_file, types::PeerId,
 };
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -71,17 +68,4 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
 
     Ok(())
-}
-
-fn download_file(
-    channel: &mut PeerChannel,
-    piece_hashes: Vec<Sha1>,
-    piece_length: u32,
-    file_length: usize,
-) -> Result<(Vec<u8>, Duration), Box<dyn Error>> {
-    println!("* Requesting file");
-    let download_start = std::time::Instant::now();
-    let file_content = downloader::download_file(channel, piece_hashes, piece_length, file_length)?;
-    let download_duration = download_start.elapsed();
-    Ok((file_content, download_duration))
 }
