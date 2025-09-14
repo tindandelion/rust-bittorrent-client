@@ -39,11 +39,11 @@ pub fn request_complete_file(
     eprint!("{:?}\t-> ", peer_addr);
     let mut channel = match PeerChannel::connect(peer_addr, &info_hash, &peer_id) {
         Ok(channel) => {
-            println!("OK({})", channel.remote_id().to_string());
+            eprintln!("OK({})", channel.remote_id());
             Ok(channel)
         }
         Err(e) => {
-            println!("Err({})", e);
+            eprintln!("Err({})", e);
             Err(e)
         }
     }?;

@@ -88,14 +88,10 @@ impl DownloadChannel for PeerChannel {
                 offset,
                 data: block,
             }),
-            other => error_unexpected_message("piece", &other),
+            other => Err(io::Error::other(format!(
+                "Expected `piece` message, received: {:?}",
+                other
+            ))),
         }
     }
-}
-
-fn error_unexpected_message<T>(expected: &str, received: &PeerMessage) -> io::Result<T> {
-    Err(io::Error::other(format!(
-        "Expected `{}` message, received: {:?}",
-        expected, received
-    )))
 }

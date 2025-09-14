@@ -35,7 +35,7 @@ pub fn request_complete_file(channel: &mut impl MessageChannel, piece_count: usi
     Ok(())
 }
 
-fn check_bitfield_size(bitfield_size: usize, piece_count: usize) -> std::result::Result<(), Error> {
+fn check_bitfield_size(bitfield_size: usize, piece_count: usize) -> Result<()> {
     let expected_bitfield_size = piece_count.div_ceil(8);
     if bitfield_size != expected_bitfield_size {
         Err(Error::BitfieldSizeMismatch {
@@ -47,10 +47,7 @@ fn check_bitfield_size(bitfield_size: usize, piece_count: usize) -> std::result:
     }
 }
 
-fn check_bitfield_completeness(
-    bitfield: &[u8],
-    piece_count: usize,
-) -> std::result::Result<(), Error> {
+fn check_bitfield_completeness(bitfield: &[u8], piece_count: usize) -> Result<()> {
     for byte in &bitfield[..bitfield.len() - 1] {
         if *byte != 255 {
             return Err(Error::IncompleteFile);
