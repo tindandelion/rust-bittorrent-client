@@ -1,6 +1,6 @@
 ---
 layout: post
-title:  "Selecting the peer with the complete file"
+title:  "Selecting a peer with the complete file"
 date: 2025-08-05
 ---
 
@@ -8,7 +8,7 @@ In our current implementation, we communicate with only one peer to download the
 
 [*Version 0.0.10 on GitHub*](https://github.com/tindandelion/rust-bittorrent-client/tree/0.0.10){: .no-github-icon}
 
-# How to choose the peer to download from 
+# How to choose a peer to download from 
 
 Let's think about which peer we should pick for downloading the file. First and foremost, obviously, we should be able to connect to that peer and exchange the handshake messages. That's the bare minimum: passing this step will ensure us that there's a BitTorrent client on the other side. But that's not all we should require from the remote peer. 
 
