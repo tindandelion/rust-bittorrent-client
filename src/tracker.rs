@@ -6,27 +6,33 @@ use std::{
 };
 use url::{ParseError, Url};
 
-pub struct AnnounceParams {
+pub struct AnnounceRequest {
+    pub tracker_url: String,
     pub info_hash: Sha1,
     pub peer_id: PeerId,
 }
 
-pub fn fetch_peer_addresses(
-    tracker_url: &str,
-    announce_params: &AnnounceParams,
-) -> Result<Vec<SocketAddr>, Box<dyn Error>> {
-    let response = make_announce_request(tracker_url, announce_params)?;
-    let peer_addrs = get_peer_list_from_response(response.as_bytes())?;
-    Ok(peer_addrs)
-}
+impl AnnounceRequest {
+    pub fn fetch_peer_addresses(&self) -> Result<Vec<SocketAddr>, Box<dyn Error>> {
+        let response = self.make_announce_request()?;
+        let peer_addrs = get_peer_list_from_response(response.as_bytes())?;
+        Ok(peer_addrs)
+    }
 
-fn make_announce_request(
-    tracker_url: &str,
-    request_params: &AnnounceParams,
-) -> Result<String, Box<dyn Error>> {
-    let url = make_announce_url(tracker_url, request_params)?;
-    let response = reqwest::blocking::get(url)?;
-    Ok(response.text()?)
+    fn make_announce_request(&self) -> Result<String, Box<dyn Error>> {
+        let url = self.make_announce_url()?;
+        let response = reqwest::blocking::get(url)?;
+        Ok(response.text()?)
+    }
+
+    fn make_announce_url(&self) -> Result<Url, ParseError> {
+        let info_hash = unsafe { String::from_utf8_unchecked(self.info_hash.to_vec()) };
+        let peer_id = unsafe { String::from_utf8_unchecked(self.peer_id.to_vec()) };
+        Url::parse_with_params(
+            &self.tracker_url,
+            &[("info_hash", &info_hash), ("peer_id", &peer_id)],
+        )
+    }
 }
 
 fn get_peer_list_from_response(tracker_response: &[u8]) -> Result<Vec<SocketAddr>, Box<dyn Error>> {
@@ -60,18 +66,6 @@ struct Peer {
     port: u16,
 }
 
-fn make_announce_url(
-    tracker_url: &str,
-    announce_params: &AnnounceParams,
-) -> Result<Url, ParseError> {
-    let info_hash = unsafe { String::from_utf8_unchecked(announce_params.info_hash.to_vec()) };
-    let peer_id = unsafe { String::from_utf8_unchecked(announce_params.peer_id.to_vec()) };
-    Url::parse_with_params(
-        tracker_url,
-        &[("info_hash", &info_hash), ("peer_id", &peer_id)],
-    )
-}
-
 #[cfg(test)]
 mod tests {
     use crate::tracker::get_peer_list_from_response;
@@ -81,7 +75,8 @@ mod tests {
     #[test]
     fn make_simplest_tracker_request_url() {
         let tracker_url = "http://localhost:8000/announce";
-        let request_params = AnnounceParams {
+        let request = AnnounceRequest {
+            tracker_url: tracker_url.to_string(),
             info_hash: Sha1::new([
                 0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf1, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd,
                 0xef, 0x12, 0x34, 0x56, 0x78, 0x9a,
@@ -89,7 +84,7 @@ mod tests {
             peer_id: PeerId::default(),
         };
 
-        let url = make_announce_url(tracker_url, &request_params).unwrap();
+        let url = request.make_announce_url().unwrap();
 
         let expected_params = [
             "info_hash=%124Vx%9A%BC%DE%F1%23Eg%89%AB%CD%EF%124Vx%9A",
@@ -102,24 +97,24 @@ mod tests {
 
     #[test]
     fn invalid_tracker_url_returns_error() {
-        let tracker_url = "http://localhost:blah/announce";
-        let request_params = AnnounceParams {
+        let request = AnnounceRequest {
+            tracker_url: "http://localhost:blah/announce".to_string(),
             info_hash: Sha1::new([0x00; 20]),
             peer_id: PeerId::default(),
         };
-        let result = make_announce_url(tracker_url, &request_params);
+        let result = request.make_announce_url();
         assert_eq!(Err(ParseError::InvalidPort), result);
     }
 
     #[test]
     fn test_make_announce_request() {
-        let tracker_url = "http://bttracker.debian.org:6969/announce";
-        let request_params = AnnounceParams {
+        let request = AnnounceRequest {
+            tracker_url: "http://bttracker.debian.org:6969/announce".to_string(),
             info_hash: Sha1::new([0x00; 20]),
             peer_id: PeerId::default(),
         };
 
-        let result = make_announce_request(tracker_url, &request_params).unwrap();
+        let result = request.make_announce_request().unwrap();
         assert_eq!("d14:failure reason17:torrent not founde", result);
     }
 

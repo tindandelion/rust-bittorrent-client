@@ -2,8 +2,7 @@ use std::error::Error;
 
 use bt_client::{
     download_file, probe_peers::probe_peers_sequential, request_complete_file,
-    torrent::read_torrent_file, tracker::AnnounceParams, tracker::fetch_peer_addresses,
-    types::PeerId,
+    torrent::read_torrent_file, tracker::AnnounceRequest, types::PeerId,
 };
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -14,8 +13,12 @@ fn main() -> Result<(), Box<dyn Error>> {
     let info_hash = info.sha1();
     let piece_hashes = info.piece_hashes();
 
-    let announce_params = AnnounceParams { info_hash, peer_id };
-    let peer_addrs = fetch_peer_addresses(&torrent.announce, &announce_params)?;
+    let announce_request = AnnounceRequest {
+        tracker_url: torrent.announce.clone(),
+        info_hash,
+        peer_id,
+    };
+    let peer_addrs = announce_request.fetch_peer_addresses()?;
     println!("* Total {} peers", peer_addrs.len());
 
     println!("* Probing peers...");
