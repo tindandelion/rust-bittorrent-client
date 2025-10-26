@@ -1,7 +1,5 @@
-use crate::{
-    bencoding::decode_dict,
-    types::{PeerId, Sha1},
-};
+use crate::types::{PeerId, Sha1};
+use serde::Deserialize;
 use std::{
     error::Error,
     net::{SocketAddr, ToSocketAddrs},
@@ -25,33 +23,34 @@ pub fn make_announce_request(
 pub fn get_peer_list_from_response(
     tracker_response: &[u8],
 ) -> Result<Vec<SocketAddr>, Box<dyn Error>> {
-    let decoded_response = decode_dict(tracker_response)?;
+    let decoded_response: TrackerResponse = serde_bencode::from_bytes(tracker_response)?;
 
-    let peers_list = decoded_response.get("peers").unwrap().as_list().unwrap();
-    let x = peers_list
+    let x = decoded_response
+        .peers
         .iter()
-        .map(|peer| peer.as_dict().unwrap())
-        .map(|peer| {
-            let ip = peer
-                .get("ip")
-                .and_then(|v| v.as_byte_string())
-                .map(|v| v.to_string())
-                .unwrap();
-            let port = peer
-                .get("port")
-                .and_then(|v| v.as_int())
-                .map(|v| *v as u16)
-                .unwrap();
-
-            (ip, port)
-        })
-        .flat_map(|(ip, port)| {
-            (ip.as_str(), port)
+        .flat_map(|peer| {
+            (peer.ip.as_str(), peer.port)
                 .to_socket_addrs()
-                .unwrap_or_else(|e| panic!("Can't get the peer address from {ip}:{port}: {e:?}"))
+                .unwrap_or_else(|e| {
+                    panic!(
+                        "Can't get the peer address from {}:{}: {e:?}",
+                        peer.ip, peer.port
+                    )
+                })
         })
         .collect();
     Ok(x)
+}
+
+#[derive(Deserialize)]
+struct TrackerResponse {
+    peers: Vec<Peer>,
+}
+
+#[derive(Deserialize)]
+struct Peer {
+    ip: String,
+    port: u16,
 }
 
 fn make_announce_url(

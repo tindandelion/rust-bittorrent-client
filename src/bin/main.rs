@@ -1,9 +1,9 @@
 use std::error::Error;
 
-use bt_client::bencoding_serde::read_torrent_file;
 use bt_client::{
     AnnounceParams, download_file, get_peer_list_from_response, make_announce_request,
-    probe_peers::probe_peers_sequential, request_complete_file, types::PeerId,
+    probe_peers::probe_peers_sequential, request_complete_file, torrent::read_torrent_file,
+    types::PeerId,
 };
 
 fn main() -> Result<(), Box<dyn Error>> {
