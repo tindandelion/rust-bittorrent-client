@@ -1,5 +1,4 @@
 use core::fmt;
-use std::str::Utf8Error;
 
 #[derive(PartialEq, Hash, Eq)]
 pub struct ByteString(Vec<u8>);
@@ -7,18 +6,6 @@ pub struct ByteString(Vec<u8>);
 impl ByteString {
     pub fn new(value: &[u8]) -> Self {
         Self(value.to_vec())
-    }
-
-    pub fn len(&self) -> usize {
-        self.0.len()
-    }
-
-    pub fn as_str(&self) -> Result<&str, Utf8Error> {
-        str::from_utf8(&self.0)
-    }
-
-    pub fn as_slice(&self) -> &[u8] {
-        &self.0
     }
 }
 

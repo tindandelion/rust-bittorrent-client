@@ -20,10 +20,6 @@ impl Dict {
         self.values.get(&key.into())
     }
 
-    pub fn sha1(&self) -> &Sha1 {
-        &self.sha1
-    }
-
     #[cfg(test)]
     pub fn len(&self) -> usize {
         self.values.len()

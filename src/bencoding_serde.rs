@@ -62,7 +62,7 @@ impl Info {
         self.pieces
             .as_slice()
             .chunks_exact(20)
-            .map(|chunk| Sha1::from_bytes(chunk))
+            .map(Sha1::from_bytes)
             .collect()
     }
 

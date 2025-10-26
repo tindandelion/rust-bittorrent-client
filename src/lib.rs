@@ -6,30 +6,11 @@ mod tracker;
 pub mod types;
 
 use crate::{
-    bencoding::{
-        decode_dict,
-        types::{ByteString, Dict},
-    },
     downloader::PeerChannel,
     types::{PeerId, Sha1},
 };
-use std::{fs, net::SocketAddr};
+use std::net::SocketAddr;
 pub use tracker::{AnnounceParams, get_peer_list_from_response, make_announce_request};
-
-const TORRENT_FILE: &str = "test-data/debian-12.11.0-amd64-netinst.iso.torrent";
-
-pub fn read_torrent_file() -> Dict {
-    let contents = fs::read(TORRENT_FILE).unwrap();
-    decode_dict(&contents).unwrap()
-}
-
-pub fn get_piece_hashes(pieces: &ByteString) -> Vec<Sha1> {
-    pieces
-        .as_slice()
-        .chunks_exact(20)
-        .map(Sha1::from_bytes)
-        .collect()
-}
 
 pub fn request_complete_file(
     peer_addr: &SocketAddr,
@@ -38,7 +19,7 @@ pub fn request_complete_file(
     piece_count: usize,
 ) -> Result<PeerChannel, Box<dyn std::error::Error>> {
     eprint!("{:?}\t-> ", peer_addr);
-    let mut channel = match PeerChannel::connect(peer_addr, &info_hash, &peer_id) {
+    let mut channel = match PeerChannel::connect(peer_addr, info_hash, peer_id) {
         Ok(channel) => {
             eprintln!("OK({})", channel.remote_id());
             Ok(channel)
@@ -75,18 +56,6 @@ mod tests {
     use super::*;
 
     const TRACKER_URL: &str = "http://bttracker.debian.org:6969/announce";
-
-    #[test]
-    fn test_read_torrent_file() {
-        let dict = read_torrent_file();
-        assert_eq!(
-            TRACKER_URL,
-            dict.get("announce")
-                .and_then(|v| v.as_byte_string())
-                .unwrap()
-                .to_string()
-        )
-    }
 
     #[test]
     fn test_make_announce_request() {
