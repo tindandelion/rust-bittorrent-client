@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::{bencoding::types::BencValue, types::Sha1};
+use crate::bencoding::types::BencValue;
 
 use super::{
     error::Error,
@@ -31,7 +31,6 @@ impl<'a> Decoder<'a> {
     pub fn decode_dict(&mut self) -> Result<Dict, Error> {
         let mut values = HashMap::new();
 
-        let dict_start = self.current_pos;
         self.move_by(1);
         while !self.at_trailing_delimiter()? {
             let key = self.decode_string()?;
@@ -40,10 +39,7 @@ impl<'a> Decoder<'a> {
         }
         self.move_by(1);
 
-        Ok(Dict::new(
-            self.calculate_sha1(dict_start, self.current_pos),
-            values,
-        ))
+        Ok(Dict::new(values))
     }
 
     fn decode_value(&mut self) -> Result<BencValue, Error> {
@@ -70,10 +66,6 @@ impl<'a> Decoder<'a> {
     #[cfg(test)]
     pub fn has_more_data(&self) -> bool {
         !self.rest_data.is_empty()
-    }
-
-    fn calculate_sha1(&self, start_index: usize, end_index: usize) -> Sha1 {
-        Sha1::calculate(&self.raw_data[start_index..end_index])
     }
 
     fn decode_list(&mut self) -> Result<Vec<BencValue>, Error> {
@@ -333,7 +325,6 @@ mod decode_dict {
         let decoded_dict = decoded_value.as_dict().unwrap();
 
         assert_eq!(0, decoded_dict.len());
-        assert_eq!(&Sha1::calculate("de".as_bytes()), decoded_dict.sha1());
         assert!(!decoder.has_more_data());
     }
 

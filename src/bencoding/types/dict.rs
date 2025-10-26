@@ -1,19 +1,15 @@
 use std::collections::HashMap;
 
-use crate::{
-    bencoding::types::{BencValue, ByteString},
-    types::Sha1,
-};
+use crate::bencoding::types::{BencValue, ByteString};
 
 #[derive(Debug, PartialEq)]
 pub struct Dict {
-    sha1: Sha1,
     values: HashMap<ByteString, BencValue>,
 }
 
 impl Dict {
-    pub fn new(sha1: Sha1, values: HashMap<ByteString, BencValue>) -> Self {
-        Self { sha1, values }
+    pub fn new(values: HashMap<ByteString, BencValue>) -> Self {
+        Self { values }
     }
 
     pub fn get(&self, key: &str) -> Option<&BencValue> {

@@ -7,6 +7,11 @@ impl ByteString {
     pub fn new(value: &[u8]) -> Self {
         Self(value.to_vec())
     }
+
+    #[cfg(test)]
+    pub fn as_slice(&self) -> &[u8] {
+        &self.0
+    }
 }
 
 impl From<&str> for ByteString {
