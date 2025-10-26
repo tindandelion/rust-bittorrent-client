@@ -56,3 +56,9 @@ impl Sha1 {
         self == &Self::calculate(data)
     }
 }
+
+impl std::fmt::Display for Sha1 {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", hex::encode(self.0))
+    }
+}
