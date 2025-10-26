@@ -11,7 +11,16 @@ pub struct AnnounceParams {
     pub peer_id: PeerId,
 }
 
-pub fn make_announce_request(
+pub fn fetch_peer_addresses(
+    tracker_url: &str,
+    announce_params: &AnnounceParams,
+) -> Result<Vec<SocketAddr>, Box<dyn Error>> {
+    let response = make_announce_request(tracker_url, announce_params)?;
+    let peer_addrs = get_peer_list_from_response(response.as_bytes())?;
+    Ok(peer_addrs)
+}
+
+fn make_announce_request(
     tracker_url: &str,
     request_params: &AnnounceParams,
 ) -> Result<String, Box<dyn Error>> {
@@ -20,9 +29,7 @@ pub fn make_announce_request(
     Ok(response.text()?)
 }
 
-pub fn get_peer_list_from_response(
-    tracker_response: &[u8],
-) -> Result<Vec<SocketAddr>, Box<dyn Error>> {
+fn get_peer_list_from_response(tracker_response: &[u8]) -> Result<Vec<SocketAddr>, Box<dyn Error>> {
     let decoded_response: TrackerResponse = serde_bencode::from_bytes(tracker_response)?;
 
     let x = decoded_response
