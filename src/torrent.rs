@@ -3,8 +3,10 @@ use serde::{Deserialize, Serialize};
 use serde_bytes::ByteBuf;
 use std::fs;
 
+type Error = Box<dyn std::error::Error>;
+
 #[derive(Deserialize)]
-#[serde(from = "InfoInternal")]
+#[serde(try_from = "InfoInternal")]
 pub struct Info {
     pub sha1: Sha1,
     pub name: String,
@@ -28,9 +30,11 @@ struct InfoInternal {
     pub pieces: ByteBuf,
 }
 
-impl From<InfoInternal> for Info {
-    fn from(info_internal: InfoInternal) -> Self {
-        let sha1 = Sha1::calculate(&serde_bencode::to_bytes(&info_internal).unwrap());
+impl TryFrom<InfoInternal> for Info {
+    type Error = Error;
+
+    fn try_from(info_internal: InfoInternal) -> Result<Info, Self::Error> {
+        let sha1 = Sha1::calculate(&serde_bencode::to_bytes(&info_internal)?);
         let pieces = info_internal
             .pieces
             .as_slice()
@@ -38,17 +42,17 @@ impl From<InfoInternal> for Info {
             .map(Sha1::from_bytes)
             .collect::<Vec<_>>();
 
-        Self {
+        Ok(Self {
             name: info_internal.name,
             piece_length: info_internal.piece_length,
             length: info_internal.length,
             pieces,
             sha1,
-        }
+        })
     }
 }
 
-pub fn read_torrent_file() -> Result<Torrent, Box<dyn std::error::Error>> {
+pub fn read_torrent_file() -> Result<Torrent, Error> {
     let contents = fs::read(TORRENT_FILE)?;
     let decoded = serde_bencode::from_bytes(&contents)?;
     Ok(decoded)
