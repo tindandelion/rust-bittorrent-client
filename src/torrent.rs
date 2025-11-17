@@ -21,6 +21,14 @@ pub struct Torrent {
     pub info: Info,
 }
 
+pub fn read_torrent_file() -> Result<Torrent, Error> {
+    let contents = fs::read(TORRENT_FILE)?;
+    let decoded = serde_bencode::from_bytes(&contents)?;
+    Ok(decoded)
+}
+
+const TORRENT_FILE: &str = "test-data/debian-12.11.0-amd64-netinst.iso.torrent";
+
 #[derive(Deserialize, Serialize)]
 struct InfoInternal {
     pub name: String,
@@ -51,14 +59,6 @@ impl TryFrom<InfoInternal> for Info {
         })
     }
 }
-
-pub fn read_torrent_file() -> Result<Torrent, Error> {
-    let contents = fs::read(TORRENT_FILE)?;
-    let decoded = serde_bencode::from_bytes(&contents)?;
-    Ok(decoded)
-}
-
-const TORRENT_FILE: &str = "test-data/debian-12.11.0-amd64-netinst.iso.torrent";
 
 #[cfg(test)]
 mod tests {
