@@ -84,6 +84,8 @@
         "FileDownloader",
         "RequestEmitter",
         "PieceComposer",
-        "unchoke"
+        "unchoke",
+        "deserialize",
+        "serde"
     ]
 } 
