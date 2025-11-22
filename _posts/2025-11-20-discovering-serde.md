@@ -18,6 +18,8 @@ Also, serde gives developers the mechanisms to plug into the serialization/deser
 
 # Reading torrent file 
 
+## Defining the data types types
+
 We begin by defining the data types that will hold the parsed torrent data: 
 
 ```rust
@@ -45,10 +47,37 @@ We annotate these data types with `#[derive(Deserialize)]` attribute. That provi
 
 First, the `piece_length` field. In torrent file, the name of this field contains a space: `field length`. Obviously, it can't be used directly as the field name in Rust because of the space character. To work around that, we use #[serde(rename = "piece length")] [field attribute](link) to instruct serde that the field `field length` in serialized data maps to the the field `field_length` in our `Info` struct. 
 
-The second trick is the `pieces` field. In torrent file, it contains concatenated SHA-1 hashes for all file pieces. The problem is, this is binary data. If we had `pieces` defined as a `String`, we'd get a runtime error that we're trying to deserialize an invalid UTF-8 string. Luckily, we can get round this problem with the help of another crate, [serde_bytes](link). 
+The second trick is the `pieces` field. In torrent file, it contains concatenated SHA-1 hashes for all file pieces. The problem is, this is binary data. If we had `pieces` defined as a `String`, we'd get a runtime error that we're trying to deserialize an invalid UTF-8 string. Luckily, we can get round this problem with the help of another crate, [serde_bytes](link). This crate provides us with utilities to efficently deserialize raw byte data into a `Vec<u8>`. We plug in this module by using `#[serde(with = "serde_bytes")]` attribue on `pieces` field. 
 
-TODO: How does serialization of `Info` works then? 
+## Handling deserialization 
 
----
+Now that we have `Torrent` struct that implements `Deserialize` trait, we can invoke the `Deserialize::deserialize()` method: 
+
+```rust
+let mut d: Deserializer<_> = ...;                       // ??? 
+let torrent = Torrent::deserialize(&mut d).unwrap();
+```
+
+But hold on a second. `deserialize()` method requires an implementation of `Deserializer` trait to be passed in as an argument. Where does that implementation come from? 
+
+This is where we see the separation of responsibilites between serde and specific data format implementations. You see, by itself serde knows nothing about data formats. It works exclusively with the `Deserializer` trait to do its part of the job: provide a link between Rust data type and the deserializer. It is the job of a specific implementor of `Deserializer` tarit to handle pesky details of parsing the data in specific data format. In other words, `Deserializer` trait provides an abstract _architectural boundary_ between `serde` core and the data parser implementation. 
+
+To provide the implementation of the `Deserializer` trait that knows how to parse bencoded data, we need another crate, [`serde_bencode`](link). Having added this crate to project's dependencies, we are now able to read and parse torrent files: 
+
+```rust
+let f = File::open(TORRENT_FILE).unwrap();
+let mut d = serde_bencode::Deserializer::new(f);
+let torrent = Torrent::deserialize(&mut d).unwrap();
+```
+
+Or, using a utility function `serde_bencode::from_bytes()`, we can skip the details: 
+
+```rust
+let content = std::fs::read(TORRENT_FILE).unwrap();
+let torrent: Torrent = serde_bencode::from_bytes(&content).unwrap();
+```
+
+Voila! With just a few lines of code, we have a complete implementation of a torrent file parser! 
+
 
 [bencoding-post]: {{site.baseurl}}/{% post_url 2025-06-14-obtain-announce-url %}
