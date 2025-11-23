@@ -77,7 +77,59 @@ let content = std::fs::read(TORRENT_FILE).unwrap();
 let torrent: Torrent = serde_bencode::from_bytes(&content).unwrap();
 ```
 
-Voila! With just a few lines of code, we have a complete implementation of a torrent file parser! 
+Bingo! With just a few lines of code, we have a complete implementation of a torrent file parser.
+
+## Custom deserialization: Visitor pattern 
+
+Our `Torrent` type is practically ready to use, but there's one one improvement we can make. You see, the `pieces` field in `Info` struct is not very convenient to use yet. As you remember, this field contains SHA-1 hashes of each piece, all concatenated into a single giant binary blob. It would be much more convenient if we could split that blob into a vector of individual values during deserialization. To achieve that, we can implement a [custom deserialization process](https://serde.rs/impl-deserialize.html) for that field. 
+
+It requires a bit of a boilerplate code, so bear with me: 
+
+```rust 
+
+// ---- [1] -- Delare a wrapper Hashes type
+
+#[derive(Debug)]
+pub struct Hashes(Vec<Sha1>);
+
+#[derive(Debug, Deserialize)]
+pub struct Info {
+    ... // other Info fields from above
+    pub pieces: Hashes
+}
+
+// ---- [2] -- Implement a custom visitor for Hashes 
+
+struct HashesVisitor;
+
+impl<'de> Visitor<'de> for HashesVisitor {
+    type Value = Hashes;
+
+    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        formatter.write_str("a list of SHA1 hashes")
+    }
+
+    fn visit_bytes<E>(self, v: &[u8]) -> Result<Self::Value, E>
+    where
+        E: serde::de::Error,
+    {
+        let hashes = v.chunks_exact(20).map(Sha1::from_bytes).collect::<Vec<_>>();
+        Ok(Hashes(hashes))
+    }
+}
+
+// ---- [3] -- Plug HashesVisitor into deserializer
+
+impl<'de> Deserialize<'de> for Hashes {
+    fn deserialize<D>(deserializer: D) -> Result<Hashes, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        deserializer.deserialize_bytes(HashesVisitor)
+    }
+}
+```
+
 
 
 [bencoding-post]: {{site.baseurl}}/{% post_url 2025-06-14-obtain-announce-url %}

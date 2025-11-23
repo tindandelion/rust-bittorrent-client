@@ -86,6 +86,7 @@
         "PieceComposer",
         "unchoke",
         "deserialize",
-        "serde"
+        "serde",
+        "deserializer"
     ]
 } 
