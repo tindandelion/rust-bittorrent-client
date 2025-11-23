@@ -1,6 +1,5 @@
 use crate::types::Sha1;
 use serde::{Deserialize, Serialize};
-use serde_bytes::ByteBuf;
 use std::fs;
 
 type Error = Box<dyn std::error::Error>;
@@ -35,7 +34,8 @@ struct InfoInternal {
     #[serde(rename = "piece length")]
     pub piece_length: u32,
     pub length: usize,
-    pub pieces: ByteBuf,
+    #[serde(with = "serde_bytes")]
+    pub pieces: Vec<u8>,
 }
 
 impl TryFrom<InfoInternal> for Info {
@@ -45,7 +45,6 @@ impl TryFrom<InfoInternal> for Info {
         let sha1 = Sha1::calculate(&serde_bencode::to_bytes(&info_internal)?);
         let pieces = info_internal
             .pieces
-            .as_slice()
             .chunks_exact(20)
             .map(Sha1::from_bytes)
             .collect::<Vec<_>>();
