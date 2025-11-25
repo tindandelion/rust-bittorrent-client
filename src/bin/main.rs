@@ -4,10 +4,12 @@ use bt_client::{
     download_file, probe_peers::probe_peers_sequential, request_complete_file,
     torrent::read_torrent_file, tracker::AnnounceRequest, types::PeerId,
 };
-use tracing::{error, info};
+use tracing::{Level, error, info};
 
 fn main() -> Result<(), Box<dyn Error>> {
-    tracing_subscriber::fmt::init();
+    tracing_subscriber::fmt()
+        .with_max_level(Level::DEBUG)
+        .init();
 
     let peer_id = PeerId::default();
     let torrent = read_torrent_file()?;
@@ -26,11 +28,12 @@ fn main() -> Result<(), Box<dyn Error>> {
         request_complete_file(addr, &info.sha1, &peer_id, info.pieces.len())
     }) {
         info!(
+            file_size = info.length,
+            piece_count = info.pieces.len(),
             peer_address = channel.peer_addr().to_string(),
             remote_id = channel.remote_id().to_string(),
-            "Connected to peer"
+            "Downloading file"
         );
-
         let (file_content, download_duration) =
             download_file(&mut channel, info.pieces, info.piece_length, info.length)?;
         info!(
