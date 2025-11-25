@@ -6,6 +6,7 @@ use std::{io, time::Instant};
 use crate::types::Sha1;
 use piece_composer::PieceComposer;
 use request_emitter::RequestEmitter;
+use tracing::debug;
 
 #[derive(Debug, Clone)]
 pub struct Block {
@@ -155,10 +156,10 @@ impl DownloadReport {
 
     fn piece_downloaded(&mut self, piece_index: u32) {
         let duration = self.start_timestamp.take().unwrap().elapsed();
-        println!(
-            "- Downloaded piece {}: {} ms",
-            piece_index,
-            duration.as_millis()
+        debug!(
+            piece_index = piece_index,
+            download_duration_millis = duration.as_millis(),
+            "Downloaded piece",
         );
     }
 }
