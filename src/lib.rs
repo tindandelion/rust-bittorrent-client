@@ -20,19 +20,9 @@ pub fn request_complete_file(
     piece_count: usize,
 ) -> Result<PeerChannel, Box<dyn std::error::Error>> {
     debug!("Connecting to peer");
-    let mut channel = match PeerChannel::connect(peer_addr, info_hash, peer_id) {
-        Ok(channel) => {
-            debug!(
-                remote_id = channel.remote_id().to_string(),
-                "Connected to peer"
-            );
-            Ok(channel)
-        }
-        Err(e) => {
-            debug!(error = e.to_string(), "Failed to connect to peer");
-            Err(e)
-        }
-    }?;
+    let mut channel = PeerChannel::connect(peer_addr, info_hash, peer_id)
+        .inspect(|channel| debug!(remote_id = %channel.remote_id(), "Connected"))
+        .inspect_err(|e| debug!(error = %e, "Failed to connect"))?;
 
     debug!("Connected, requesting file");
     downloader::request_complete_file(&mut channel, piece_count)?;

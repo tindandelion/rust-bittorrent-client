@@ -158,7 +158,7 @@ impl DownloadReport {
         let duration = self.start_timestamp.take().unwrap().elapsed();
         debug!(
             piece_index = piece_index,
-            download_duration_millis = duration.as_millis(),
+            duration_ms = duration.as_millis(),
             "Downloaded piece",
         );
     }
