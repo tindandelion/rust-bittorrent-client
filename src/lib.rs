@@ -22,7 +22,7 @@ pub fn request_complete_file(
     debug!("Connecting to peer");
     let mut channel = PeerChannel::connect(peer_addr, info_hash, peer_id)
         .inspect(|channel| debug!(remote_id = %channel.remote_id(), "Connected"))
-        .inspect_err(|e| debug!(error = %e, "Failed to connect"))?;
+        .inspect_err(|error| debug!(%error, "Failed to connect"))?;
 
     debug!("Connected, requesting file");
     downloader::request_complete_file(&mut channel, piece_count)?;

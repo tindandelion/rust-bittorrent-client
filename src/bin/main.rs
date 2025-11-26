@@ -30,8 +30,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         info!(
             file_size = info.length,
             piece_count = info.pieces.len(),
-            peer_address = channel.peer_addr().to_string(),
-            remote_id = channel.remote_id().to_string(),
+            peer_address = ?channel.peer_addr(),
+            remote_id = ?channel.remote_id(),
             "Downloading file"
         );
         let (file_content, download_duration) =
