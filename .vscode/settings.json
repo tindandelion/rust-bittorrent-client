@@ -87,6 +87,7 @@
         "unchoke",
         "deserialize",
         "serde",
-        "deserializer"
+        "deserializer",
+        "serde's"
     ]
 } 

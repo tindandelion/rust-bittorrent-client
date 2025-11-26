@@ -18,8 +18,6 @@ Also, serde gives developers the mechanisms to plug into the serialization/deser
 
 # Reading torrent file 
 
-## Defining the data types types
-
 We begin by defining the data types that will hold the parsed torrent data: 
 
 ```rust
@@ -47,9 +45,9 @@ We annotate these data types with `#[derive(Deserialize)]` attribute. That provi
 
 First, the `piece_length` field. In torrent file, the name of this field contains a space: `field length`. Obviously, it can't be used directly as the field name in Rust because of the space character. To work around that, we use #[serde(rename = "piece length")] [field attribute](link) to instruct serde that the field `field length` in serialized data maps to the the field `field_length` in our `Info` struct. 
 
-The second trick is the `pieces` field. In torrent file, it contains concatenated SHA-1 hashes for all file pieces. The problem is, this is binary data. If we had `pieces` defined as a `String`, we'd get a runtime error that we're trying to deserialize an invalid UTF-8 string. Luckily, we can get round this problem with the help of another crate, [serde_bytes](link). This crate provides us with utilities to efficently deserialize raw byte data into a `Vec<u8>`. We plug in this module by using `#[serde(with = "serde_bytes")]` attribue on `pieces` field. 
+The second trick is the `pieces` field. In torrent file, it contains concatenated SHA-1 hashes for all file pieces. The problem is, this is binary data. If we had `pieces` defined as a `String`, we'd get a runtime error that we're trying to deserialize an invalid UTF-8 string. Luckily, we can get round this problem with the help of another crate, [serde_bytes](link). This crate provides us with utilities to efficiently deserialize raw byte data into a `Vec<u8>`. We plug in this module by using `#[serde(with = "serde_bytes")]` attribute on `pieces` field. 
 
-## Handling deserialization 
+### Handling deserialization 
 
 Now that we have `Torrent` struct that implements `Deserialize` trait, we can invoke the `Deserialize::deserialize()` method: 
 
@@ -60,7 +58,7 @@ let torrent = Torrent::deserialize(&mut d).unwrap();
 
 But hold on a second. `deserialize()` method requires an implementation of `Deserializer` trait to be passed in as an argument. Where does that implementation come from? 
 
-This is where we see the separation of responsibilites between serde and specific data format implementations. You see, by itself serde knows nothing about data formats. It works exclusively with the `Deserializer` trait to do its part of the job: provide a link between Rust data type and the deserializer. It is the job of a specific implementor of `Deserializer` tarit to handle pesky details of parsing the data in specific data format. In other words, `Deserializer` trait provides an abstract _architectural boundary_ between `serde` core and the data parser implementation. 
+This is where we see the separation of responsibilities between serde and specific data format implementations. You see, by itself serde knows nothing about data formats. It works exclusively with the `Deserializer` trait to do its part of the job: provide a link between Rust data type and the deserializer. It is the job of a specific implementor of `Deserializer` trait to handle pesky details of parsing the data in specific data format. In other words, `Deserializer` trait provides an abstract _architectural boundary_ between `serde` core and the data parser implementation. 
 
 To provide the implementation of the `Deserializer` trait that knows how to parse bencoded data, we need another crate, [`serde_bencode`](link). Having added this crate to project's dependencies, we are now able to read and parse torrent files: 
 
@@ -79,7 +77,7 @@ let torrent: Torrent = serde_bencode::from_bytes(&content).unwrap();
 
 Bingo! With just a few lines of code, we have a complete implementation of a torrent file parser.
 
-## Custom deserialization: Visitor pattern 
+### Custom deserialization: Visitor pattern 
 
 Our `Torrent` type is practically ready to use, but there's one one improvement we can make. You see, the `pieces` field in `Info` struct is not very convenient to use yet. As you remember, this field contains SHA-1 hashes of each piece, all concatenated into a single giant binary blob. It would be much more convenient if we could split that blob into a vector of individual values during deserialization. To achieve that, we can implement a [custom deserialization process](https://serde.rs/impl-deserialize.html) for that field. 
 
@@ -87,7 +85,7 @@ It requires a bit of a boilerplate code, so bear with me:
 
 ```rust 
 
-// ---- [1] -- Delare a wrapper Hashes type
+// ---- [1] -- Declare a wrapper Hashes type
 
 #[derive(Debug)]
 pub struct Hashes(Vec<Sha1>);
@@ -129,6 +127,45 @@ impl<'de> Deserialize<'de> for Hashes {
     }
 }
 ```
+
+First, we introduce a wrapper type `Hashes` over the of `Vec<Sha1>` values, that will implement custom deserialization logic. 
+
+Second, we need an implementation of the [`Visitor`](link) trait. This is where the custom logic resides. `Visitor` trait contains a lot of methods, one method per each supported data type. Fortunately, we don't need to implement all of them. The default implementations return errors that indicate that this particular data type is not supported, which is exactly what we need. For example, when we expect to deserialize the list of hashes, but the deserializer encounters an integer value instead, it will raise an error with the default implementation, and that's what we need. 
+
+The method that we _need_ to implement is [`Visitor::visit_bytes()`](https://docs.rs/serde/1.0.228/serde/de/trait.Visitor.html#method.visit_bytes) that deserializer will call when it encounters a byte array in the input. The implementation takes a slice of `u8` values, splits them into chunks of 20 bytes, which is the length of SHA-1 hash, and converts these chunks into a vector of `Sha1` values. 
+
+Finally, we need to implement the `Deserialize` trait on `Hashes` type, to plug in our custom visitor into the deserialization process. The implementation is trivial: we simply call `deserialize_bytes()` on the deserializer, and pass our `HashesVisitor` as an argument. 
+
+### Custom deserialization with internal type 
+
+There's one last thing to be implemented: calculation of SHA-1 hash of the entire `info` section from the torrent file. As you may remember, this value is required in two interactions: 
+
+* When requesting the list of peers from the torrent tracker; 
+* When making the initial handshake to a peer. 
+
+Essentially SHA-1 value of `info` section acts as a unique identifier of the file we're downloading. I would like to calculate that value once when reading the torrent file and store it as a field in `Info` struct: 
+
+```rust 
+#[derive(Deserialize)]
+pub struct Info {
+    pub sha1: Sha1,
+    pub name: String,
+    pub piece_length: u32,
+    pub length: usize,
+    pub pieces: Vec<Sha1>,
+}
+```
+
+Unfortunately, there's no easy way to calculate this value using the extension points that serde provides to us. You see, to be able to calculate it, we need access to the raw byte representation of the `info` section. However, with the abstractions that serde gives us, we are completely isolated from the low-level data representations: it's all hidden behind the `Deserializer` abstraction. There's no way for us to get our hands on the raw binary data. 
+
+This is a flip side of the abstraction coin. On one hand, we are spared from dealing with pesky low-level details of binary data representation. On the other hand, we lose the ability to do something specific when the access to that representation is really needed. 
+
+It seems that the only way to calculate the SHA-1 hash of the info section is to serialize it back into bytes first, and hope that the serialized byte array will be exactly the same as the one we read from the torrent file. 
+
+
+
+
+
 
 
 
