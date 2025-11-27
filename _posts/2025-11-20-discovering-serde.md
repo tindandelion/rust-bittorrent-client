@@ -156,11 +156,76 @@ pub struct Info {
 }
 ```
 
-Unfortunately, there's no easy way to calculate this value using the extension points that serde provides to us. You see, to be able to calculate it, we need access to the raw byte representation of the `info` section. However, with the abstractions that serde gives us, we are completely isolated from the low-level data representations: it's all hidden behind the `Deserializer` abstraction. There's no way for us to get our hands on the raw binary data. 
+Unfortunately, there's no easy way to calculate this value using the extension points that serde provides to us. You see, to be able to calculate SHA-1, we need access to the raw byte representation of the `info` section. However, with the abstractions that serde gives us, we are completely isolated from the low-level data bytes: it's all hidden behind the `Deserializer` abstraction. There's no way for us to get our hands on the raw binary data. 
 
 This is a flip side of the abstraction coin. On one hand, we are spared from dealing with pesky low-level details of binary data representation. On the other hand, we lose the ability to do something specific when the access to that representation is really needed. 
 
-It seems that the only way to calculate the SHA-1 hash of the info section is to serialize it back into bytes first, and hope that the serialized byte array will be exactly the same as the one we read from the torrent file. 
+It seems that the only way to calculate the SHA-1 hash of the info section is to serialize it back into bytes first, and hope that the serialized byte array will be exactly the same as the one we read from the torrent file. Luckily, serde will help up us with serialization, and there's a way to plug this code into the overall deserialization process, with the use of an intermediate data type that will hold raw data from `info` section and can be converted to the instance of `Info` struct. 
+
+We begin by declaring the internal data type, `InfoInternal`: 
+
+```rust
+#[derive(Deserialize, Serialize)]
+struct InfoInternal {
+    pub name: String,
+    #[serde(rename = "piece length")]
+    pub piece_length: u32,
+    pub length: usize,
+    #[serde(with = "serde_bytes")]
+    pub pieces: Vec<u8>,
+}
+```
+
+Nothing surprising here, it has the same shape as our original `Info` type, and maps directly to the contents of `info` block from the torrent file. Notice, however, that we also need to derive the `Serialize` trait from serde. This is because we'll need to serialize that data structure back to bencoded format, to calculate its SHA-1 hash. 
+
+Next, we need a procedure to create an instance of `Info` struct from `InfoInternal`. We do that by implementing the `TryFrom` trait for `Info`: 
+
+```rust
+impl TryFrom<InfoInternal> for Info {
+    type Error = Error;
+
+    fn try_from(info_internal: InfoInternal) -> Result<Info, Self::Error> {
+        let sha1 = Sha1::calculate(&serde_bencode::to_bytes(&info_internal)?);
+        let pieces = info_internal
+            .pieces
+            .chunks_exact(20)
+            .map(Sha1::from_bytes)
+            .collect::<Vec<_>>();
+
+        Ok(Self {
+            name: info_internal.name,
+            piece_length: info_internal.piece_length,
+            length: info_internal.length,
+            pieces,
+            sha1,
+        })
+    }
+}
+```
+
+We combine all custom logic inside `try_from()` method. First, we serialize the instance of `InfoInternal` back to the bencoded array, and calculate SHA-1 of its contents. Second, we convert its `pieces` byte array into a vector of `Sha1` values. Previously, we did it by means of a [custom `Visitor` implementation](link), but we don't need that approach anymore. 
+
+Finally, we can instruct serde to use `InfoInternal` during the deserialization process, and convert it into `Info` struct automatically, by yet another use of `#[serde]` attribute: 
+
+```rust
+#[derive(Deserialize)]
+#[serde(try_from = "InfoInternal")]
+pub struct Info {
+    pub sha1: Sha1,
+    pub name: String,
+    pub piece_length: u32,
+    pub length: usize,
+    pub pieces: Vec<Sha1>,
+}
+```
+
+`#[serde(try_from = "InfoInternal")]` instructs serde to use our intermediate `InfoInternal` struct to do the low-level deserialization, and then create the resulting `Info` instance with the help of `TryFrom<InfoInternal>` that we've just defined. No need for any additional coding to do the conversion! 
+
+# Recap 
+
+
+
+
 
 
 
