@@ -4,13 +4,13 @@ title:  "Discovering serde"
 date: 2025-11-20
 ---
 
-At the beginning of this project, I [implemented a simple parser for .torrent files][bencoding-post]. It was an interesting exercise to get familiar with [bencoding](https://wiki.theory.org/BitTorrentSpecification#Bencoding) format. However, there is already an implementation for parsing bencoded data, which comes as an extension to a popular Rust deserialization library called __serde__. I think it is a good opportunity to get familiar with this library and switch to using serde for working with bencoded data. 
+At the beginning of this project, I [implemented a simple parser for .torrent files][bencoding-post]. It was an interesting exercise to get familiar with [bencoding](https://wiki.theory.org/BitTorrentSpecification#Bencoding) format. However, there is already an implementation for parsing bencoded data, that comes as an extension to a popular Rust deserialization library called __serde__. I think it is a good opportunity to get familiar with this library and switch to using serde for working with bencoded data. 
 
 [*Version 0.0.11 on GitHub*](https://github.com/tindandelion/rust-bittorrent-client/tree/0.0.11){: .no-github-icon}
 
 # What is __serde__? 
 
-In real-world programming, the need to serialize and deserialize data to and from various text and binary formats appears very often. Reading configuration files, passing data as JSON in API requests, all require us programmers to be able to represent data in various text or binary formats. Along with that, data serialization is probably one of the most tedious and boring tasks for a programmer to work on. No wonder, there's a multitude of libraries in most programming languages, that help programmers to simplify this task. 
+In real-world programming, the need to serialize and deserialize data to and from various text and binary formats appears very often. Reading configuration files, passing data as JSON in API requests, all that require us programmers to be able to represent data in various text or binary formats. Along with that, data serialization is probably one of the most tedious and boring tasks for a programmer to work on. No wonder, there's a multitude of libraries in most programming languages, that help developers to simplify this task. 
 
 Normally, a library for serialization/deserialization helps you convert internal data structures, such as objects or structs, to their serialized representation in a particular format without the need to write code by hand. These libraries can use runtime reflection or other type of meta-information to explore the structure of a data object, and automatically generate the serialized data. 
 
