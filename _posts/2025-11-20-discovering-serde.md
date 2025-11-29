@@ -1,7 +1,7 @@
 ---
 layout: post
 title:  "Discovering Serde"
-date: 2025-11-20
+date: 2025-11-29
 ---
 
 At the beginning of this project, I [implemented a simple parser for .torrent files][bencoding-post]. It was an interesting exercise to get familiar with [bencoding](https://wiki.theory.org/BitTorrentSpecification#Bencoding) format. However, there is already an implementation for parsing bencoded data that comes as an extension to a popular Rust deserialization library called __Serde__. I think it is a good opportunity to get familiar with this library and switch to using Serde for working with bencoded data. 
