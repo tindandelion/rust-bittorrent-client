@@ -88,6 +88,8 @@
         "deserialize",
         "serde",
         "deserializer",
-        "serde's"
+        "serde's",
+        "Serde",
+        "Serde's"
     ]
 } 
