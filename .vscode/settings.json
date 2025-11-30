@@ -90,6 +90,8 @@
         "deserializer",
         "serde's",
         "Serde",
-        "Serde's"
+        "Serde's",
+        "Gjengset",
+        "Decrusting"
     ]
 } 
