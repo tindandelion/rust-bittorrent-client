@@ -15,9 +15,11 @@ As described [in the documentation](https://tracing.rs/tracing/), Tracing provid
 * On the low level, we can keep track of the message exchange with the remote peer: what messages we send to the peer and what we receive from it; 
 * On a higher level, we can record the process of downloading the file piece by piece. Since downloading a single piece is also done in separate blocks, it makes sense to keep track of requesting and receiving individual blocks as well. 
 
-Using Tracing, we can collect the diagnostic information from top to bottom, as a nice hierarchy of spans. At this time, however, I want to keep things simple. My goal is to get rid of `println()` statements in the code, and replace them with appropriate `info()` and `debug()` macros from Tracing. 
+Using Tracing, we can collect the diagnostic information throughout application layers from top to bottom, as a nice hierarchy of spans. At this time, however, I want to keep things simple. My goal is to get rid of `println()` statements in the code, and replace them with appropriate `info()` and `debug()` macros from Tracing. 
 
 I'm also not going to work much on consuming the events yet. There's a [plethora of implementations](https://tracing.rs/tracing/#related-crates) in Tracing ecosystem that allows you to send collected traces to OpenTelemetry, Sentry, etc. For now, however, I'm quite satisfied with the ready-to-use implementation from [`tracing_subscriber`](https://docs.rs/tracing-subscriber/0.3.22/tracing_subscriber/fmt/index.html) crate, which prints events to the console.
+
+With Tracing in place, the console output of the application looks like this:
 
 ```ansi-output 
 [2m2025-12-02T06:21:03.526813Z[0m [34mDEBUG[0m [2mreqwest::connect[0m[2m:[0m starting new connection: http://bttracker.debian.org:6969/
@@ -54,6 +56,10 @@ I'm also not going to work much on consuming the events yet. There's a [plethora
 [2m2025-12-02T06:23:42.082875Z[0m [34mDEBUG[0m [2mbt_client::downloader::file_downloader[0m[2m:[0m Downloaded piece [3mpiece_index[0m[2m=[0m2679 [3mduration_ms[0m[2m=[0m453
 [2m2025-12-02T06:23:42.082961Z[0m [32m INFO[0m [2mmain[0m[2m:[0m Received entire file [3mfile_bytes[0m[2m=[0m"455208000000909000000000000000000000000000000000000000000000000033edfa8ed5bc007cfbfc6631db6631c96653665106578edd8ec552be007cbf0006b90001f3a5ea4b06000052b441bbaa5531c930f6f9cd13721681fb55aa751083e101740b66c706f306b442eb15eb0231c95a51b408cd135b0fb6c6405083e1" [3mfile_size[0m[2m=[0m702545920 [3mdownload_duration[0m[2m=[0m"145.22s"
 ```
+
+It's quite verbose, but at the same time that's the kind of a log file I'd expect to see from a production application. We're still not seeing the full picture in the log, though. In the end, I'd like be able to see the detailed information about TCP communication in the log: what messages get passed around over the TCP connection. I'll leave it to the future, though: as I extend the functionality of the client, I'll add more tracing to the relevant parts in the code. 
+
+
 
 <script type="module">
     import { AnsiUp } from 'https://cdn.jsdelivr.net/npm/ansi_up@6.0.2/ansi_up.min.js';
