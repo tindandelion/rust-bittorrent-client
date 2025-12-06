@@ -1,14 +1,14 @@
 ---
 layout: post
 title:  "Better logging with Tracing"
-date: 2025-11-29
+date: 2025-12-06
 ---
 
-Yet another thing that has interested me for a while was how to approach logging in a Rust application. Until now, I was just relying on `println()` macro to display significant events in my torrent client. However, this is a poor-man solution: in production applications, you don't want to rely on `println()` statements for logging: your approach to logging should be more systematic. 
+Yet another thing that has interested me for a while was how to approach logging in a Rust application. Until now, I was just relying on `println()` macro to display significant events in my torrent client. However, this is a poor-man's solution: in production applications, you don't want to rely on `println()` statements for logging: your approach to logging should be more systematic. 
 
 Usually developers rely on some sort of a _logging library_ that offers developers flexible and configurable means to manage logs. I was unaware of such libraries in Rust, until I came across an excellent video by Jon Gjengset, [Decrusting the tracing crate](https://youtu.be/21rtHinFA40?si=yHWqdFj0j08thUo1), that introduced me to the [Tracing](https://docs.rs/tracing/latest/tracing/) framework and gave me the answer I needed. 
 
-# Using tracing in my project 
+# Using Tracing in my project 
 
 As described [in the documentation](https://tracing.rs/tracing/), Tracing provides a developer with powerful capabilities to keep track of what's going on in the application using spans and events. I can imagine how it can be useful to record useful information on several levels: 
 
@@ -57,9 +57,9 @@ With Tracing in place, the console output of the application looks more like a p
 [2m2025-12-02T06:23:42.082961Z[0m [32m INFO[0m [2mmain[0m[2m:[0m Received entire file [3mfile_bytes[0m[2m=[0m"455208000000909000000000000000000000000000000000000000000000000033edfa8ed5bc007cfbfc6631db6631c96653665106578edd8ec552be007cbf0006b90001f3a5ea4b06000052b441bbaa5531c930f6f9cd13721681fb55aa751083e101740b66c706f306b442eb15eb0231c95a51b408cd135b0fb6c6405083e1" [3mfile_size[0m[2m=[0m702545920 [3mdownload_duration[0m[2m=[0m"145.22s"
 ```
 
-It's quite verbose, but at the same time that's the kind of a log file I'd expect to see from a production application. 
+It's quite verbose, but at the same time that's the kind of log file I'd expect to see from a production application. 
 
-We're still not seeing the full picture in the log, though. In the end, I'd like be able to see the detailed information about TCP communication: what messages get passed over the TCP connection in both directions. I'll leave it to the future, though: as I extend the functionality of the client, I'll add more tracing to the relevant parts in the code. 
+We're still not seeing the full picture in the log, though. In the end, I'd like to be able to see the detailed information about TCP communication: what messages get passed over the TCP connection in both directions. I'll leave it to the future, though: as I extend the functionality of the client, I'll add more tracing to the relevant parts in the code. 
 
 # Next steps 
 

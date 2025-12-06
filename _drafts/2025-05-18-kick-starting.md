@@ -20,3 +20,6 @@ I'm going to use the torrent file for the Debian distribution.
 - Implementing (part of) a BitTorrent client in Rust (YouTube, Jon Gjengset): https://www.youtube.com/watch?v=jf_ddGnum_4
 - Unofficial BitTorrent spec (v0.1): https://wiki.theory.org/BitTorrentSpecification
 - Build your own BitTorrent (challenge): https://app.codecrafters.io/join/bittorrent?via=jonhoo 
+
+# Links to UI 
+- https://crates.io/crates/tui-term
