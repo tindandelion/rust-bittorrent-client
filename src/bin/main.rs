@@ -1,8 +1,8 @@
 use std::error::Error;
 
 use bt_client::{
-    download_file, probe_peers::probe_peers_sequential, request_complete_file,
-    torrent::read_torrent_file, tracker::AnnounceRequest, types::PeerId,
+    download_file, probe_peers::probe_peers_sequential, request_complete_file, torrent::Torrent,
+    tracker::AnnounceRequest, types::PeerId,
 };
 use tracing::{Level, error, info};
 
@@ -11,10 +11,10 @@ fn main() -> Result<(), Box<dyn Error>> {
         .with_max_level(Level::DEBUG)
         .init();
 
-    let peer_id = PeerId::default();
-    let torrent = read_torrent_file()?;
+    let torrent = Torrent::read_default_file()?;
     let info = torrent.info;
 
+    let peer_id = PeerId::default();
     let announce_request = AnnounceRequest {
         tracker_url: torrent.announce,
         info_hash: info.sha1,

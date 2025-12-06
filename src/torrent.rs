@@ -20,13 +20,15 @@ pub struct Torrent {
     pub info: Info,
 }
 
-pub fn read_torrent_file() -> Result<Torrent, Error> {
-    let contents = fs::read(TORRENT_FILE)?;
-    let decoded = serde_bencode::from_bytes(&contents)?;
-    Ok(decoded)
-}
+impl Torrent {
+    const TORRENT_FILE: &str = "test-data/debian-12.11.0-amd64-netinst.iso.torrent";
 
-const TORRENT_FILE: &str = "test-data/debian-12.11.0-amd64-netinst.iso.torrent";
+    pub fn read_default_file() -> Result<Torrent, Error> {
+        let contents = fs::read(Self::TORRENT_FILE)?;
+        let decoded = serde_bencode::from_bytes(&contents)?;
+        Ok(decoded)
+    }
+}
 
 #[derive(Deserialize, Serialize)]
 struct InfoInternal {
@@ -68,7 +70,7 @@ mod tests {
 
     #[test]
     fn deserialize_torrent_file() {
-        let torrent: Torrent = read_torrent_file().unwrap();
+        let torrent = Torrent::read_default_file().unwrap();
         assert_eq!(
             torrent.announce,
             "http://bttracker.debian.org:6969/announce"
@@ -85,7 +87,7 @@ mod tests {
 
     #[test]
     fn calculate_info_hash() {
-        let torrent: Torrent = read_torrent_file().unwrap();
+        let torrent = Torrent::read_default_file().unwrap();
         assert_eq!(format!("{}", torrent.info.sha1), INFO_HASH);
     }
 }
