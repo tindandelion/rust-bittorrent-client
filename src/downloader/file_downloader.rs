@@ -106,7 +106,7 @@ impl<'a, T: RequestChannel + DownloadChannel> FileDownloader<'a, T> {
             self.request_emitter.request_next_block(self.channel)?;
 
             if let Some(piece) = self.piece_composer.append_block(&block)? {
-                self.verify_piece_hash(piece.index, &piece)?;
+                self.verify_piece_hash(&piece)?;
 
                 let (piece_start, piece_end) = self.file_info.piece_bounds(piece.index);
                 buffer[piece_start..piece_end].copy_from_slice(&piece.data);
@@ -119,8 +119,8 @@ impl<'a, T: RequestChannel + DownloadChannel> FileDownloader<'a, T> {
         Ok(buffer)
     }
 
-    fn verify_piece_hash(&self, piece_index: u32, piece: &Piece) -> io::Result<()> {
-        let piece_hash = &self.piece_hashes[piece_index as usize];
+    fn verify_piece_hash(&self, piece: &Piece) -> io::Result<()> {
+        let piece_hash = &self.piece_hashes[piece.index as usize];
         if !piece_hash.verify(&piece.data) {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
