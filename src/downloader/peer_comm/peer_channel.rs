@@ -5,12 +5,11 @@ use std::{
 };
 
 use crate::{
-    downloader::peer_comm::{MessageChannel, PeerMessage},
+    downloader::MessageChannel,
     types::{PeerId, Sha1},
 };
 
-use super::file_downloader::{Block, DownloadChannel, RequestChannel};
-use super::handshake_message::HandshakeMessage;
+use super::{PeerMessage, handshake_message::HandshakeMessage};
 
 pub struct PeerChannel {
     peer_addr: SocketAddr,
@@ -61,37 +60,5 @@ impl MessageChannel for PeerChannel {
 
     fn send(&mut self, msg: &PeerMessage) -> io::Result<()> {
         msg.send(&mut self.stream)
-    }
-}
-
-impl RequestChannel for PeerChannel {
-    fn request(&mut self, piece_index: u32, offset: u32, length: u32) -> io::Result<()> {
-        PeerMessage::Request {
-            piece_index,
-            offset,
-            length,
-        }
-        .send(&mut self.stream)
-    }
-}
-
-impl DownloadChannel for PeerChannel {
-    fn receive(&mut self) -> io::Result<Block> {
-        let msg = PeerMessage::receive(&mut self.stream)?;
-        match msg {
-            PeerMessage::Piece {
-                piece_index,
-                offset,
-                block,
-            } => Ok(Block {
-                piece_index,
-                offset,
-                data: block,
-            }),
-            other => Err(io::Error::other(format!(
-                "Expected `piece` message, received: {:?}",
-                other
-            ))),
-        }
     }
 }
