@@ -1,5 +1,17 @@
-use super::{Block, FileInfo, Piece};
+use super::{Block, FileInfo};
 use std::io;
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Piece {
+    pub index: u32,
+    pub data: Vec<u8>,
+}
+
+impl Piece {
+    fn new(index: u32, data: Vec<u8>) -> Self {
+        Self { index, data }
+    }
+}
 
 pub struct PieceComposer {
     piece_index: Option<u32>,

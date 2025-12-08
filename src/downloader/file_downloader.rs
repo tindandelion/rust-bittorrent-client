@@ -4,7 +4,7 @@ mod request_emitter;
 use std::{io, time::Instant};
 
 use crate::types::Sha1;
-use piece_composer::PieceComposer;
+use piece_composer::{Piece, PieceComposer};
 use request_emitter::RequestEmitter;
 use tracing::debug;
 
@@ -13,18 +13,6 @@ pub struct Block {
     pub piece_index: u32,
     pub offset: u32,
     pub data: Vec<u8>,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct Piece {
-    pub index: u32,
-    pub data: Vec<u8>,
-}
-
-impl Piece {
-    fn new(index: u32, data: Vec<u8>) -> Self {
-        Self { index, data }
-    }
 }
 
 pub trait RequestChannel {
