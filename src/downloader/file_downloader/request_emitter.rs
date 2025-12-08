@@ -1,6 +1,7 @@
 use std::io;
 
-use super::{FileInfo, RequestChannel};
+use super::RequestChannel;
+use super::file_info::FileInfo;
 
 pub struct RequestEmitter {
     block_length: u32,

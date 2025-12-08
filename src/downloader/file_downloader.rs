@@ -1,9 +1,11 @@
+mod file_info;
 mod piece_composer;
 mod request_emitter;
 
 use std::{io, time::Instant};
 
 use crate::types::Sha1;
+use file_info::FileInfo;
 use piece_composer::{Piece, PieceComposer};
 use request_emitter::RequestEmitter;
 use tracing::debug;
@@ -21,32 +23,6 @@ pub trait RequestChannel {
 
 pub trait DownloadChannel {
     fn receive(&mut self) -> io::Result<Block>;
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct FileInfo {
-    file_length: usize,
-    piece_length: u32,
-}
-
-impl FileInfo {
-    fn piece_length(&self, piece_index: u32) -> u32 {
-        let (piece_start, piece_end) = self.piece_bounds(piece_index);
-        (piece_end - piece_start) as u32
-    }
-
-    fn piece_count(&self) -> u32 {
-        self.file_length.div_ceil(self.piece_length as usize) as u32
-    }
-
-    fn piece_bounds(&self, piece_index: u32) -> (usize, usize) {
-        let piece_start = piece_index as usize * self.piece_length as usize;
-        let mut piece_end = (piece_index as usize + 1) * self.piece_length as usize;
-        if piece_end > self.file_length {
-            piece_end = self.file_length;
-        };
-        (piece_start, piece_end)
-    }
 }
 
 pub struct FileDownloader<'a, T: RequestChannel + DownloadChannel> {

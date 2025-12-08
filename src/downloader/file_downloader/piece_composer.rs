@@ -1,4 +1,4 @@
-use super::{Block, FileInfo};
+use super::{Block, file_info::FileInfo};
 use std::io;
 
 #[derive(Debug, Clone, PartialEq)]
