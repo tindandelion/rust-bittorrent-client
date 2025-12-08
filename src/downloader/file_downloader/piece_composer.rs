@@ -89,7 +89,7 @@ pub fn unexpected_block_offset(expected: u32, actual: u32) -> io::Error {
 }
 
 #[cfg(test)]
-mod piece_composer_tests {
+mod tests {
     use super::*;
 
     #[test]
