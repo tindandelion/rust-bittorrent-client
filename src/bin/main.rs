@@ -8,7 +8,5 @@ fn main() -> Result<(), Box<dyn Error>> {
         .with_max_level(Level::DEBUG)
         .init();
 
-    let torrent = Torrent::read_default_file()?;
-    torrent.download()?;
-    Ok(())
+    Torrent::read_default_file()?.download()
 }
