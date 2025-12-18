@@ -15,13 +15,26 @@ enum AppEvent {
     NoOp,
 }
 
+#[derive(Default)]
+enum DownloadState {
+    #[default]
+    Idle,
+    Probing(String),
+    Downloading(usize, usize),
+}
+
+#[derive(Default)]
+struct AppState {
+    download_state: DownloadState,
+}
+
 pub fn main() -> Result<()> {
-    let terminal = ratatui::init();
-
     let (tx, rx) = mpsc::channel::<AppEvent>();
-    listen_for_keyboard_events(tx);
+    let app_state = AppState::default();
 
-    let result = run(terminal, rx);
+    listen_for_keyboard_events(tx);
+    let terminal = ratatui::init();
+    let result = run(terminal, rx, &app_state);
     ratatui::restore();
 
     result
@@ -40,9 +53,9 @@ fn listen_for_keyboard_events(tx: Sender<AppEvent>) {
     });
 }
 
-fn run(mut terminal: DefaultTerminal, rx: Receiver<AppEvent>) -> Result<()> {
+fn run(mut terminal: DefaultTerminal, rx: Receiver<AppEvent>, app_state: &AppState) -> Result<()> {
     loop {
-        terminal.draw(render_ui)?;
+        terminal.draw(|frame| render_ui(frame, app_state))?;
         match rx.recv()? {
             AppEvent::Exit => break Ok(()),
             _ => {}
@@ -50,7 +63,15 @@ fn run(mut terminal: DefaultTerminal, rx: Receiver<AppEvent>) -> Result<()> {
     }
 }
 
-fn render_ui(f: &mut Frame) {
-    let block = ratatui::widgets::Block::default().title("Hello, world!");
+fn render_ui(f: &mut Frame, app_state: &AppState) {
+    let status_text = match &app_state.download_state {
+        DownloadState::Idle => "Idle".to_string(),
+        DownloadState::Probing(ip_address) => format!("Probing: {}", ip_address),
+        DownloadState::Downloading(downloaded, total) => {
+            format!("Downloading: {} / {}", downloaded, total)
+        }
+    };
+
+    let block = ratatui::widgets::Block::default().title(status_text);
     f.render_widget(block, f.area());
 }
