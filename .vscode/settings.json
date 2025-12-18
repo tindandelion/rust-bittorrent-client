@@ -1,3 +1,10 @@
 {
-  "cSpell.words": ["Addrs", "Benc", "Bencoding", "bitfield", "reqwest"]
+  "cSpell.words": [
+    "Addrs",
+    "Benc",
+    "Bencoding",
+    "bitfield",
+    "ratatui",
+    "reqwest"
+  ]
 }
