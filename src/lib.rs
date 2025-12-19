@@ -1,5 +1,6 @@
 mod downloader;
 mod probe_peers;
+pub mod ratatui_ui;
 mod torrent;
 mod tracker;
 mod types;
