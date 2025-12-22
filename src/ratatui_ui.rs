@@ -51,7 +51,7 @@ impl AppUi {
 
     pub fn run(&mut self) -> Result<()> {
         let terminal = ratatui::init();
-        Self::listen_for_keyboard_events(self.clone_sender());
+        listen_for_keyboard_events(self.clone_sender());
         let result = self.render_loop(terminal);
         ratatui::restore();
         result
@@ -102,21 +102,21 @@ impl AppUi {
 
         f.render_widget(status, f.area());
     }
+}
 
-    fn listen_for_keyboard_events(sender: Sender<AppEvent>) {
-        thread::spawn(move || {
-            loop {
-                match event::read().unwrap() {
-                    Event::Key(key) => match key.code {
-                        event::KeyCode::Esc => sender.send(AppEvent::Exit).unwrap(),
-                        _ => {}
-                    },
-                    Event::Resize(_, _) => {
-                        sender.send(AppEvent::Resize).unwrap();
-                    }
-                    _ => (),
+fn listen_for_keyboard_events(sender: Sender<AppEvent>) {
+    thread::spawn(move || {
+        loop {
+            match event::read().unwrap() {
+                Event::Key(key) => match key.code {
+                    event::KeyCode::Esc => sender.send(AppEvent::Exit).unwrap(),
+                    _ => {}
+                },
+                Event::Resize(_, _) => {
+                    sender.send(AppEvent::Resize).unwrap();
                 }
+                _ => (),
             }
-        });
-    }
+        }
+    });
 }
