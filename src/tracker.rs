@@ -26,8 +26,8 @@ impl AnnounceRequest {
     }
 
     fn make_announce_url(&self) -> Result<Url, ParseError> {
-        let info_hash = unsafe { String::from_utf8_unchecked(self.info_hash.to_vec()) };
-        let peer_id = unsafe { String::from_utf8_unchecked(self.peer_id.to_vec()) };
+        let info_hash = unsafe { String::from_utf8_unchecked(self.info_hash.as_vec()) };
+        let peer_id = unsafe { String::from_utf8_unchecked(self.peer_id.as_vec()) };
         Url::parse_with_params(
             &self.tracker_url,
             &[("info_hash", &info_hash), ("peer_id", &peer_id)],

@@ -10,7 +10,7 @@ impl PeerId {
         Self(value)
     }
 
-    pub fn to_vec(&self) -> Vec<u8> {
+    pub fn as_vec(&self) -> Vec<u8> {
         self.0.to_vec()
     }
 
@@ -48,7 +48,7 @@ impl Sha1 {
         &self.0
     }
 
-    pub fn to_vec(&self) -> Vec<u8> {
+    pub fn as_vec(&self) -> Vec<u8> {
         self.0.to_vec()
     }
 

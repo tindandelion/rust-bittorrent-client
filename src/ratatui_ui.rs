@@ -4,7 +4,7 @@ use std::{
 };
 
 use ratatui::{
-    DefaultTerminal, Frame,
+    Frame,
     crossterm::event::{self, Event},
     style::{Color, Stylize},
     text::{Line, ToLine},
@@ -21,7 +21,7 @@ pub enum AppEvent {
     Completed,
 }
 
-pub struct AppUi {
+pub struct App {
     app_state: DownloadState,
     event_sender: Sender<AppEvent>,
     event_receiver: Receiver<AppEvent>,
@@ -35,7 +35,8 @@ enum DownloadState {
     Downloading(usize, usize),
 }
 
-impl AppUi {
+#[allow(clippy::new_without_default)]
+impl App {
     pub fn new() -> Self {
         let (event_sender, event_receiver) = mpsc::channel::<AppEvent>();
         Self {
@@ -45,25 +46,29 @@ impl AppUi {
         }
     }
 
-    pub fn clone_sender(&self) -> Sender<AppEvent> {
-        self.event_sender.clone()
+    pub fn start_background_task<F, T>(&self, task: F) -> thread::JoinHandle<T>
+    where
+        F: FnOnce(Sender<AppEvent>) -> T,
+        F: Send + 'static,
+        T: Send + 'static,
+    {
+        let event_sender = self.event_sender.clone();
+        thread::spawn(move || task(event_sender))
     }
 
-    pub fn run(&mut self) -> Result<()> {
-        let terminal = ratatui::init();
-        listen_for_keyboard_events(self.clone_sender());
-        let result = self.render_loop(terminal);
-        ratatui::restore();
-        result
-    }
+    pub fn run_ui_loop(&mut self) -> Result<()> {
+        let mut terminal = ratatui::init();
 
-    fn render_loop(&mut self, mut terminal: DefaultTerminal) -> Result<()> {
-        loop {
+        self.start_background_task(listen_for_keyboard_events);
+        let result = loop {
             terminal.draw(|frame| self.render_ui(frame))?;
             if !self.process_app_event()? {
                 break Ok(());
             }
-        }
+        };
+
+        ratatui::restore();
+        result
     }
 
     fn process_app_event(&mut self) -> Result<bool> {
@@ -108,18 +113,17 @@ impl AppUi {
 }
 
 fn listen_for_keyboard_events(sender: Sender<AppEvent>) {
-    thread::spawn(move || {
-        loop {
-            match event::read().unwrap() {
-                Event::Key(key) => match key.code {
-                    event::KeyCode::Esc => sender.send(AppEvent::Exit).unwrap(),
-                    _ => {}
-                },
-                Event::Resize(_, _) => {
-                    sender.send(AppEvent::Resize).unwrap();
+    loop {
+        match event::read().unwrap() {
+            Event::Key(key) => {
+                if let event::KeyCode::Esc = key.code {
+                    sender.send(AppEvent::Exit).unwrap()
                 }
-                _ => (),
             }
+            Event::Resize(_, _) => {
+                sender.send(AppEvent::Resize).unwrap();
+            }
+            _ => (),
         }
-    });
+    }
 }

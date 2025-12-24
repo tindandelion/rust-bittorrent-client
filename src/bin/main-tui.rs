@@ -1,14 +1,14 @@
 use std::{sync::mpsc::Sender, thread, time::Duration};
 
-use bt_client::ratatui_ui::{AppEvent, AppUi};
+use bt_client::ratatui_ui::{App, AppEvent};
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 pub fn main() -> Result<()> {
-    let mut ui = AppUi::new();
+    let mut ui = App::new();
 
-    download_file(ui.clone_sender());
-    ui.run()
+    ui.start_background_task(download_file);
+    ui.run_ui_loop()
 }
 
 fn download_file(tx: Sender<AppEvent>) {
