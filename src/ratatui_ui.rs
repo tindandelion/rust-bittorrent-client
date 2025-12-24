@@ -95,8 +95,11 @@ impl AppUi {
 
         let status = Paragraph::new(status_line).block(
             Block::bordered()
-                .title(" BitTorrent Client ".to_line().centered())
-                .title_bottom(" Press <ESC> to exit ".to_line().centered())
+                .title(" BitTorrent Client ".to_line().bold().centered())
+                .title_bottom(
+                    Line::from(vec![" Press ".into(), "<ESC>".bold(), " to exit ".into()])
+                        .centered(),
+                )
                 .padding(Padding::horizontal(1)),
         );
 
