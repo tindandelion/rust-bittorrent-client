@@ -2,7 +2,10 @@ mod file_info;
 mod piece_composer;
 mod request_emitter;
 
-use std::{io, time::Instant};
+use std::{
+    io,
+    time::{Duration, Instant},
+};
 
 use crate::types::Sha1;
 use file_info::FileInfo;
@@ -27,6 +30,7 @@ pub trait DownloadChannel {
 
 pub struct FileDownloader<'a, T: RequestChannel + DownloadChannel> {
     channel: &'a mut T,
+    progress_callback: Box<dyn FnMut(usize, usize) + 'a>,
     piece_hashes: Vec<Sha1>,
     file_info: FileInfo,
     piece_composer: PieceComposer,
@@ -51,21 +55,32 @@ impl<'a, T: RequestChannel + DownloadChannel> FileDownloader<'a, T> {
             channel,
             piece_hashes,
             file_info,
+            progress_callback: Box::new(|_, _| {}),
             piece_composer: PieceComposer::new(file_info),
             request_emitter: RequestEmitter::new(Self::BLOCK_LENGTH, file_info),
         }
     }
 
+    #[cfg(test)]
+    fn with_block_length(mut self, block_length: u32) -> Self {
+        self.request_emitter.set_block_length(block_length);
+        self
+    }
+
+    fn with_progress_callback(mut self, callback: impl FnMut(usize, usize) + 'a) -> Self {
+        self.progress_callback = Box::new(callback);
+        self
+    }
+
     pub fn download(&mut self) -> io::Result<Vec<u8>> {
         let mut buffer = vec![0; self.file_info.file_length];
-        let mut downloaded_pieces_count = 0;
-        let mut download_report = DownloadReport::new();
+        let mut report = DownloadReport::new();
 
         self.request_emitter
             .request_first_blocks(Self::REQUEST_QUEUE_LENGTH, self.channel)?;
 
-        while downloaded_pieces_count < self.file_info.piece_count() {
-            download_report.waiting_for_block();
+        while report.pieces_count < self.file_info.piece_count() {
+            report.waiting_for_block();
             let block = self.channel.receive()?;
             self.request_emitter.request_next_block(self.channel)?;
 
@@ -75,8 +90,8 @@ impl<'a, T: RequestChannel + DownloadChannel> FileDownloader<'a, T> {
                 let (piece_start, piece_end) = self.file_info.piece_bounds(piece.index);
                 buffer[piece_start..piece_end].copy_from_slice(&piece.data);
 
-                download_report.piece_downloaded(piece.index);
-                downloaded_pieces_count += 1;
+                report.piece_downloaded(&piece);
+                (self.progress_callback)(report.bytes_count, self.file_info.file_length);
             }
         }
 
@@ -93,22 +108,20 @@ impl<'a, T: RequestChannel + DownloadChannel> FileDownloader<'a, T> {
         }
         Ok(())
     }
-
-    #[cfg(test)]
-    fn with_block_length(mut self, block_length: u32) -> Self {
-        self.request_emitter.set_block_length(block_length);
-        self
-    }
 }
 
 struct DownloadReport {
     start_timestamp: Option<Instant>,
+    pieces_count: u32,
+    bytes_count: usize,
 }
 
 impl DownloadReport {
     fn new() -> Self {
         Self {
             start_timestamp: None,
+            pieces_count: 0,
+            bytes_count: 0,
         }
     }
 
@@ -118,10 +131,13 @@ impl DownloadReport {
         }
     }
 
-    fn piece_downloaded(&mut self, piece_index: u32) {
+    fn piece_downloaded(&mut self, piece: &Piece) {
+        self.pieces_count += 1;
+        self.bytes_count += piece.data.len();
+
         let duration = self.start_timestamp.take().unwrap().elapsed();
         debug!(
-            piece_index = piece_index,
+            piece_index = piece.index,
             duration_ms = duration.as_millis(),
             "Downloaded piece",
         );
@@ -184,6 +200,45 @@ mod tests {
 
         let downloaded_data = piece_downloader.download().unwrap();
         assert_eq!(file_data, downloaded_data);
+    }
+
+    #[test]
+    fn test_report_download_progress_via_provided_callback() {
+        let file_data = vec![
+            1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+            25,
+        ];
+        let file_length = file_data.len();
+        let piece_length = 10_u32;
+        let pieces = file_data
+            .chunks(piece_length as usize)
+            .map(|c| c.to_vec())
+            .collect::<Vec<_>>();
+        let piece_hashes = pieces
+            .iter()
+            .map(|p| Sha1::calculate(p))
+            .collect::<Vec<_>>();
+
+        let mut reported_progress: Vec<(usize, usize)> = vec![];
+        let mut channel = DownloadChannelFromVector::new(pieces.clone());
+        {
+            let mut piece_downloader =
+                FileDownloader::new(&mut channel, piece_hashes, piece_length, file_data.len())
+                    .with_progress_callback(|downloaded, total| {
+                        reported_progress.push((downloaded, total))
+                    })
+                    .with_block_length(3);
+
+            let _ = piece_downloader.download().unwrap();
+        }
+        assert_eq!(
+            reported_progress,
+            vec![
+                (10, file_length),
+                (20, file_length),
+                (file_length, file_length)
+            ]
+        );
     }
 
     #[test]
