@@ -15,8 +15,10 @@ use crate::{
 use std::net::SocketAddr;
 pub use torrent::Torrent;
 
+pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
+
 impl Torrent {
-    pub fn download(self) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn download(self) -> Result<()> {
         let info = self.info;
 
         let peer_id = PeerId::default();
@@ -67,7 +69,7 @@ fn request_complete_file(
     peer_addr: &SocketAddr,
     peer_id: &PeerId,
     info: &Info,
-) -> Result<PeerChannel, Box<dyn std::error::Error>> {
+) -> Result<PeerChannel> {
     debug!("Connecting to peer");
     let mut channel = PeerChannel::connect(peer_addr, &info.sha1, peer_id)
         .inspect(|channel| debug!(remote_id = %channel.remote_id(), "Connected"))
