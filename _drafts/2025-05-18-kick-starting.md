@@ -23,3 +23,6 @@ I'm going to use the torrent file for the Debian distribution.
 
 # Links to UI 
 - https://crates.io/crates/tui-term
+
+# Resurces
+- Too Many Linked Lists 
