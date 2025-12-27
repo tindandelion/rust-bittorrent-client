@@ -2,10 +2,7 @@ mod file_info;
 mod piece_composer;
 mod request_emitter;
 
-use std::{
-    io,
-    time::{Duration, Instant},
-};
+use std::{io, time::Instant};
 
 use crate::types::Sha1;
 use file_info::FileInfo;
@@ -30,11 +27,11 @@ pub trait DownloadChannel {
 
 pub struct FileDownloader<'a, T: RequestChannel + DownloadChannel> {
     channel: &'a mut T,
-    progress_callback: Box<dyn FnMut(usize, usize) + 'a>,
     piece_hashes: Vec<Sha1>,
     file_info: FileInfo,
     piece_composer: PieceComposer,
     request_emitter: RequestEmitter,
+    report: DownloadReport<'a>,
 }
 
 impl<'a, T: RequestChannel + DownloadChannel> FileDownloader<'a, T> {
@@ -55,9 +52,9 @@ impl<'a, T: RequestChannel + DownloadChannel> FileDownloader<'a, T> {
             channel,
             piece_hashes,
             file_info,
-            progress_callback: Box::new(|_, _| {}),
             piece_composer: PieceComposer::new(file_info),
             request_emitter: RequestEmitter::new(Self::BLOCK_LENGTH, file_info),
+            report: DownloadReport::new(file_info),
         }
     }
 
@@ -68,34 +65,34 @@ impl<'a, T: RequestChannel + DownloadChannel> FileDownloader<'a, T> {
     }
 
     fn with_progress_callback(mut self, callback: impl FnMut(usize, usize) + 'a) -> Self {
-        self.progress_callback = Box::new(callback);
+        self.report.progress_callback = Box::new(callback);
         self
     }
 
     pub fn download(&mut self) -> io::Result<Vec<u8>> {
         let mut buffer = vec![0; self.file_info.file_length];
-        let mut report = DownloadReport::new();
 
         self.request_emitter
             .request_first_blocks(Self::REQUEST_QUEUE_LENGTH, self.channel)?;
 
-        while report.pieces_count < self.file_info.piece_count() {
-            report.waiting_for_block();
+        while self.report.has_more_pieces_to_download() {
+            self.report.waiting_for_block();
             let block = self.channel.receive()?;
             self.request_emitter.request_next_block(self.channel)?;
 
             if let Some(piece) = self.piece_composer.append_block(&block)? {
                 self.verify_piece_hash(&piece)?;
-
-                let (piece_start, piece_end) = self.file_info.piece_bounds(piece.index);
-                buffer[piece_start..piece_end].copy_from_slice(&piece.data);
-
-                report.piece_downloaded(&piece);
-                (self.progress_callback)(report.bytes_count, self.file_info.file_length);
+                self.append_piece(&mut buffer, &piece);
+                self.report.piece_downloaded(&piece);
             }
         }
 
         Ok(buffer)
+    }
+
+    fn append_piece(&self, buffer: &mut Vec<u8>, piece: &Piece) {
+        let (piece_start, piece_end) = self.file_info.piece_bounds(piece.index);
+        buffer[piece_start..piece_end].copy_from_slice(&piece.data);
     }
 
     fn verify_piece_hash(&self, piece: &Piece) -> io::Result<()> {
@@ -110,18 +107,22 @@ impl<'a, T: RequestChannel + DownloadChannel> FileDownloader<'a, T> {
     }
 }
 
-struct DownloadReport {
+struct DownloadReport<'a> {
+    progress_callback: Box<dyn FnMut(usize, usize) + 'a>,
     start_timestamp: Option<Instant>,
-    pieces_count: u32,
-    bytes_count: usize,
+    downloaded_pieces: u32,
+    downloaded_bytes: usize,
+    file_info: FileInfo,
 }
 
-impl DownloadReport {
-    fn new() -> Self {
+impl<'a> DownloadReport<'a> {
+    fn new(file_info: FileInfo) -> Self {
         Self {
+            file_info,
             start_timestamp: None,
-            pieces_count: 0,
-            bytes_count: 0,
+            downloaded_pieces: 0,
+            downloaded_bytes: 0,
+            progress_callback: Box::new(|_, _| {}),
         }
     }
 
@@ -132,15 +133,20 @@ impl DownloadReport {
     }
 
     fn piece_downloaded(&mut self, piece: &Piece) {
-        self.pieces_count += 1;
-        self.bytes_count += piece.data.len();
-
+        self.downloaded_pieces += 1;
+        self.downloaded_bytes += piece.data.len();
         let duration = self.start_timestamp.take().unwrap().elapsed();
+
+        (self.progress_callback)(self.downloaded_bytes, self.file_info.file_length);
         debug!(
             piece_index = piece.index,
             duration_ms = duration.as_millis(),
             "Downloaded piece",
         );
+    }
+
+    fn has_more_pieces_to_download(&self) -> bool {
+        self.downloaded_pieces < self.file_info.piece_count()
     }
 }
 
