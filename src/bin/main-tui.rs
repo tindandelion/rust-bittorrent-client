@@ -6,7 +6,6 @@ type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 pub fn main() -> Result<()> {
     let mut ui = App::new();
-
     ui.start_background_task(download_file);
     ui.run_ui_loop()
 }
