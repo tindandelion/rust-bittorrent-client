@@ -17,3 +17,20 @@ TODO: Small summary
 All of these options look very compelling to me, each one providing a lot of opportunities to learn. The first two, however, would require me to leave Rust land for the front-end work. I'd like to stay in the Rust ecosystem for now, so I decided to move forward with the third option: build a UI layer for my BitTorrent client fully in the terminal, with the help of Ratatui library. 
 
 # The structure for Ratatui application 
+
+- Application state
+- Render loop that displays the application state to the user
+
+Typical interactive application: 
+
+* Render the application state; 
+* Read events from the terminal (user input, mouse events, resize events, etc.);
+* Update application state according to the user input.
+
+![Interactive application loop]({{ site.baseurl }}/assets/images/starting-with-ratatui/interactive-app-loop.svg)
+
+In our case, however, the situation is different. We don't have an interactive application per se. Rather, we have a lengthy (?)process that runs its course and at certain moments it updates the application state. The UI should re-render itself whenever the application state changes. But there's also a limited interaction with the the user through the UI. We would like the user to be able to interrupt the application by pressing a specific key (ESC). Also, we would like the application to redraw itself when the user resizes the terminal window. 
+
+[Picture for event driven UI]
+
+

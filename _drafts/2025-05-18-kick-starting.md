@@ -26,3 +26,4 @@ I'm going to use the torrent file for the Debian distribution.
 
 # Resurces
 - Too Many Linked Lists 
+- Async in Rust 
