@@ -14,7 +14,7 @@ fn download_file(tx: Sender<AppEvent>) {
     let ip_addresses = vec!["127.0.0.1:6881", "127.0.0.2:6882", "127.0.0.3:6883"];
     for ip_address in ip_addresses {
         tx.send(AppEvent::Probing(ip_address.to_string())).unwrap();
-        thread::sleep(Duration::from_secs(3));
+        thread::sleep(Duration::from_secs(2));
     }
 
     for i in 0..100 {
