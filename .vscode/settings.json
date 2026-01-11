@@ -93,6 +93,12 @@
         "Serde's",
         "Gjengset",
         "Decrusting",
-        "Ratatui"
+        "Ratatui",
+        "lifecycle",
+        "backend",
+        "Ratatui's",
+        "Axum",
+        "Actix",
+        "Tauri"
     ]
 } 
