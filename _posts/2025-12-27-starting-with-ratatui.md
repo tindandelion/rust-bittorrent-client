@@ -4,7 +4,7 @@ title:  "Starting with Ratatui: the UI for BitTorrent client"
 date: 2025-12-27
 ---
 
- [Having added tracing][prev-post] to the application, I've got a lot of visibility of what's going on under the hood. However, it's not exactly user-friendly: parsing the tracing output is no fun at all. I think it's time to pay more attention to the application's user interface. In particular, I'm interested in developing a _terminal user interface_ application, inspired by many popular Linux command-line tools, such as [`htop`](https://en.wikipedia.org/wiki/Htop).
+ [Having added tracing][prev-post] to the application, I've got a lot of visibility into what's going on under the hood. However, it's not exactly user-friendly: parsing the tracing output is no fun at all. I think it's time to pay more attention to the application's user interface. In particular, I'm interested in developing a _terminal user interface_ application, inspired by many popular Linux command-line tools, such as [`htop`](https://en.wikipedia.org/wiki/Htop).
 
 # Approaching the application user interface 
 
@@ -26,7 +26,7 @@ The first thing to notice about Ratatui is that it's a _library_ of useful tools
 
 You won't see that with Ratatui. Rather, Ratatui is a toolkit of useful UI abstractions that work on top of the [_terminal backend_ library](https://ratatui.rs/concepts/backends/). The terminal backend provides an API to manipulate the terminal on a very low level: display text in different colors and styles, read events like keystrokes or mouse clicks, etc. On top of that, Ratatui adds a higher level of abstractions that allow you to work with the terminal in terms of _widgets:_ the building blocks of your user interface. However, it's the developer's responsibility to write the code that handles the application lifecycle and binds different pieces together. 
 
-The upside of such a lightweight approach is that the library doesn't confine you to a particular application paradigm or architecture: you're free to choose whatever style you like. The downside, though, is that the developer is responsible for writing a bit of a boilerplate code to manage some low-level details, that would otherwise be provided by the UI framework. 
+The upside of such a lightweight approach is that the library doesn't confine you to a particular application paradigm or architecture: you're free to choose whatever style you like. The downside, though, is that the developer is responsible for writing a bit of boilerplate code to manage some low-level details, that would otherwise be provided by the UI framework. 
 
 Let's have a look at the simplest [**Hello world** application](https://github.com/tindandelion/rust-bittorrent-client/blob/0.0.12/examples/hello-world-ratatui.rs) in Ratatui and explore the important parts.
 
@@ -75,7 +75,7 @@ Next, we enter a main application _render loop_, which is essentially the center
 1. It draws the application UI in the terminal (step 2.1); 
 2. It reads and processes the events from the terminal (step 2.2). 
 
-Let's examine the application structure in more details. 
+Let's examine the application structure in more detail. 
 
 #### Widgets 
 
@@ -106,13 +106,13 @@ After the interface elements are rendered on the screen, our "Hello world" appli
 * Mouse events; 
 * Other events, such as resizing the terminal window. 
 
-Ratatui doesn't directly expose any event handling mechanisms; the programmer interacts with the terminal backend directly to receive the terminal events. In our case, we call [`crossterm::event::read()`](https://docs.rs/crossterm/latest/crossterm/event/fn.read.html) function that blocks the execution of the render loop until a terminal event is received. We then analyze the received event content: if the `Escape` keyboard button as pressed, we break the loop and quit the application. Otherwise, we go to the next iteration of the render loop; implicitly we react to all other terminal events by re-rendering the UI. As a side effect, this also handles the resize events from the terminal: if you resize the terminal window, you'll see that the "Hello, world!" text stays centered. 
+Ratatui doesn't directly expose any event handling mechanisms; the programmer interacts with the terminal backend directly to receive the terminal events. In our case, we call [`crossterm::event::read()`](https://docs.rs/crossterm/latest/crossterm/event/fn.read.html) function that blocks the execution of the render loop until a terminal event is received. We then analyze the received event content: if the `Escape` keyboard button was pressed, we break the loop and quit the application. Otherwise, we go to the next iteration of the render loop; implicitly we react to all other terminal events by re-rendering the UI. As a side effect, this also handles the resize events from the terminal: if you resize the terminal window, you'll see that the "Hello, world!" text stays centered. 
 
 It's important to mention that `read()` function is _blocking:_ the render loop is paused until the user interacts with the terminal in some way. This is crucial: without some form of pausing the execution, the render loop would continue spinning non-stop, wasting CPU resources on redundant re-renders. 
 
 Another function from `crossterm` we may consider is [`poll()`](https://docs.rs/crossterm/latest/crossterm/event/fn.poll.html). This function allows us to check beforehand if an event is available to read. It blocks until the event is ready, but unlike `read()` that blocks indefinitely, `poll()` will exit after a given timeout. 
 
-Using `poll()` can be useful if we want to redraw the application from time to time, regardless of the user actions. For example, we might use this function if the application performs some background work and we want to update the UI from time to time to visualize the changes happened in the background, combined with a possible input from the user. Essentially, it's a way to merge different streams of events (background task updates and user events) via a polling mechanism. 
+Using `poll()` can be useful if we want to redraw the application from time to time, regardless of the user actions. For example, we might use this function if the application performs some background work and we want to update the UI from time to time to visualize the changes that happened in the background, combined with a possible input from the user. Essentially, it's a way to merge different streams of events (background task updates and user events) via a polling mechanism. 
 
 # Other considerations
 
@@ -130,7 +130,7 @@ A few suggestions on application state management are described on the Ratatui [
 
 # A high-level picture
 
-To help me reason about a typical interactive terminal applications, I've summarized the application main loop in the following diagram: 
+To help me reason about a typical interactive terminal application, I've summarized the application main loop in the following diagram: 
 
 ![Interactive application loop]({{ site.baseurl }}/assets/images/starting-with-ratatui/interactive-app-loop.svg)
 
