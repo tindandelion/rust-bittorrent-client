@@ -1,7 +1,7 @@
 ---
 layout: post
-title:  "Starting with Ratatui: the UI for BitTorrent client"
-date: 2025-12-27
+title:  "Terminal UIs: starting with Ratatui"
+date: 2026-01-11
 ---
 
  [Having added tracing][prev-post] to the application, I've got a lot of visibility into what's going on under the hood. However, it's not exactly user-friendly: parsing the tracing output is no fun at all. I think it's time to pay more attention to the application's user interface. In particular, I'm interested in developing a _terminal user interface_ application, inspired by many popular Linux command-line tools, such as [`htop`](https://en.wikipedia.org/wiki/Htop).
