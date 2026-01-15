@@ -26,7 +26,52 @@ Rust, however, provides us with guardrails to avoid data races. It turns out tha
 
 The easiest way is to program where each thread operates in its own local state and there's no shared data at all. Since there's no shared data, there's no possibility for data races. But what if threads still need to communicate with each other? One way to solve this is to use message-based communication, where threads exchange messages with each other via a communication channel. 
 
-Rust's standard library provides an implementation for such communication in [`std::sync::mpsc`](https://doc.rust-lang.org/std/sync/mpsc/index.html) module. "mpcs" is an abbreviation for "**m**ultiple **p**roducers, **s**ingle **s**ubscriber"
+Rust's standard library provides an implementation for such communication in [`std::sync::mpsc`](https://doc.rust-lang.org/std/sync/mpsc/index.html) module. "mpcs" is an abbreviation for "**m**ultiple **p**roducers, **s**ingle **s**ubscriber". The function `channel()` will create an asynchronous communication channel, returning a tuple `(sender, receiver)`. These halves can now be passed to the corresponding threads: the `sender` goes to the thread that wants to send the messages, and the `receiver` goes to the receiving thread, respectively. There can be multiple threads that send the messages to the same channel: the `Sender` structs implements `Clone` trait, so it can be cloned and passed to as many threads as you want. The receiver, however, cannot be shared: only one thread can read the messages from the channel. 
+
+# Event driven application 
+
+To tie all pieces together, let's explore the high-level picture of the application: 
+
+[Picture]
+
+We have a main application thread that handles UI rendering. It hosts the main render loop, similar to what we saw in the [previous post][prev-post]. But now it doesn't listen for the terminal events directly. Instead, it listens for events coming from the communication channel. 
+The main thread also owns the application state. Updates to the state come as events via the communication channel. Whenever the main thread receives an event, it updates the application state and re-renders the UI in the terminal. 
+
+The download happens in the background worker thread that has access to the sender part of the channel. It informs the main thread about the download progress sending events of different kinds.
+
+But that's only a part of the picture. Along with data update events, we also need to process the user events from the terminal. At the very least, we want to redraw the UI when the terminal window changes size. We can't do that in the main thread, because it would freeze the application. 
+
+Instead, we create a separate thread dedicated to solely to listening for the terminal events. It shares the same channel, and transforms user input into application events that are pushed to the channel, and then received and handled by the main application loop. 
+
+# Trying out the concept
+
+Before diving into changing the core code, I wanted to try out the entire concept and create a simple UI application that would implement the concepts I described above. Let's suppose that at the beginning, we would like to have a simple UI that would visualize important events happening during the download process: 
+
+1. At the beginning, I would like to show to the user that the client is probing the peers one by one; 
+2. When the download process starts, I want to display the download progress: the total file size and the number of bytes downloaded. 
+3. When the download process finishes, it would signal to the main loop that the work is done and the application can exit. 
+
+We start carving out the data structure for application events as an enum [`AppEvent`][link]. As far as the download events are concerned, we have 3 variants: 
+
+* `Probing(String)` with the IP address of the peer; 
+* `Downloading(usize, usize)` with a pair of values `(bytes_downloaded, total_bytes)`; 
+* `Completed` to signal when the download is over. 
+
+On the other hand, the user should be able to interrupt the entire process and quite the app by pressing the Escape key on the keyboard. Also, the application should respond to the resizing of the terminal window - that comes without a question. So from the terminal input, we will expect two more kinds of events: 
+
+* `Exit` when the user presses the Escape key; 
+* `Resize` when the terminal window changes its size. 
+
+Right now, all these events are encoded as separate variants of the `AppEvent` enum. In the future, it may make sense to make them more structured and separate _data events_ that are related to the change of the application state, from _terminal events_ that are concerned with the user interaction. For now, however, I'm happy not to complicate things too much. 
+
+The application state is represented by the enum [`DownloadState`], which encodes three possible states of the application: 
+
+* `Idle` is the default starting state; 
+* `Probing(String)` as we are trying to connect to peers, with the current peer IP address; 
+* `Downloading(usize, usize)` once we've started downloading: bytes downloaded and total bytes, respectively.    
+
+
+
 
 
 ![Screen recording]({{ site.baseurl }}/assets/images/background-tasks-ratatui/main-tui.gif)
