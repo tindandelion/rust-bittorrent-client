@@ -51,6 +51,8 @@ Before diving into changing the core code, I wanted to try out the entire concep
 2. When the download process starts, I want to display the download progress: the total file size and the number of bytes downloaded. 
 3. When the download process finishes, it would signal to the main loop that the work is done and the application can exit. 
 
+#### Application events
+
 We start carving out the data structure for application events as an enum [`AppEvent`][link]. As far as the download events are concerned, we have 3 variants: 
 
 * `Probing(String)` with the IP address of the peer; 
@@ -64,14 +66,31 @@ On the other hand, the user should be able to interrupt the entire process and q
 
 Right now, all these events are encoded as separate variants of the `AppEvent` enum. In the future, it may make sense to make them more structured and separate _data events_ that are related to the change of the application state, from _terminal events_ that are concerned with the user interaction. For now, however, I'm happy not to complicate things too much. 
 
+#### Application state
+
 The application state is represented by the enum [`DownloadState`], which encodes three possible states of the application: 
 
 * `Idle` is the default starting state; 
 * `Probing(String)` as we are trying to connect to peers, with the current peer IP address; 
 * `Downloading(usize, usize)` once we've started downloading: bytes downloaded and total bytes, respectively.    
 
+It's notable that `AppEvent` and `DownloadState` look very similar. It's the case for very simple applications, but as the application grows and the UI becomes more complex, I'd expect that events and state would start to diverge considerably. 
 
+#### Application 
 
+The implementation resides in the [`App`][link] struct. I designated this struct to have the following responsibilities: 
 
+1. It manages the event channel; 
+2. It contains the application state; 
+3. It is responsible for updating the application state in response of received events; 
+4. It is responsible for processing terminal events and rendering the application state to the UI. 
+
+There's quite a few things this struct is responsible for. In general, it's a bad smell to make a single entity responsible for so many things. I think in the future the single `App` struct will be split into several more focused entities. For example, managing the application state and applying updates to it look like a good candidate for splitting out. As a starting point, however, it works for now. 
+
+There's two main public methods in this struct. [`start_background_task()`][link] takes a closure as a parameter and runs it in the background thread. Under the hood, it clones the event sender and passes the new sender to the provided closure, so that the background routine can send events to the main thread. This method is a point where we plug in our business logic. 
+
+The second method [`run_ui_loop`][] is a main driver. It starts the main application loop that orchestrates the whole thing: listening for events on the communication channel, updating the application state, and rendering the UI. 
+
+Finally, I want to see how the whole concept plays out before making changes to the core logic of the application. For starters, I'm using a fake `downoad_file` function that just simulates the real work by sending a sequence of application events with some delay.
 
 ![Screen recording]({{ site.baseurl }}/assets/images/background-tasks-ratatui/main-tui.gif)
