@@ -4,56 +4,76 @@ title:  "Ratatui: working with background tasks"
 date: 2026-01-12
 ---
 
-In the [previous post][prev-post] I explored a structure for a typical interactive Ratatui application. However, a BitTorrent client presents additional challenges: the meat of the application is the download process that happens outside a UI-driven render loop. In this section, I'm laying the groundwork for a terminal UI application that does most of its work in the background. 
+In the [previous post][prev-post] I explored a structure of a simple interactive Ratatui application. However, the BitTorrent client presents additional challenges: the driver of the application is the download process that works outside the UI-driven render loop. In this section, I'm laying the groundwork for a terminal UI application that does most of its work in the background. 
 
 # The problem 
 
-A typical interactive application performs most of it's tasks as a response to the user's actions. It can be fully driven by the main application render loop. An application that downloads something from the internet is different, though. Downloading a file can take a long time, during which no use input is required, but the changes in the download status still need to be presented in the UI. This is not specific to the internet downloads, of course: we'll have the same problem with any non-interactive activity that takes a lot of time. 
+A typical interactive application performs most of it's tasks as a response to the user's actions, so it's primarily driven by the application render loop that only listens and reacts to the terminal events. 
 
-Along with that, the application need to remain responsive to the user input while the download process is ongoing. We should respond to the user input, for example if the user decides to quit the application by pressing some key combination, or resizes the terminal window, etc. 
+A BitTorrent client is different, though. Essentially, the application runs its own course without any input from the user: instead, the most interesting stuff in that application is driven by the inner logic of communication with the remote host. 
 
-Generally speaking, there are two logical execution threads in the application: one is performing the download task, and another is reacting to the user's events. Both of these threads update the UI. 
+Along with that, the application need to remain responsive to the user input while the download process is ongoing. We should respond to the user input, for example if the user decides to quit the application by pressing some key combination, or resizes the terminal window, etc.
 
-There are several ways to implement logical execution threads. The most obvious one is of course using the physical threads provided by the operating system. Another approach, which is quite natural for IO-heavy applications is asynchronous programming, which allows us to separate the logical execution threads from the physical threads. 
+Generally speaking, there are two _logical execution threads_ in the application: one is performing the download task, and another is reacting to the user's events. Both of these threads should have the ability to trigger the updates to the UI. 
+
+There are different ways to implement an application with multiple logical execution threads. The most obvious one is of course using the physical threads provided by the operating system. Another approach, which is quite natural for IO-heavy applications is _asynchronous programming_, which allows us to separate the logical execution threads from the physical threads. 
+
+Both approaches can be implemented in Rust, but I don't feel comfortable yet diving into the specifics of Rust's asynchronous programming. So for the time being, I'm going to proceed with a more straightforward multi-threaded solution. 
 
 For now, I'm going to proceed with a simple multi-threaded solution. 
 
-# Threads in Rust 
+# Event-driven multi-threaded application 
 
-Traditionally, multi-threaded programming has been a pain for software developers. Using multiple threads in the application presents a whole bunch of challenges for the developer and can be a source of hard to catch errors, when multiple threads try to modify the same data in memory. 
-
-Rust, however, provides us with guardrails to avoid data races. It turns out that Rust's borrow checker is also very helpful in concurrent programming. It simply won't allow you to write the code where multiple threads access shared data haphazardly. Instead, the programmer is forced to use a more disciplined approach that avoids the majority of data race conditions. 
-
-The easiest way is to program where each thread operates in its own local state and there's no shared data at all. Since there's no shared data, there's no possibility for data races. But what if threads still need to communicate with each other? One way to solve this is to use message-based communication, where threads exchange messages with each other via a communication channel. 
-
-Rust's standard library provides an implementation for such communication in [`std::sync::mpsc`](https://doc.rust-lang.org/std/sync/mpsc/index.html) module. "mpcs" is an abbreviation for "**m**ultiple **p**roducers, **s**ingle **s**ubscriber". The function `channel()` will create an asynchronous communication channel, returning a tuple `(sender, receiver)`. These halves can now be passed to the corresponding threads: the `sender` goes to the thread that wants to send the messages, and the `receiver` goes to the receiving thread, respectively. There can be multiple threads that send the messages to the same channel: the `Sender` structs implements `Clone` trait, so it can be cloned and passed to as many threads as you want. The receiver, however, cannot be shared: only one thread can read the messages from the channel. 
-
-# Event driven application 
-
-To tie all pieces together, let's explore the high-level picture of the application: 
+The solution I'd like to implement looks as follows: 
 
 [Picture]
 
-We have a main application thread that handles UI rendering. It hosts the main render loop, similar to what we saw in the [previous post][prev-post]. But now it doesn't listen for the terminal events directly. Instead, it listens for events coming from the communication channel. 
-The main thread also owns the application state. Updates to the state come as events via the communication channel. Whenever the main thread receives an event, it updates the application state and re-renders the UI in the terminal. 
+When application starts, we spawn two execution threads. One thread is dedicated to handling the entire file download process. Another thread is simply listening to the terminal events. Both threads have the access to the shared _communication channel_, to which they send _application events_ when something interesting has happened on their side. 
 
-The download happens in the background worker thread that has access to the sender part of the channel. It informs the main thread about the download progress sending events of different kinds.
+#### Download thread
 
-But that's only a part of the picture. Along with data update events, we also need to process the user events from the terminal. At the very least, we want to redraw the UI when the terminal window changes size. We can't do that in the main thread, because it would freeze the application. 
+From the download thread, we'd like to notify the user about what's currently going on: 
 
-Instead, we create a separate thread dedicated to solely to listening for the terminal events. It shares the same channel, and transforms user input into application events that are pushed to the channel, and then received and handled by the main application loop. 
+* When probing peers, we'd like to notify the user about which peer we're currently connecting to; 
+* When the actual downloading starts, we'd like to update the user each time we receive a portion of the file. 
+* When the download has finished, we'd like to quit the application.
 
+#### User interaction thread
+
+While the download thread is busy downloading the file, another thread is listening to the terminal events to react to user actions: 
+
+* When the user presses `Escape` key, we'd like to interrupt the process and quit the application; 
+* If the user resizes the terminal window, we'd like to redraw the UI to fit the new window size. 
+
+Essentially, the task of that thread is to transform interesting terminal events into corresponding application events. Neither thread is interacting with the terminal directly: instead, they just push events of different kinds into the communication channel. 
+
+On the receiving end of the communication channel is our main application render loop that runs in the main application thread. It's task is similar to what we [saw before][prev-post-app-loop], except that now it listens to the events from the communication channel: 
+
+* It blocks until a new event appears in the channel;
+* It processes the event by updating the application state, if needed; 
+* It re-renders the UI with the updated application state. 
+
+The application loop terminates when it receives a certain event: either the download has finished, or the user wants to quit the application by pressing `Escape` button. 
+
+#### Inter-thread communication channel
+
+Now, it's obvious that we need an implementation for the communication channel, via which the background threads will send the events to the loop. Luckily, message-passing inter-thread communication is a very common task, and Rust's standard library provides provides an implementation for such communication in [`std::sync::mpsc`](https://doc.rust-lang.org/std/sync/mpsc/index.html) module. By the way, "mpcs" is an abbreviation for "**m**ultiple **p**roducers, **s**ingle **s**ubscriber": multiple threads can send messages to the channel, but only one thread is allowed to receive them.
+
+The function [`channel()`](https://doc.rust-lang.org/std/sync/mpsc/fn.channel.html) creates an asynchronous communication channel, returning a tuple `(sender, receiver)`. These halves can now be passed to the corresponding threads: the `sender` goes to the thread that wants to send the messages, and the `receiver` goes to the receiving thread, respectively. 
+
+There can be multiple threads that send the messages to the same channel: the `Sender` structs implements `Clone` trait, so it can be cloned and passed to as many threads as you want. The receiver, however, cannot be shared: only one thread can read the messages from the channel. 
+ 
 # Trying out the concept
 
-Before diving into changing the core code, I wanted to try out the entire concept and create a simple UI application that would implement the concepts I described above. Let's suppose that at the beginning, we would like to have a simple UI that would visualize important events happening during the download process: 
+Before diving into changing the core code, I wanted to try out the entire concept and create a simple UI application that would implement the concepts I described above. Let's suppose that at the beginning we would like to have a simple UI that visualizes important events happening during the download process: 
 
-1. At the beginning, I would like to show to the user that the client is probing the peers one by one; 
+1. At start, I would like to show to the user that the client is probing the peers one by one; 
 2. When the download process starts, I want to display the download progress: the total file size and the number of bytes downloaded. 
 3. When the download process finishes, it would signal to the main loop that the work is done and the application can exit. 
 
 #### Application events
 
-We start carving out the data structure for application events as an enum [`AppEvent`][link]. As far as the download events are concerned, we have 3 variants: 
+We start carving out the data structure for application events as an enum [`AppEvent`](https://github.com/tindandelion/rust-bittorrent-client/blob/0.0.13/src/ratatui_ui.rs#L16). As far as the download events are concerned, we have 3 variants: 
 
 * `Probing(String)` with the IP address of the peer; 
 * `Downloading(usize, usize)` with a pair of values `(bytes_downloaded, total_bytes)`; 
@@ -64,11 +84,11 @@ On the other hand, the user should be able to interrupt the entire process and q
 * `Exit` when the user presses the Escape key; 
 * `Resize` when the terminal window changes its size. 
 
-Right now, all these events are encoded as separate variants of the `AppEvent` enum. In the future, it may make sense to make them more structured and separate _data events_ that are related to the change of the application state, from _terminal events_ that are concerned with the user interaction. For now, however, I'm happy not to complicate things too much. 
+Right now, all these events are encoded as separate variants of the `AppEvent` enum. In the future, it may make sense to make them more structured and separate _data events_ that are related to the change of the application state, from _terminal events_ that are concerned with the user interaction. So far, however, I'm happy not to complicate things too much. 
 
 #### Application state
 
-The application state is represented by the enum [`DownloadState`], which encodes three possible states of the application: 
+The application state is represented by the enum [`DownloadState`](https://github.com/tindandelion/rust-bittorrent-client/blob/0.0.13/src/ratatui_ui.rs#L31), which encodes three possible states of the application: 
 
 * `Idle` is the default starting state; 
 * `Probing(String)` as we are trying to connect to peers, with the current peer IP address; 
@@ -78,7 +98,7 @@ It's notable that `AppEvent` and `DownloadState` look very similar. It's the cas
 
 #### Application 
 
-The implementation resides in the [`App`][link] struct. I designated this struct to have the following responsibilities: 
+The implementation resides in the [`App`](https://github.com/tindandelion/rust-bittorrent-client/blob/0.0.13/src/ratatui_ui.rs#L24) struct. I designated this struct to have the following responsibilities: 
 
 1. It manages the event channel; 
 2. It contains the application state; 
@@ -87,10 +107,37 @@ The implementation resides in the [`App`][link] struct. I designated this struct
 
 There's quite a few things this struct is responsible for. In general, it's a bad smell to make a single entity responsible for so many things. I think in the future the single `App` struct will be split into several more focused entities. For example, managing the application state and applying updates to it look like a good candidate for splitting out. As a starting point, however, it works for now. 
 
-There's two main public methods in this struct. [`start_background_task()`][link] takes a closure as a parameter and runs it in the background thread. Under the hood, it clones the event sender and passes the new sender to the provided closure, so that the background routine can send events to the main thread. This method is a point where we plug in our business logic. 
+There are two main public methods in this struct. [`start_background_task()`](https://github.com/tindandelion/rust-bittorrent-client/blob/0.0.13/src/ratatui_ui.rs#L49) takes a closure as a parameter and runs it in the background thread. Under the hood, it clones the event sender and passes the new sender to the provided closure, so that the background routine can send events to the main thread. This method is a point where we plug in our business logic. 
 
-The second method [`run_ui_loop`][] is a main driver. It starts the main application loop that orchestrates the whole thing: listening for events on the communication channel, updating the application state, and rendering the UI. 
+The second method [`run_ui_loop`](https://github.com/tindandelion/rust-bittorrent-client/blob/0.0.13/src/ratatui_ui.rs#L59) is a main driver. It starts the main application loop that orchestrates the whole thing: listening for events on the communication channel, updating the application state, and rendering the UI. 
 
-Finally, I want to see how the whole concept plays out before making changes to the core logic of the application. For starters, I'm using a fake `downoad_file` function that just simulates the real work by sending a sequence of application events with some delay.
+Finally, I want to see how the whole concept plays out before making changes to the core logic of the application. I've created a separate binary target [`main-tui.rs`](https://github.com/tindandelion/rust-bittorrent-client/blob/0.0.13/src/bin/main-tui.rs) that's going to be my new playground for a while. 
+
+For starters, I'm using a fake [`downoad_file()`](https://github.com/tindandelion/rust-bittorrent-client/blob/0.0.13/src/bin/main-tui.rs#L13) function that just simulates the real work: 
+
+```rust
+fn download_file(tx: Sender<AppEvent>) {
+    let ip_addresses = vec!["127.0.0.1:6881", "127.0.0.2:6882", "127.0.0.3:6883"];
+    for ip_address in ip_addresses {
+        tx.send(AppEvent::Probing(ip_address.to_string())).unwrap();
+        thread::sleep(Duration::from_secs(2));
+    }
+
+    for i in 0..100 {
+        tx.send(AppEvent::Downloading(i, 100)).unwrap();
+        thread::sleep(Duration::from_millis(100));
+    }
+
+    tx.send(AppEvent::Completed).unwrap();
+}
+``` 
+
+This dummy function imitates the real download process by sending application events with some delay. 
+
+Let's see what it looks like in the terminal! When I compile and run `main-tui.rs`, I can see the following output: 
 
 ![Screen recording]({{ site.baseurl }}/assets/images/background-tasks-ratatui/main-tui.gif)
+
+Fantastic! 
+
+[prev-post]: {{site.baseurl}}/{% post_url 2025-12-27-starting-with-ratatui %}
