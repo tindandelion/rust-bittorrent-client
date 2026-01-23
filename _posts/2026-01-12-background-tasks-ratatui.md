@@ -162,7 +162,7 @@ The application is also responsive to the user input: though not shown in this a
 
 The main achievement of this section is that I've created and tried out the base framework to introduce a nice-ish Ratatui user interface to my BitTorrent client: the solution with several background threads works. Next, I'm going to connect the UI part to the core logic and add some polish to the user interface. Let's go! 
 
-[*Version 0.0.13 on GitHub*](https://github.com/tindandelion/rust-bittorrent-client/tree/0.0.13){: .no-github-icon}
+[*Current version (0.0.13) on GitHub*](https://github.com/tindandelion/rust-bittorrent-client/tree/0.0.13){: .no-github-icon}
 
 [prev-post]: {{site.baseurl}}/{% post_url 2025-12-27-starting-with-ratatui %}
 [prev-post-app-loop]: {{site.baseurl}}/{% post_url 2025-12-27-starting-with-ratatui %}#a-high-level-picture
