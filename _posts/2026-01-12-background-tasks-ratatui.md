@@ -1,6 +1,6 @@
 ---
 layout: post
-title:  "Ratatui: working with background tasks"
+title:  "Ratatui: implementing background tasks"
 date: 2026-01-23
 ---
 
