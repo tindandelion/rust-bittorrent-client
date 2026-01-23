@@ -1,7 +1,7 @@
 ---
 layout: post
 title:  "Ratatui: working with background tasks"
-date: 2026-01-12
+date: 2026-01-23
 ---
 
 In the [previous post][prev-post], I explored a structure of a simple interactive Ratatui application. However, the BitTorrent client presents additional challenges: the driver of the application is the download process that works outside the UI-driven render loop. In this section, I'm laying the groundwork for a terminal UI application that does most of its work in the background. 

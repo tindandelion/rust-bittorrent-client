@@ -136,6 +136,7 @@ To help me reason about a typical interactive terminal application, I've summari
 
 # Next steps
 
-This section was more of an overview of Ratatui's capabilities in general. In the next section, I'd like to get more specific and reason about the structure of an application that performs a _long-running task_ in the background. In contrast with typical UI applications that react to the user input, long-running background tasks present some additional challenges for developers. 
+This section was more of an overview of Ratatui's capabilities in general. In the [next section][next-post], I'd like to get more specific and reason about the structure of an application that performs a _long-running task_ in the background. In contrast with typical UI applications that react to the user input, long-running background tasks present some additional challenges for developers. 
 
 [prev-post]: {{site.baseurl}}/{% post_url 2025-11-29-better-logging-with-tracing %}
+[next-post]: {{site.baseurl}}/{% post_url 2025-12-27-starting-with-ratatui %}
