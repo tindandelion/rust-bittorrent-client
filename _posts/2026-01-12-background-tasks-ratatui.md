@@ -8,13 +8,13 @@ In the [previous post][prev-post] I explored a structure of a simple interactive
 
 # The problem 
 
-A typical interactive application performs most of it's tasks as a response to the user's actions, so it's primarily driven by the application render loop that only listens and reacts to the terminal events. 
+A typical interactive application performs most of it's tasks as a response to the user's actions, so it's primarily driven by the application render loop that only listens and reacts to the terminal events, as we saw in the [previous post][prev-post]. 
 
 A BitTorrent client is different, though. Essentially, the application runs its own course without any input from the user: instead, the most interesting stuff in that application is driven by the inner logic of communication with the remote host. 
 
-Along with that, the application need to remain responsive to the user input while the download process is ongoing. We should respond to the user input, for example if the user decides to quit the application by pressing some key combination, or resizes the terminal window, etc.
+Along with that, the application needs to remain responsive to the user input while the download process is ongoing. We should respond to the user input, for example if the user decides to quit the application by pressing some key combination, or resizes the terminal window, etc.
 
-Generally speaking, there are two _logical execution threads_ in the application: one is performing the download task, and another is reacting to the user's events. Both of these threads should have the ability to trigger the updates to the UI. 
+Generally speaking, there are two _logical execution threads_ that run in parallel in the application: one is performing the download task, and another is reacting to the user's events. Both of these threads should have the ability to trigger the updates to the UI. 
 
 There are different ways to implement an application with multiple logical execution threads. The most obvious one is of course using the physical threads provided by the operating system. Another approach, which is quite natural for IO-heavy applications is _asynchronous programming_, which allows us to separate the logical execution threads from the physical threads. 
 
@@ -34,7 +34,7 @@ When application starts, we spawn two execution threads. One thread is dedicated
 
 From the download thread, we'd like to notify the user about what's currently going on: 
 
-* When probing peers, we'd like to notify the user about which peer we're currently connecting to; 
+* When probing peers one by one, we'd like to notify the user about which peer we're currently connecting to; 
 * When the actual downloading starts, we'd like to update the user each time we receive a portion of the file. 
 * When the download has finished, we'd like to quit the application.
 
@@ -57,7 +57,7 @@ The application loop terminates when it receives a certain event: either the dow
 
 #### Inter-thread communication channel
 
-Now, it's obvious that we need an implementation for the communication channel, via which the background threads will send the events to the loop. Luckily, message-passing inter-thread communication is a very common task, and Rust's standard library provides provides an implementation for such communication in [`std::sync::mpsc`](https://doc.rust-lang.org/std/sync/mpsc/index.html) module. By the way, "mpcs" is an abbreviation for "**m**ultiple **p**roducers, **s**ingle **s**ubscriber": multiple threads can send messages to the channel, but only one thread is allowed to receive them.
+Now, it's obvious that we need an implementation for the communication channel, via which the background threads will send the events to the loop. Luckily, message-passing inter-thread communication is a very common task, and Rust's standard library provides provides an implementation for such communication in [`std::sync::mpsc`](https://doc.rust-lang.org/std/sync/mpsc/index.html) module. By the way, "mpcs" is an abbreviation for "**M**ultiple **P**roducers, **S**ingle **S**ubscriber": multiple threads can send messages to the channel, but only one thread is allowed to receive them.
 
 The function [`channel()`](https://doc.rust-lang.org/std/sync/mpsc/fn.channel.html) creates an asynchronous communication channel, returning a tuple `(sender, receiver)`. These halves can now be passed to the corresponding threads: the `sender` goes to the thread that wants to send the messages, and the `receiver` goes to the receiving thread, respectively. 
 
@@ -96,7 +96,7 @@ The application state is represented by the enum [`DownloadState`](https://githu
 
 It's notable that `AppEvent` and `DownloadState` look very similar. It's the case for very simple applications, but as the application grows and the UI becomes more complex, I'd expect that events and state would start to diverge considerably. 
 
-#### Application 
+#### Application logic
 
 The implementation resides in the [`App`](https://github.com/tindandelion/rust-bittorrent-client/blob/0.0.13/src/ratatui_ui.rs#L24) struct. I designated this struct to have the following responsibilities: 
 
@@ -111,9 +111,13 @@ There are two main public methods in this struct. [`start_background_task()`](ht
 
 The second method [`run_ui_loop`](https://github.com/tindandelion/rust-bittorrent-client/blob/0.0.13/src/ratatui_ui.rs#L59) is a main driver. It starts the main application loop that orchestrates the whole thing: listening for events on the communication channel, updating the application state, and rendering the UI. 
 
-Finally, I want to see how the whole concept plays out before making changes to the core logic of the application. I've created a separate binary target [`main-tui.rs`](https://github.com/tindandelion/rust-bittorrent-client/blob/0.0.13/src/bin/main-tui.rs) that's going to be my new playground for a while. 
+# Fake it till you make it
 
-For starters, I'm using a fake [`downoad_file()`](https://github.com/tindandelion/rust-bittorrent-client/blob/0.0.13/src/bin/main-tui.rs#L13) function that just simulates the real work: 
+I want to see how the whole concept plays out. It would be nice to see that UI parts play well together before I dive into refactoring  the core logic of the application. 
+
+To give me a nice playground, I've created a separate binary target [`main-tui.rs`](https://github.com/tindandelion/rust-bittorrent-client/blob/0.0.13/src/bin/main-tui.rs) that I'll be using to try out the UI part of the program. 
+
+To simulate the real work, I'm using a fake [`downoad_file()`](https://github.com/tindandelion/rust-bittorrent-client/blob/0.0.13/src/bin/main-tui.rs#L13): 
 
 ```rust
 fn download_file(tx: Sender<AppEvent>) {
@@ -138,6 +142,10 @@ Let's see what it looks like in the terminal! When I compile and run `main-tui.r
 
 ![Screen recording]({{ site.baseurl }}/assets/images/background-tasks-ratatui/main-tui.gif)
 
-Fantastic! 
+Excellent! The UI looks clumsy, for sure, but the core behaviour is there: we can see what the downloader is doing behind the curtains. The application is also responsive to the user input: though not shown in this animation, it handles it nicely when I resize the terminal window. I can also interrupt the entire process by pressing the Escape button, as nicely hinted in the user interface. 
+
+# Next steps 
+
+By now, I've created and tried out the base framework to introduce a nice Ratatui user interface to my BitTorrent client: the solution with several background threads works. Next, I'm going to connect the UI part to the core logic and add some polish to the user interface.  
 
 [prev-post]: {{site.baseurl}}/{% post_url 2025-12-27-starting-with-ratatui %}
