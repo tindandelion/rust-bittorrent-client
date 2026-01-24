@@ -32,7 +32,7 @@ impl Torrent {
 
         info!("Probing peers");
         if let Some(mut channel) = probe_peers_sequential(&peer_addrs, |addr| {
-            event_sender.send(AppEvent::Probing(addr.to_string()))?;
+            event_sender.send(AppEvent::Probing(*addr))?;
             request_complete_file(addr, &peer_id, &info)
         }) {
             info!(

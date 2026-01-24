@@ -1,14 +1,18 @@
 use std::{
+    net::SocketAddr,
     sync::mpsc::{self, Receiver, Sender},
     thread,
 };
 
 use ratatui::{
     Frame,
+    buffer::Buffer,
     crossterm::event::{self, Event},
-    style::{Color, Stylize},
+    layout::Rect,
+    style::Stylize,
+    symbols,
     text::{Line, ToLine},
-    widgets::{Block, Padding, Paragraph},
+    widgets::{Block, LineGauge, Padding, Paragraph, Widget},
 };
 
 use crate::result::{GenericError, Result};
@@ -17,7 +21,7 @@ pub enum AppEvent {
     Exit,
     Error(GenericError),
     Resize,
-    Probing(String),
+    Probing(SocketAddr),
     Downloading(usize, usize),
     Completed,
 }
@@ -32,7 +36,7 @@ pub struct App {
 enum DownloadState {
     #[default]
     Idle,
-    Probing(String),
+    Probing(SocketAddr),
     Downloading(usize, usize),
 }
 
@@ -91,29 +95,29 @@ impl App {
     }
 
     fn render_ui(&mut self, f: &mut Frame) {
-        let status_line = match &self.app_state {
-            DownloadState::Idle => Line::from("Idle").fg(Color::Green),
+        let app_block = Block::bordered()
+            .title(" BitTorrent Client ".to_line().bold().centered())
+            .title_bottom(
+                Line::from(vec![" Press ".into(), "<ESC>".bold(), " to exit ".into()]).centered(),
+            )
+            .padding(Padding::horizontal(1));
+        let content_area = app_block.inner(f.area());
+        f.render_widget(app_block, f.area());
+
+        match &self.app_state {
+            DownloadState::Idle => {
+                f.render_widget(ProbingStatusWidget::idle(), content_area);
+            }
             DownloadState::Probing(ip_address) => {
-                Line::from(format!("Probing: {}", ip_address)).fg(Color::Red)
+                f.render_widget(ProbingStatusWidget::probing(*ip_address), content_area);
             }
             DownloadState::Downloading(downloaded, total) => {
-                let downloaded = humansize::format_size(*downloaded, humansize::DECIMAL);
-                let total = humansize::format_size(*total, humansize::DECIMAL);
-                Line::from(format!("Downloading: {} / {}", downloaded, total)).fg(Color::Yellow)
+                f.render_widget(
+                    DownloadingStatusWidget::new(*downloaded, *total),
+                    content_area,
+                );
             }
         };
-
-        let status = Paragraph::new(status_line).block(
-            Block::bordered()
-                .title(" BitTorrent Client ".to_line().bold().centered())
-                .title_bottom(
-                    Line::from(vec![" Press ".into(), "<ESC>".bold(), " to exit ".into()])
-                        .centered(),
-                )
-                .padding(Padding::horizontal(1)),
-        );
-
-        f.render_widget(status, f.area());
     }
 }
 
@@ -130,5 +134,58 @@ fn listen_for_keyboard_events(sender: &Sender<AppEvent>) -> Result<()> {
             }
             _ => (),
         }
+    }
+}
+
+struct ProbingStatusWidget {
+    ip_address: Option<SocketAddr>,
+}
+
+impl ProbingStatusWidget {
+    pub fn idle() -> Self {
+        Self { ip_address: None }
+    }
+
+    pub fn probing(ip_address: SocketAddr) -> Self {
+        Self {
+            ip_address: Some(ip_address),
+        }
+    }
+}
+
+impl Widget for ProbingStatusWidget {
+    fn render(self, area: Rect, buf: &mut Buffer) {
+        let status_line = match &self.ip_address {
+            Some(ip_address) => Line::from(format!("Probing: {}", ip_address)).red(),
+            None => Line::from("Idle").green(),
+        };
+        Paragraph::new(status_line).render(area, buf)
+    }
+}
+
+struct DownloadingStatusWidget {
+    downloaded: usize,
+    total: usize,
+}
+
+impl DownloadingStatusWidget {
+    pub fn new(downloaded: usize, total: usize) -> Self {
+        Self { downloaded, total }
+    }
+}
+
+impl Widget for DownloadingStatusWidget {
+    fn render(self, area: Rect, buf: &mut Buffer) {
+        let downloaded = humansize::format_size(self.downloaded, humansize::DECIMAL);
+        let total = humansize::format_size(self.total, humansize::DECIMAL);
+        let label = format!("{} / {}", downloaded, total);
+        let ratio = self.downloaded as f64 / self.total as f64;
+
+        LineGauge::default()
+            .filled_symbol(symbols::line::THICK_HORIZONTAL)
+            .label(label)
+            .ratio(ratio)
+            .yellow()
+            .render(area, buf);
     }
 }
