@@ -15,6 +15,7 @@ type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 pub enum AppEvent {
     Exit,
+    Error,
     Resize,
     Probing(String),
     Downloading(usize, usize),
@@ -84,6 +85,7 @@ impl App {
             AppEvent::Resize => Ok(true),
             AppEvent::Completed => Ok(false),
             AppEvent::Exit => Ok(false),
+            AppEvent::Error => Ok(false),
         }
     }
 
