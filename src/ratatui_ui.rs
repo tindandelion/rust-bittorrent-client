@@ -98,8 +98,9 @@ impl App {
                 Line::from(format!("Probing: {}", ip_address)).fg(Color::Red)
             }
             DownloadState::Downloading(downloaded, total) => {
-                Line::from(format!("Downloading: {} / {} bytes", downloaded, total))
-                    .fg(Color::Yellow)
+                let downloaded = humansize::format_size(*downloaded, humansize::DECIMAL);
+                let total = humansize::format_size(*total, humansize::DECIMAL);
+                Line::from(format!("Downloading: {} / {}", downloaded, total)).fg(Color::Yellow)
             }
         };
 
