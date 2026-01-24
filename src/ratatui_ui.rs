@@ -11,11 +11,11 @@ use ratatui::{
     widgets::{Block, Padding, Paragraph},
 };
 
-type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
+type AppResult<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 pub enum AppEvent {
     Exit,
-    Error,
+    Error(Box<dyn std::error::Error + Send + Sync>),
     Resize,
     Probing(String),
     Downloading(usize, usize),
@@ -57,22 +57,19 @@ impl App {
         thread::spawn(move || task(event_sender))
     }
 
-    pub fn run_ui_loop(&mut self) -> Result<()> {
-        let mut terminal = ratatui::init();
-
-        self.start_background_task(listen_for_keyboard_events);
-        let result = loop {
-            terminal.draw(|frame| self.render_ui(frame))?;
-            if !self.process_app_event()? {
-                break Ok(());
+    pub fn run_ui_loop(&mut self) -> AppResult<()> {
+        ratatui::run(|terminal| {
+            self.start_background_task(listen_for_keyboard_events);
+            loop {
+                terminal.draw(|frame| self.render_ui(frame))?;
+                if !self.process_app_event()? {
+                    break Ok(());
+                }
             }
-        };
-
-        ratatui::restore();
-        result
+        })
     }
 
-    fn process_app_event(&mut self) -> Result<bool> {
+    fn process_app_event(&mut self) -> AppResult<bool> {
         match self.event_receiver.recv()? {
             AppEvent::Probing(ip_address) => {
                 self.app_state = DownloadState::Probing(ip_address);
@@ -85,7 +82,7 @@ impl App {
             AppEvent::Resize => Ok(true),
             AppEvent::Completed => Ok(false),
             AppEvent::Exit => Ok(false),
-            AppEvent::Error => Ok(false),
+            AppEvent::Error(err) => Err(err),
         }
     }
 
