@@ -11,7 +11,7 @@ use ratatui::{
     widgets::{Block, Padding, Paragraph},
 };
 
-pub type AppError = Box<dyn std::error::Error + Send + Sync + 'static>;
+pub type AppError = Box<dyn std::error::Error + Send + Sync>;
 pub type AppResult<T> = std::result::Result<T, AppError>;
 
 pub enum AppEvent {
