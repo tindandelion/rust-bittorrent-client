@@ -1,9 +1,18 @@
-use std::error::Error;
-
-use bt_client::Torrent;
+use bt_client::{Torrent, ratatui_ui::App, result::Result};
 use tracing::Level;
 
-fn main() -> Result<(), Box<dyn Error>> {
+pub fn main() -> Result<()> {
+    let torrent = Torrent::read_default_file()?;
+
+    let mut ui = App::new();
+    ui.start_background_task(|tx| torrent.download_ui(tx));
+    ui.run_ui_loop()?;
+
+    println!("Download completed successfully");
+    Ok(())
+}
+
+fn _main() -> Result<()> {
     tracing_subscriber::fmt()
         .with_max_level(Level::DEBUG)
         .init();

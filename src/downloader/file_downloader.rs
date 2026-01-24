@@ -62,7 +62,7 @@ impl<'a, T: RequestChannel + DownloadChannel> FileDownloader<'a, T> {
         self
     }
 
-    fn with_progress_callback(mut self, callback: impl FnMut(usize, usize) + 'a) -> Self {
+    pub fn with_progress_callback(mut self, callback: impl FnMut(usize, usize) + 'a) -> Self {
         self.tracker.progress_callback = Box::new(callback);
         self
     }
