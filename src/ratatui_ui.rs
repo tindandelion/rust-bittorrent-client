@@ -11,12 +11,11 @@ use ratatui::{
     widgets::{Block, Padding, Paragraph},
 };
 
-pub type AppError = Box<dyn std::error::Error + Send + Sync>;
-pub type AppResult<T> = std::result::Result<T, AppError>;
+use crate::result::{GenericError, Result};
 
 pub enum AppEvent {
     Exit,
-    Error(AppError),
+    Error(GenericError),
     Resize,
     Probing(String),
     Downloading(usize, usize),
@@ -50,7 +49,7 @@ impl App {
 
     pub fn start_background_task<F>(&self, task: F) -> thread::JoinHandle<()>
     where
-        F: FnOnce(&Sender<AppEvent>) -> AppResult<()>,
+        F: FnOnce(&Sender<AppEvent>) -> Result<()>,
         F: Send + 'static,
     {
         let event_sender = self.event_sender.clone();
@@ -62,7 +61,7 @@ impl App {
         })
     }
 
-    pub fn run_ui_loop(&mut self) -> AppResult<()> {
+    pub fn run_ui_loop(&mut self) -> Result<()> {
         ratatui::run(|terminal| {
             self.start_background_task(listen_for_keyboard_events);
             loop {
@@ -74,7 +73,7 @@ impl App {
         })
     }
 
-    fn process_app_event(&mut self) -> AppResult<bool> {
+    fn process_app_event(&mut self) -> Result<bool> {
         match self.event_receiver.recv()? {
             AppEvent::Probing(ip_address) => {
                 self.app_state = DownloadState::Probing(ip_address);
@@ -118,7 +117,7 @@ impl App {
     }
 }
 
-fn listen_for_keyboard_events(sender: &Sender<AppEvent>) -> AppResult<()> {
+fn listen_for_keyboard_events(sender: &Sender<AppEvent>) -> Result<()> {
     loop {
         match event::read()? {
             Event::Key(key) => {
