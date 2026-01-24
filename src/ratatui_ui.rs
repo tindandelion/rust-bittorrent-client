@@ -11,11 +11,12 @@ use ratatui::{
     widgets::{Block, Padding, Paragraph},
 };
 
-type AppResult<T> = std::result::Result<T, Box<dyn std::error::Error>>;
+pub type AppError = Box<dyn std::error::Error + Send + Sync + 'static>;
+pub type AppResult<T> = std::result::Result<T, AppError>;
 
 pub enum AppEvent {
     Exit,
-    Error(Box<dyn std::error::Error + Send + Sync>),
+    Error(AppError),
     Resize,
     Probing(String),
     Downloading(usize, usize),
@@ -47,14 +48,18 @@ impl App {
         }
     }
 
-    pub fn start_background_task<F, T>(&self, task: F) -> thread::JoinHandle<T>
+    pub fn start_background_task<F>(&self, task: F) -> thread::JoinHandle<()>
     where
-        F: FnOnce(Sender<AppEvent>) -> T,
+        F: FnOnce(&Sender<AppEvent>) -> AppResult<()>,
         F: Send + 'static,
-        T: Send + 'static,
     {
         let event_sender = self.event_sender.clone();
-        thread::spawn(move || task(event_sender))
+        thread::spawn(move || {
+            if let Err(err) = task(&event_sender) {
+                let error_msg = format!("failed to send error event: {:?}", err);
+                event_sender.send(AppEvent::Error(err)).expect(&error_msg);
+            }
+        })
     }
 
     pub fn run_ui_loop(&mut self) -> AppResult<()> {
@@ -112,16 +117,16 @@ impl App {
     }
 }
 
-fn listen_for_keyboard_events(sender: Sender<AppEvent>) {
+fn listen_for_keyboard_events(sender: &Sender<AppEvent>) -> AppResult<()> {
     loop {
-        match event::read().unwrap() {
+        match event::read()? {
             Event::Key(key) => {
                 if let event::KeyCode::Esc = key.code {
-                    sender.send(AppEvent::Exit).unwrap()
+                    sender.send(AppEvent::Exit)?;
                 }
             }
             Event::Resize(_, _) => {
-                sender.send(AppEvent::Resize).unwrap();
+                sender.send(AppEvent::Resize)?;
             }
             _ => (),
         }
