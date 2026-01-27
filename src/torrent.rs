@@ -23,10 +23,14 @@ pub struct Torrent {
 impl Torrent {
     const TORRENT_FILE: &str = "test-data/debian-12.11.0-amd64-netinst.iso.torrent";
 
-    pub fn read_default_file() -> Result<Torrent, Error> {
-        let contents = fs::read(Self::TORRENT_FILE)?;
+    pub fn read_file(path: &str) -> Result<Self, Error> {
+        let contents = fs::read(path)?;
         let decoded = serde_bencode::from_bytes(&contents)?;
         Ok(decoded)
+    }
+
+    pub fn read_default_file() -> Result<Self, Error> {
+        Self::read_file(Self::TORRENT_FILE)
     }
 }
 

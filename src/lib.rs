@@ -4,7 +4,7 @@ pub mod ratatui_ui;
 pub mod result;
 mod torrent;
 mod tracker;
-mod types;
+pub mod types;
 mod util;
 
 use tracing::{Level, debug, error, info, instrument};
@@ -19,16 +19,25 @@ pub use torrent::Torrent;
 
 impl Torrent {
     pub fn download(self, event_sender: &Sender<AppEvent>) -> Result<()> {
-        let info = self.info;
-
         let peer_id = PeerId::default();
         let announce_request = AnnounceRequest {
-            tracker_url: self.announce,
-            info_hash: info.sha1,
+            tracker_url: self.announce.clone(),
+            info_hash: self.info.sha1,
             peer_id,
         };
         let peer_addrs = announce_request.fetch_peer_addresses()?;
         info!(peer_count = peer_addrs.len(), "Received peer addresses");
+
+        self.download_from(peer_id, peer_addrs, event_sender)
+    }
+
+    pub fn download_from(
+        self,
+        peer_id: PeerId,
+        peer_addrs: Vec<SocketAddr>,
+        event_sender: &Sender<AppEvent>,
+    ) -> Result<()> {
+        let info = self.info;
 
         info!("Probing peers");
         if let Some(mut channel) = probe_peers_sequential(&peer_addrs, |addr, cur_idx| {
