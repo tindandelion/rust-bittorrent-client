@@ -173,14 +173,21 @@ And, when defining opaque errors, we need to use `Result<T, Box<dyn std::error::
 
 That's essentially a bottom line when it comes to passing errors across threads by any means. 
 
-# Tying it all together
+# Putting it all together
 
 Let's now try out how our application reacts to errors in reality. To test the approach, I've created a new example [`examples/tui-app-error.rs`][link-required] to simulate an IO error that happens during the download. 
 
 Running this example, we get the following output: 
 
+![Error handling output]({{ site.baseurl }}/assets/images/error-handling-background-tasks/tui-app-error.gif)
 
+Very well! Now the application terminates gracefully without breaking the terminal, and we see the error description in the console. 
 
+Granted, the error description looks a bit short and doesn't provide a lot of context to help troubleshooting. I'm actually planning to dive deeper into how to make error messages more helpful later in the project. For now, it works for me. 
+
+# Moving on
+
+This post was a bit of a digression from what I [planned to do][link-required] initially, but it was very important to address the subject of graceful error handling to move forward. Now, I'm back to my plan and I feel ready to finally connect the core logic of the BitTorrent client to the UI, and make the interface a bit fancier, utilizing some nice widgets that Ratatui provides. Stick around! 
 
 
 
