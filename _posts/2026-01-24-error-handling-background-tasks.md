@@ -8,13 +8,13 @@ I was just in the middle of connecting the code of the application to the UI, wh
 
 # Download fails, what to do? 
 
-Now, let's think about this problem. Our main download logic is implemented in `[Torrent::download_file()]`[link], and my intention is to call this function as the background task. But, the download may fail for some reason, which is hinted by the fact that this function returns a `Result<(), Error>`. Ideally, I need some graceful solution for this situation, but our current implementation doesn't allow for one: I just didn't think about error scenarios before. Very ignorant from my part, I know. 
+Now, let's think about this problem. Our main download logic is implemented in `[Torrent::download_file()]`[link], and my intention is to call this function as the background task. But the download may fail for some reason, which is hinted by the fact that this function returns a `Result<(), Error>`. Ideally, I need some graceful solution for this situation, but our current implementation doesn't allow for one: I just didn't think about error scenarios before. Very ignorant on my part, I know. 
 
-Considering download failures, let's explore some "easy" reactions from the application part: 
+Considering download failures, let's explore some "easy" reactions from the application's perspective: 
 
 * We could simply ignore the error. That's obviously a wrong approach: if we ignore the fact that the download has failed, the background task will finish silently, and it will look like the application simply froze.
 
-* We can panic by calling `unwrap()` or `expect()`. That's better, but not very graceful. You see, if we panic in the middle of the process, the application will quit, but the terminal will be absolutely messed up. Since Ratatui switches the terminal to the raw mode, a well-behaved application must restore the "normal" terminal mode before quitting, otherwise it will stay in the raw mode forever. If the application panics, it quits abruptly and Ratatui doesn't get a chance to do the cleanup. 
+* We can panic by calling `unwrap()` or `expect()`. That's better, but not very graceful. If we panic in the middle of the process, the application will quit, but the terminal will be absolutely messed up. Since Ratatui switches the terminal to the raw mode, a well-behaved application must restore the "normal" terminal mode before quitting, otherwise it will stay in the raw mode forever. If the application panics, it quits abruptly and Ratatui doesn't get a chance to do the cleanup. 
 
 The most graceful approach would be to signal to the main application loop that there was an error in the background task. In that case, the application has a chance to do the right thing: stop the render loop, restore the terminal, and quit gracefully. Ideally, we would also like to print the error to the user and quit with an error status code, as a well-behaved application should do. 
 
@@ -37,7 +37,7 @@ pub fn start_background_task<F, T>(&self, task: F) -> thread::JoinHandle<T>
     }
 ```
 
-I want to make things more specific here. First, I noticed that we don't ever use the result of `task` function (at least for now), so let's simplify it a little bit and assume that it returns an empty value `()`. Second, let's wrap it into `Result`, to emphasize the fact that we are aware that `task` can fail for some reason. The new type definition would look like that: 
+I want to make things more specific here. First, I noticed that we never use the result of `task` function (at least for now), so let's simplify it a little bit and assume that it returns an empty value `()`. Second, let's wrap it into `Result`, to emphasize the fact that we are aware that `task` can fail for some reason. The new type definition would look like this: 
 
 ```rust
  pub fn start_background_task<F>(&self, task: F) -> thread::JoinHandle<()>
@@ -67,7 +67,7 @@ pub fn start_background_task<F>(&self, task: F) -> thread::JoinHandle<()>
     }
 ```
 
-To make it work, I need to introduce a new variant to the `AppEvent` enum, with the signature `Error(Box<dyn std::error::Error>)`. Arguably, I could extend the existing `AppEvent::Exit` variant to optionally pass the error with it, but I think that a separate variant would be a bit cleaner. After all, it's not obvious at all that we necessarily want to quit the application in response of an error. We could, for example, show the error in the UI and keep the app running until the user quits it explicitly. 
+To make it work, I need to introduce a new variant to the `AppEvent` enum, with the signature `Error(Box<dyn std::error::Error>)`. Arguably, I could extend the existing `AppEvent::Exit` variant to optionally pass the error with it, but I think that a separate variant would be a bit cleaner. After all, it's not obvious at all that we necessarily want to quit the application in response to an error. We could, for example, show the error in the UI and keep the app running until the user quits it explicitly. 
 
 A few remarks on the implementation here: 
 
@@ -94,20 +94,20 @@ So let's recap the way the error travels through the application:
 
 1. The background task fails and returns an error in the `Result`; 
 2. The error is packed into the `AppEvent::Error` object and is sent via the event channel to the main loop; 
-3. Main loop receives the error event and shut downs its operation, making `App::run_ui_loop()` return the `Result` with that same error; 
+3. Main loop receives the error event and shuts down its operation, making `App::run_ui_loop()` return the `Result` with that same error; 
 4. The error ends up in the `main` function that prints the error to the terminal and exits with a failure status code. 
 
-Is that all we need to do? Well, not so fast: even though conceptually everything is correct, the program doesn't compile! It turns out, in a  multi-threaded application, we need to take care of a few more details. 
+Is that all we need to do? Well, not so fast: even though conceptually everything is correct, the program doesn't compile! It turns out, in a multi-threaded application, we need to take care of a few more details. 
 
 # Respecting the threads: _Send_ and _Sync_ traits 
 
-The code I just wrote would work just fine if we didn't have to send `AppState` instances via the channel between threads. You see, in order for a variable to be allowed to be moved between threads, it needs to implement the [`Send`] trait. If the type is not `Send`, you can't pass it between threads, i.e. you'll get an error if your `thread::spawn()` code tries to move that variable to another thread.
+The code I just wrote would work just fine if we didn't have to send `AppEvent` instances via the channel between threads. In order for a variable to be moved between threads, it needs to implement the [`Send`] trait. If the type is not `Send`, you can't pass it between threads, i.e. you'll get an error if your `thread::spawn()` code tries to move that variable to another thread.
 
 `Send` is a special kind of trait, called a _marker trait_. Marker traits don't contain any methods. Instead, their purpose is to convey some specific information to the compiler. In case of `Send`, the compiler knows that the values of a type that implements `Send` are safe to pass between threads. 
 
 Usually, you don't need to implement `Send` on your types yourself. `Send` is also an _auto-trait_: the compiler automatically implements an auto-trait for types, unless the type contains something that doesn't implement the marker trait. So in case of `Send`, the type will automatically be `Send` if all its fields implement `Send`. 
 
-Which brings us to the `AppState` type and the latest addition of the variant: 
+Which brings us to the `AppEvent` type and the latest addition of the variant: 
 
 ```rust 
 pub enum AppEvent {
@@ -116,7 +116,7 @@ pub enum AppEvent {
 }
 ```
 
-Type-wise, this addition makes our whole `AppEvent` not `Send`. Let's explore why. `Box` will be `Send` only if its inner value is `Send`. However, in our type definition we don't restrict this fact. We only declare that the value `Box` holds must implement `std::error::Error` trait. Potentially, that means that we can create the `Error` variant that would hold a value to some error that implements `std::error::Error` trait, but is not `Send`-compatible: for example, the value can hold a shared reference `Rc<T>` as one of it fields, which makes that value not safe to pass between threads. 
+Type-wise, this addition makes our whole `AppEvent` not `Send`. Let's explore why. `Box` will be `Send` only if its inner value is `Send`. However, in our type definition we don't restrict this fact. We only declare that the value `Box` holds must implement `std::error::Error` trait. Potentially, that means we can create an `Error` variant holding an error that implements `std::error::Error` but is not `Send`-compatible. For example, the value could hold a shared reference `Rc<T>` as one of its fields, which makes it unsafe to pass between threads. 
 
 The solution is to restrict the types that `AppEvent::Error` can wrap around. We must ensure that the inner value is also `Send`, by providing a more specific type boundary: 
 
@@ -133,15 +133,15 @@ Technically, that should be enough to satisfy the compiler. However, after we go
 `?` couldn't convert the error to `Box<dyn std::error::Error + Send>`
 ```
 
-To answer what's breaking here we need to look a bit under the hood of the `?` operator. In my previous project [I described](https://www.tindandelion.com/rust-text-compression/2025/05/01/tidbits-of-error-handling.html) that `?` operator is able to convert between error types using `From` trait. That makes error propagation work seamlessly, as long as Rust knows how to convert one error type into the other. So why does it work with `Result<T, Box<dyn Error>>` but breaks for ``Result<T, Box<dyn Error + Send>>`? 
+To answer what's breaking here we need to look a bit under the hood of the `?` operator. In my previous project [I described](https://www.tindandelion.com/rust-text-compression/2025/05/01/tidbits-of-error-handling.html) that `?` operator is able to convert between error types using `From` trait. That makes error propagation work seamlessly, as long as Rust knows how to convert one error type into the other. So why does it work with `Result<T, Box<dyn Error>>` but breaks for `Result<T, Box<dyn Error + Send>>`? 
 
-You see, Rust's standard library contains [a blanket implementation](https://doc.rust-lang.org/std/error/trait.Error.html#impl-From%3CE%3E-for-Box%3Cdyn+Error%3E) to convert from `Error` to `Box<dyn Error>`: 
+Rust's standard library contains [a blanket implementation](https://doc.rust-lang.org/std/error/trait.Error.html#impl-From%3CE%3E-for-Box%3Cdyn+Error%3E) to convert from `Error` to `Box<dyn Error>`: 
 
 ```rust 
 impl<'a, E: Error + 'a> From<E> for Box<dyn Error + 'a>
 ```
 
-However, as the compiler error tells us, it knows nothing about converting to `Box<Error + Send>`. My first impulse was to provide such an implementation, but unfortunately that doesn't work either: `From`, `Error` and `Box` are _foreign types_, that is they are both defined outside my local crate. When it comes to trait implementation, Rust has a so-called _orphan rule_: you can implement a trait for a type only if the trait or the type is local to your crate. 
+However, as the compiler error tells us, it knows nothing about converting to `Box<Error + Send>`. My first impulse was to provide such an implementation, but unfortunately that doesn't work either: `From`, `Error` and `Box` are _foreign types_, that is, they are both defined outside my local crate. When it comes to trait implementation, Rust has a so-called _orphan rule_: you can implement a trait for a type only if the trait or the type is local to your crate. 
 
 So we can't provide a blanket implementation to satisfy the compiler. Are we stuck? 
 
@@ -169,9 +169,9 @@ pub enum AppEvent {
 }
 ```
 
-And, when defining opaque errors, we need to use `Result<T, Box<dyn std::error::Error + Send + Sync>>` to ensure thread safety. Since it's a quite long definition that's going to appear quite frequently in the code, I've extracted helpful type aliases into [`result.rs`][link-required] local module, for easier use. 
+And, when defining opaque errors, we need to use `Result<T, Box<dyn std::error::Error + Send + Sync>>` to ensure thread safety. Since it's quite a long definition that's going to appear quite frequently in the code, I've extracted helpful type aliases into [`result.rs`][link-required] local module, for easier use. Luckily, apart from changing the type definitions, no other changes are required: all error types we've used so far comply with `Send` and `Sync` restrictions. 
 
-That's essentially a bottom line when it comes to passing errors across threads by any means. 
+That's essentially a bottom line when it comes to passing errors across threads. 
 
 # Putting it all together
 
