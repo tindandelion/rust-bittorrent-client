@@ -1,6 +1,7 @@
 mod downloader;
 mod probe_peers;
 pub mod ratatui_ui;
+pub mod result;
 mod torrent;
 mod tracker;
 mod types;
@@ -12,6 +13,7 @@ use crate::{
     downloader::PeerChannel, probe_peers::probe_peers_sequential, torrent::Info,
     tracker::AnnounceRequest, types::PeerId,
 };
+
 use std::net::SocketAddr;
 pub use torrent::Torrent;
 
