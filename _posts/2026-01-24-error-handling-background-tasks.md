@@ -4,19 +4,19 @@ title:  "Ratatui: error handling in background tasks"
 date: 2026-01-29
 ---
 
-I was just in the middle of connecting the code of the application to the UI, when suddenly I realized that I skipped a very important topic: **how are we supposed to handle errors that may occur in the background task?** In particular, if the download fails, how should we react to it? The UI implementation I started in the [previous post][prev-post] simply ignored the fact that a background task can fail. That realization made me backtrack a bit and reason about error handling more thoroughly. 
+I was just in the middle of connecting the code of the application to the UI, when suddenly I realized that I skipped a very important topic: **how are we supposed to handle errors that may occur in a background task?** In particular, if the download fails, how should we react to it? The UI implementation I started in the [previous post][prev-post] simply ignored the fact that a background task can fail. That realization made me step back and reason about error handling more thoroughly. 
 
 [*Version 0.0.14 on GitHub*](https://github.com/tindandelion/rust-bittorrent-client/tree/0.0.14){: .no-github-icon}
 
 # Download fails, what to do? 
 
-Now, let's think about this problem. Our main download logic is implemented in [`Torrent::download()`](https://github.com/tindandelion/rust-bittorrent-client/blob/0.0.14/src/lib.rs#L21), and my intention is to call this function as the background task. But the download may fail for some reason, which is hinted by the fact that this function returns a `Result<(), Error>`. Ideally, I need some graceful solution for this situation, but our current implementation doesn't allow for one: I just didn't think about error scenarios before. Very ignorant on my part, I know. 
+Now, let's think about this problem. Our main download logic is implemented in [`Torrent::download()`](https://github.com/tindandelion/rust-bittorrent-client/blob/0.0.14/src/lib.rs#L21), and I plan to call this function in the background task. But the download may end up failing, which is hinted by the fact that this function returns a `Result<(), Error>`. Ideally, I need some graceful solution for this situation, but our current implementation of background tasks doesn't allow for one: I just didn't think about error scenarios before. Very ignorant on my part, I know. 
 
 Considering download failures, let's explore some "easy" reactions from the application's perspective: 
 
-* We could simply ignore the error. That's obviously a wrong approach: if we ignore the fact that the download has failed, the background task will finish silently, and stop updating the UI. It will look like the application simply froze.
+* We could simply ignore the error. That's obviously a wrong approach: if we ignore the fact that the download has failed, the background task will finish silently, and stop updating the UI. It will look as if the application simply froze.
 
-* We can panic by calling `unwrap()` or `expect()`. That's better, but not very graceful. If we panic mid-way, the application will quit, but the terminal will be absolutely messed up. Since Ratatui switches the terminal to the raw mode, a well-behaved application must restore the "normal" terminal mode before quitting, otherwise it will stay in the raw mode forever. When panicked, the application quits abruptly and Ratatui doesn't get a chance to do the cleanup. 
+* We can panic by calling `unwrap()` or `expect()`. That's better, but not very graceful. If we panic mid-way, the application will quit, but the terminal is going to be absolutely messed up. Since Ratatui switches the terminal to the raw mode, a well-behaved application must restore the "normal" terminal mode before quitting, otherwise it will stay in the raw mode forever. When panicked, the application quits abruptly and Ratatui doesn't get a chance to do the cleanup. 
 
 The most graceful approach would be to signal to the main application loop that there was an error in the background task. In that case, it has a chance to do the right thing: stop the render loop, restore the terminal, and quit cleanly. Ideally, we would also like to print the error to the user and quit with an error status code, as a well-behaved application should do. 
 
@@ -135,13 +135,13 @@ pub enum AppEvent {
 
 #### More trait bounds
 
-Technically, what we just did should be enough to satisfy the compiler. However, after we go through the source code and change all relevant return types to `Result<T, Box<dyn std::error::Error + Send>>`, we end up with multiple compiler errors throughout the code where we used `?` error propagation operator: 
+Technically, what we just did should be enough to satisfy the compiler. However, after we go through the source code and change all relevant return types to `Result<T, Box<dyn std::error::Error + Send>>`, we end up with multiple compiler errors throughout the code where we used the `?` error propagation operator: 
 
 ```
 `?` couldn't convert the error to `Box<dyn std::error::Error + Send>`
 ```
 
-To answer what's breaking here we need to look a bit under the hood of the `?` operator. In my previous project [I described](https://www.tindandelion.com/rust-text-compression/2025/05/01/tidbits-of-error-handling.html) that `?` operator implicitly converts between error types using `From` trait. That makes error propagation work seamlessly, as long as Rust knows how to convert one error type into the other. So why does it work with `Result<T, Box<dyn Error>>` but breaks for `Result<T, Box<dyn Error + Send>>`? 
+To answer what's breaking here we need to look a bit under the hood of the `?` operator. [In my previous project I described](https://www.tindandelion.com/rust-text-compression/2025/05/01/tidbits-of-error-handling.html) that `?` operator implicitly converts between error types using `From` trait. That makes error propagation work seamlessly, as long as Rust knows how to convert one error type into the other. So why does it work with `Result<T, Box<dyn Error>>` but breaks for `Result<T, Box<dyn Error + Send>>`? 
 
 Rust's standard library contains [a blanket implementation](https://doc.rust-lang.org/std/error/trait.Error.html#impl-From%3CE%3E-for-Box%3Cdyn+Error%3E) to convert from `Error` to `Box<dyn Error>`: 
 
@@ -149,7 +149,7 @@ Rust's standard library contains [a blanket implementation](https://doc.rust-lan
 impl<'a, E: Error + 'a> From<E> for Box<dyn Error + 'a>
 ```
 
-However, as the compiler error tells us, it knows nothing about converting to `Box<Error + Send>`. My first impulse was to provide such an implementation, but unfortunately that doesn't work either: `From`, `Error` and `Box` are _foreign types_, that is, they are both defined outside my local crate. When it comes to trait implementation, Rust has a so-called _orphan rule:_ you can implement a trait for a type only if the trait or the type is local to your crate. 
+However, as the compiler error tells us, it knows nothing about converting to `Box<Error + Send>`. My first impulse was to provide such an implementation, but unfortunately that doesn't work either: `From`, `Error` and `Box` are all _foreign types_, that is they are defined outside my local crate. When it comes to trait implementation, Rust has a so-called [_orphan rule:_](https://doc.rust-lang.org/reference/items/implementations.html#orphan-rules) you can implement a trait for a type only if the trait or the type is local to your crate. 
 
 So we can't provide a blanket implementation to satisfy the compiler. Are we stuck? 
 
@@ -177,13 +177,13 @@ pub enum AppEvent {
 }
 ```
 
-And, when defining opaque errors, we need to use `Result<T, Box<dyn std::error::Error + Send + Sync>>` to ensure thread safety for error types. Since it's quite a long definition that's going to appear quite frequently in the code, I've extracted helpful type aliases into [`result.rs`](https://github.com/tindandelion/rust-bittorrent-client/blob/0.0.14/src/result.rs) local module, for easier use. Luckily, besides changing the type definitions, no other changes are required: all error types we've used so far comply with `Send` and `Sync` restrictions. 
+And, when defining opaque errors in function results, we also need to use `Result<T, Box<dyn std::error::Error + Send + Sync>>` to ensure that types are consistent throughout the codebase. It's quite a long definition that's going to appear quite frequently in the code, so I've extracted helpful type aliases into [`result.rs`](https://github.com/tindandelion/rust-bittorrent-client/blob/0.0.14/src/result.rs) local module, to reduce code clutter. Luckily, besides changing the type definitions, no other changes are required: all error types we've used so far comply with `Send` and `Sync` restrictions. 
 
-That's essentially a bottom line when it comes to passing errors across threads. 
+That's essentially the bottom line when it comes to passing errors across threads. 
 
 # Putting it all together
 
-Let's now try out how our application reacts to errors in reality. To test the approach, I've created a new example [`examples/tui-app-error.rs`](https://github.com/tindandelion/rust-bittorrent-client/blob/0.0.14/examples/tui-app-error.rs) to simulate an IO error that happens during the download. 
+Let's now try out how our application reacts to errors in reality. To test the approach, I've created a new example [`examples/tui-app-error.rs`](https://github.com/tindandelion/rust-bittorrent-client/blob/0.0.14/examples/tui-app-error.rs) to simulate an IO error that occurs during the download. 
 
 Running this example, we get the following output: 
 
@@ -191,13 +191,13 @@ Running this example, we get the following output:
 
 Very well! Now the application terminates gracefully without breaking the terminal, and we see the error description in the console. 
 
-Granted, the error description looks a bit short and doesn't provide a lot of context to help troubleshooting. I'm actually planning to dive deeper into how to make error messages more helpful later in the project. For now, it works for me. 
+Granted, the error description looks a bit short and doesn't provide enough context to help troubleshooting. I'm actually planning to dive deeper into how to make error messages more helpful later in the project. For now, it works for me. 
 
 # Moving on
 
-This post was a bit of a digression from what I [planned to do][prev-post-plan] initially, but it was very important to address the subject of graceful error handling to move forward. 
+This post was a bit of a digression from what I [planned to do][prev-post-plan] initially, but it was crucial to address the subject of graceful error handling to move forward. 
 
-Now, I'm back to my plan and I feel ready to finally connect the core logic of the BitTorrent client to the UI, and make the interface a bit fancier, utilizing some nice widgets that Ratatui provides. Stick around! 
+Now, I'm back to my plan and I feel ready to finally connect the core logic of the BitTorrent client to the UI, and make the user interface a bit fancier, utilizing some nice widgets that Ratatui provides. Stick around! 
 
 [*Current version (0.0.14) on GitHub*](https://github.com/tindandelion/rust-bittorrent-client/tree/0.0.14){: .no-github-icon}
 

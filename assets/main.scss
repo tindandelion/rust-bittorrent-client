@@ -43,7 +43,14 @@ h1.post-title {
 code {
     padding: 0;
     border: none;
-    background-color: transparent;
+    background-color: transparent;    
+}
+
+:not(pre) > code {
+    white-space: nowrap;
+    display: inline-block;
+    word-spacing: normal;
+    letter-spacing: normal;
 }
 
 div.language-console pre.highlight {
