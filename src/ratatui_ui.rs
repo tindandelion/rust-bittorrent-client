@@ -156,7 +156,7 @@ impl ProbingStatusWidget {
 impl Widget for ProbingStatusWidget {
     fn render(self, area: Rect, buf: &mut Buffer) {
         let status_line = match &self.ip_address {
-            Some(ip_address) => Line::from(format!("Probing: {}", ip_address)).red(),
+            Some(ip_address) => Line::from(format!("Probing {}", ip_address)).magenta(),
             None => Line::from("Idle").green(),
         };
         Paragraph::new(status_line).render(area, buf)
