@@ -99,6 +99,7 @@
         "Ratatui's",
         "Axum",
         "Actix",
-        "Tauri"
+        "Tauri",
+        "ratatui"
     ]
 } 
