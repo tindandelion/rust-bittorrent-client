@@ -12,6 +12,7 @@ Another reason is that I expect a project like this will help me deepen my exper
 
 - Network programming
 - Multi-threaded programming
+- Asynchronous programming in Rust
 - Programming console UIs
 
 ### Project scope

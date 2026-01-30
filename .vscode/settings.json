@@ -6,5 +6,6 @@
     "bitfield",
     "ratatui",
     "reqwest"
-  ]
+  ],
+  "spellchecker.ignoreWordsList": ["BitTorrent", "blog"]
 }
