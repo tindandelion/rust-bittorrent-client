@@ -1,10 +1,12 @@
 ---
 layout: post
 title:  "Ratatui: error handling in background tasks"
-date: 2026-01-24
+date: 2026-01-29
 ---
 
 I was just in the middle of connecting the code of the application to the UI, when suddenly I realized that I skipped a very important topic: **how are we supposed to handle errors that may occur in the background task?** In particular, if the download fails, how should we react to it? The UI implementation I started in the [previous post][prev-post] simply ignored the fact that a background task can fail. That realization made me backtrack a bit and reason about error handling more thoroughly. 
+
+[*Version 0.0.14 on GitHub*](https://github.com/tindandelion/rust-bittorrent-client/tree/0.0.14){: .no-github-icon}
 
 # Download fails, what to do? 
 
@@ -92,7 +94,7 @@ fn process_app_event(&mut self) -> Result<bool, Box<dyn std::error::Error>> {
 
 That simple change makes us return an error `Result` from `process_app_event()`, which in turn is propagated through `run_ui_loop()` function and eventually ends up in the `main` function, where we can print the error to the user, finishing the journey of the background task error.  
 
-#### The error path summary
+#### Summary: the error path
 
 So let's recap the way the error travels through the application: 
 
@@ -105,7 +107,7 @@ Is that all we need to do? Well, not so fast: even though conceptually everythin
 
 # Respecting the threads: _Send_ and _Sync_ traits 
 
-The code I just wrote would work just fine if we didn't have to send `AppEvent` instances via the channel between threads. In order for a variable to be "movable" between threads, it needs to implement the [`Send`](https://doc.rust-lang.org/std/marker/trait.Send.html) trait. If the type is not `Send`, you can't pass it between threads, i.e. you'll get an error if your `thread::spawn()` code tries to move that variable to another thread.
+The code I just wrote would work just fine if we didn't have to send `AppEvent` instances via the channel between threads. In order for a variable to be "movable" between threads, it needs to implement the [`Send`](https://doc.rust-lang.org/std/marker/trait.Send.html) trait. If the type is not `Send`, you can't pass it between threads, i.e. the compiler will complain if your `thread::spawn()` code tries to move that variable to another thread.
 
 `Send` is a special kind of trait, called a _marker trait_. Marker traits don't contain any methods. Instead, their purpose is to convey some specific information to the compiler. In case of `Send`, the compiler knows that the values of a type that implements `Send` are safe to pass between threads. 
 
@@ -157,7 +159,7 @@ Well, it turns out that Rust's standard library gives us a way out. There's [ano
 impl<'a, E: Error + Send + Sync + 'a> From<E> for Box<dyn Error + Send + Sync + 'a>
 ```
 
-Notice that there's a trait [`Sync`](https://doc.rust-lang.org/std/marker/trait.Sync.html) mentioned here. This is another thread-related marker trait we should be aware about. 
+Notice that there's a trait [`Sync`](https://doc.rust-lang.org/std/marker/trait.Sync.html) mentioned in the type bound. This is another thread-related marker trait we should be aware about. 
 
 `Sync` marks types whose references `&T` can be safely accessed from multiple threads without a threat of data races. Like with `Send`, the compiler automatically implements this trait for custom types whose fields are all `Sync`, which includes primitive types (and some other thread-related types, like `Mutex<T>`). The types that are **not** `Sync` include `Cell<T>`, `RefCell<T>` and `Rc<T>`.
 
@@ -175,7 +177,7 @@ pub enum AppEvent {
 }
 ```
 
-And, when defining opaque errors, we need to use `Result<T, Box<dyn std::error::Error + Send + Sync>>` to ensure thread safety. Since it's quite a long definition that's going to appear quite frequently in the code, I've extracted helpful type aliases into [`result.rs`](https://github.com/tindandelion/rust-bittorrent-client/blob/0.0.14/src/result.rs) local module, for easier use. Luckily, besides changing the type definitions, no other changes are required: all error types we've used so far comply with `Send` and `Sync` restrictions. 
+And, when defining opaque errors, we need to use `Result<T, Box<dyn std::error::Error + Send + Sync>>` to ensure thread safety for error types. Since it's quite a long definition that's going to appear quite frequently in the code, I've extracted helpful type aliases into [`result.rs`](https://github.com/tindandelion/rust-bittorrent-client/blob/0.0.14/src/result.rs) local module, for easier use. Luckily, besides changing the type definitions, no other changes are required: all error types we've used so far comply with `Send` and `Sync` restrictions. 
 
 That's essentially a bottom line when it comes to passing errors across threads. 
 
@@ -196,6 +198,8 @@ Granted, the error description looks a bit short and doesn't provide a lot of co
 This post was a bit of a digression from what I [planned to do][prev-post-plan] initially, but it was very important to address the subject of graceful error handling to move forward. 
 
 Now, I'm back to my plan and I feel ready to finally connect the core logic of the BitTorrent client to the UI, and make the interface a bit fancier, utilizing some nice widgets that Ratatui provides. Stick around! 
+
+[*Current version (0.0.14) on GitHub*](https://github.com/tindandelion/rust-bittorrent-client/tree/0.0.14){: .no-github-icon}
 
 [prev-post]: {{site.baseurl}}/{% post_url 2026-01-12-background-tasks-ratatui %}
 [prev-post-plan]: {{site.baseurl}}/{% post_url 2026-01-12-background-tasks-ratatui %}#next-steps
