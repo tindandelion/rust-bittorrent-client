@@ -16,8 +16,12 @@ fn download_file(tx: &Sender<AppEvent>) -> Result<()> {
         .map(|s| s.parse().unwrap())
         .collect::<Vec<SocketAddr>>();
 
-    for ip_address in ip_addresses {
-        tx.send(AppEvent::Probing(ip_address))?;
+    for (index, ip_address) in ip_addresses.iter().enumerate() {
+        tx.send(AppEvent::Probing {
+            address: *ip_address,
+            current_index: index,
+            total_count: ip_addresses.len(),
+        })?;
         thread::sleep(Duration::from_secs(2));
     }
 

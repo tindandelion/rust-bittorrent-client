@@ -31,8 +31,12 @@ impl Torrent {
         info!(peer_count = peer_addrs.len(), "Received peer addresses");
 
         info!("Probing peers");
-        if let Some(mut channel) = probe_peers_sequential(&peer_addrs, |addr| {
-            event_sender.send(AppEvent::Probing(*addr))?;
+        if let Some(mut channel) = probe_peers_sequential(&peer_addrs, |addr, cur_idx| {
+            event_sender.send(AppEvent::Probing {
+                address: *addr,
+                current_index: cur_idx,
+                total_count: peer_addrs.len(),
+            })?;
             request_complete_file(addr, &peer_id, &info)
         }) {
             info!(

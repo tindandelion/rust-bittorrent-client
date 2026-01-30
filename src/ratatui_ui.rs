@@ -21,7 +21,11 @@ pub enum AppEvent {
     Exit,
     Error(GenericError),
     Resize,
-    Probing(SocketAddr),
+    Probing {
+        address: SocketAddr,
+        current_index: usize,
+        total_count: usize,
+    },
     Downloading(usize, usize),
     Completed,
 }
@@ -36,7 +40,11 @@ pub struct App {
 enum DownloadState {
     #[default]
     Idle,
-    Probing(SocketAddr),
+    Probing {
+        address: SocketAddr,
+        current_index: usize,
+        total_count: usize,
+    },
     Downloading(usize, usize),
 }
 
@@ -79,8 +87,16 @@ impl App {
 
     fn process_app_event(&mut self) -> Result<bool> {
         match self.event_receiver.recv()? {
-            AppEvent::Probing(ip_address) => {
-                self.app_state = DownloadState::Probing(ip_address);
+            AppEvent::Probing {
+                address,
+                current_index,
+                total_count,
+            } => {
+                self.app_state = DownloadState::Probing {
+                    address,
+                    current_index,
+                    total_count,
+                };
                 Ok(true)
             }
             AppEvent::Downloading(current, total) => {
@@ -106,10 +122,17 @@ impl App {
 
         match &self.app_state {
             DownloadState::Idle => {
-                f.render_widget(ProbingStatusWidget::idle(), content_area);
+                f.render_widget(Paragraph::new(Line::from("Idle").green()), content_area);
             }
-            DownloadState::Probing(ip_address) => {
-                f.render_widget(ProbingStatusWidget::probing(*ip_address), content_area);
+            DownloadState::Probing {
+                address,
+                current_index,
+                total_count,
+            } => {
+                f.render_widget(
+                    ProbingStatusWidget::probing(*address, *current_index, *total_count),
+                    content_area,
+                );
             }
             DownloadState::Downloading(downloaded, total) => {
                 f.render_widget(
@@ -138,28 +161,32 @@ fn listen_for_keyboard_events(sender: &Sender<AppEvent>) -> Result<()> {
 }
 
 struct ProbingStatusWidget {
-    ip_address: Option<SocketAddr>,
+    ip_address: SocketAddr,
+    current_index: usize,
+    total_count: usize,
 }
 
 impl ProbingStatusWidget {
-    pub fn idle() -> Self {
-        Self { ip_address: None }
-    }
-
-    pub fn probing(ip_address: SocketAddr) -> Self {
+    pub fn probing(ip_address: SocketAddr, current_index: usize, total_count: usize) -> Self {
         Self {
-            ip_address: Some(ip_address),
+            ip_address,
+            current_index,
+            total_count,
         }
     }
 }
 
 impl Widget for ProbingStatusWidget {
     fn render(self, area: Rect, buf: &mut Buffer) {
-        let status_line = match &self.ip_address {
-            Some(ip_address) => Line::from(format!("Probing {}", ip_address)).magenta(),
-            None => Line::from("Idle").green(),
-        };
-        Paragraph::new(status_line).render(area, buf)
+        let label = format!("Probing {}", self.ip_address);
+        let ratio = self.current_index as f64 / self.total_count as f64;
+
+        LineGauge::default()
+            .filled_symbol(symbols::line::THICK_HORIZONTAL)
+            .label(label)
+            .ratio(ratio)
+            .magenta()
+            .render(area, buf);
     }
 }
 
@@ -178,7 +205,7 @@ impl Widget for DownloadingStatusWidget {
     fn render(self, area: Rect, buf: &mut Buffer) {
         let downloaded = humansize::format_size(self.downloaded, humansize::DECIMAL);
         let total = humansize::format_size(self.total, humansize::DECIMAL);
-        let label = format!("{} / {}", downloaded, total);
+        let label = format!("Downloading {} / {}", downloaded, total);
         let ratio = self.downloaded as f64 / self.total as f64;
 
         LineGauge::default()

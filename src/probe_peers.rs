@@ -2,10 +2,10 @@ use std::net::SocketAddr;
 
 pub fn probe_peers_sequential<R, E>(
     peer_addrs: &[SocketAddr],
-    probe: impl Fn(&SocketAddr) -> Result<R, E>,
+    probe: impl Fn(&SocketAddr, usize) -> Result<R, E>,
 ) -> Option<R> {
-    for addr in peer_addrs {
-        if let Ok(result) = probe(addr) {
+    for (index, addr) in peer_addrs.iter().enumerate() {
+        if let Ok(result) = probe(addr, index) {
             return Some(result);
         }
     }
@@ -27,7 +27,7 @@ mod tests {
             localhost_with_port(12347),
         ];
 
-        let result = probe_peers_sequential(&peer_addrs, |addr| {
+        let result = probe_peers_sequential(&peer_addrs, |addr, _| {
             if addr.port() == 12347 {
                 Result::Ok(*addr)
             } else {
@@ -47,7 +47,7 @@ mod tests {
         ];
 
         let result: Option<SocketAddr> =
-            probe_peers_sequential(&peer_addrs, |_| Result::Err("test error".to_string()));
+            probe_peers_sequential(&peer_addrs, |_, _| Result::Err("test error".to_string()));
 
         assert_eq!(None, result);
     }
