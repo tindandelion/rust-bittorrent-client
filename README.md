@@ -1,5 +1,7 @@
 # BitTorrent Client in Rust
 
+![BitTorrent Client](doc/main.gif 'Demo of the TUI')
+
 As I [continue my programming adventures in Rust][first-rust-project], I've decided to launch yet another learning project. This time, it's going to be an implementation of a **simple BitTorrent client**.
 
 ### Motivations
