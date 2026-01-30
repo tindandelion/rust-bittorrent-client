@@ -2,7 +2,7 @@ use crate::types::Sha1;
 use serde::{Deserialize, Serialize};
 use std::fs;
 
-type Error = Box<dyn std::error::Error>;
+type Error = Box<dyn std::error::Error + Send + Sync>;
 
 #[derive(Deserialize)]
 #[serde(try_from = "InfoInternal")]

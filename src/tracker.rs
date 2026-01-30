@@ -1,9 +1,7 @@
+use crate::result::{Result, StdResult};
 use crate::types::{PeerId, Sha1};
 use serde::Deserialize;
-use std::{
-    error::Error,
-    net::{SocketAddr, ToSocketAddrs},
-};
+use std::net::{SocketAddr, ToSocketAddrs};
 use url::{ParseError, Url};
 
 pub struct AnnounceRequest {
@@ -13,19 +11,19 @@ pub struct AnnounceRequest {
 }
 
 impl AnnounceRequest {
-    pub fn fetch_peer_addresses(&self) -> Result<Vec<SocketAddr>, Box<dyn Error>> {
+    pub fn fetch_peer_addresses(&self) -> Result<Vec<SocketAddr>> {
         let response = self.make_announce_request()?;
         let peer_addrs = get_peer_list_from_response(response.as_bytes())?;
         Ok(peer_addrs)
     }
 
-    fn make_announce_request(&self) -> Result<String, Box<dyn Error>> {
+    fn make_announce_request(&self) -> Result<String> {
         let url = self.make_announce_url()?;
         let response = reqwest::blocking::get(url)?;
         Ok(response.text()?)
     }
 
-    fn make_announce_url(&self) -> Result<Url, ParseError> {
+    fn make_announce_url(&self) -> StdResult<Url, ParseError> {
         let info_hash = unsafe { String::from_utf8_unchecked(self.info_hash.as_vec()) };
         let peer_id = unsafe { String::from_utf8_unchecked(self.peer_id.as_vec()) };
         Url::parse_with_params(
@@ -35,7 +33,7 @@ impl AnnounceRequest {
     }
 }
 
-fn get_peer_list_from_response(tracker_response: &[u8]) -> Result<Vec<SocketAddr>, Box<dyn Error>> {
+fn get_peer_list_from_response(tracker_response: &[u8]) -> Result<Vec<SocketAddr>> {
     let decoded_response: TrackerResponse = serde_bencode::from_bytes(tracker_response)?;
 
     let x = decoded_response

@@ -10,15 +10,15 @@ mod util;
 use tracing::{Level, debug, error, info, instrument};
 
 use crate::{
-    downloader::PeerChannel, probe_peers::probe_peers_sequential, torrent::Info,
-    tracker::AnnounceRequest, types::PeerId,
+    downloader::PeerChannel, probe_peers::probe_peers_sequential, ratatui_ui::AppEvent,
+    torrent::Info, tracker::AnnounceRequest, types::PeerId,
 };
-
-use std::net::SocketAddr;
+use result::Result;
+use std::{net::SocketAddr, sync::mpsc::Sender};
 pub use torrent::Torrent;
 
 impl Torrent {
-    pub fn download(self) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn download(self, event_sender: &Sender<AppEvent>) -> Result<()> {
         let info = self.info;
 
         let peer_id = PeerId::default();
@@ -32,6 +32,7 @@ impl Torrent {
 
         info!("Probing peers");
         if let Some(mut channel) = probe_peers_sequential(&peer_addrs, |addr| {
+            event_sender.send(AppEvent::Probing(*addr))?;
             request_complete_file(addr, &peer_id, &info)
         }) {
             info!(
@@ -48,6 +49,11 @@ impl Torrent {
                     info.piece_length,
                     info.length,
                 )
+                .with_progress_callback(|current, total| {
+                    let _ = event_sender
+                        .send(AppEvent::Downloading(current, total))
+                        .inspect_err(|e| error!(%e, "Failed to send downloading event"));
+                })
                 .download()
             })?;
             info!(
@@ -60,6 +66,7 @@ impl Torrent {
             error!("No peer responded");
         }
 
+        event_sender.send(AppEvent::Completed)?;
         Ok(())
     }
 }
@@ -69,7 +76,7 @@ fn request_complete_file(
     peer_addr: &SocketAddr,
     peer_id: &PeerId,
     info: &Info,
-) -> Result<PeerChannel, Box<dyn std::error::Error>> {
+) -> Result<PeerChannel> {
     debug!("Connecting to peer");
     let mut channel = PeerChannel::connect(peer_addr, &info.sha1, peer_id)
         .inspect(|channel| debug!(remote_id = %channel.remote_id(), "Connected"))
