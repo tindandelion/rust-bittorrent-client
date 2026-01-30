@@ -18,10 +18,10 @@ Another reason is that I expect a project like this will help me deepen my exper
 
 Writing a fully-fledged BitTorrent client is quite a big task, so for my pet project I'd like to scale it down to the essentials. I will consider the project accomplished when my solution is able to do the following:
 
-- Connect to the torrent tracker to fetch the initial information about the file to download
+- [x] Connect to the torrent tracker to fetch the initial information about the file to download
 - Download the file from multiple peers in parallel
 - Serve requests from other peers while the download is ongoing
-- Show the download progress in some form of text-based UI
+- [x] Show the download progress in some form of text-based UI
 
 ### Project blog
 
