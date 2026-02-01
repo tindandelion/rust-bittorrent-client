@@ -17,6 +17,7 @@ use result::Result;
 use std::{net::SocketAddr, sync::mpsc::Sender, time::Duration};
 pub use torrent::Torrent;
 
+#[derive(Debug)]
 pub struct DownloadedFile {
     pub content: Vec<u8>,
     pub download_duration: Duration,
