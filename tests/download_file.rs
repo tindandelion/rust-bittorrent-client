@@ -29,12 +29,9 @@ fn test_fail_to_connect_to_peer() -> Result<()> {
     let peer_id = PeerId::default();
 
     let (tx, _rx) = mpsc::channel();
-    let error_result = torrent.download_from(peer_id, vec![peer_address], &tx);
-    assert!(
-        error_result.is_err(),
-        "Expected error, got {:?}",
-        error_result
-    );
+    torrent
+        .download_from(peer_id, vec![peer_address], &tx)
+        .expect_err("Expected error");
 
     Ok(())
 }
