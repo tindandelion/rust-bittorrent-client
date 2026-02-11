@@ -4,7 +4,7 @@ pub mod ratatui_ui;
 pub mod result;
 mod torrent;
 mod tracker;
-mod types;
+pub mod types;
 mod util;
 
 use tracing::{Level, debug, error, info, instrument};
@@ -14,31 +14,55 @@ use crate::{
     torrent::Info, tracker::AnnounceRequest, types::PeerId,
 };
 use result::Result;
-use std::{net::SocketAddr, sync::mpsc::Sender};
+use std::{net::SocketAddr, sync::mpsc::Sender, time::Duration};
 pub use torrent::Torrent;
+
+#[derive(Debug)]
+pub struct DownloadedFile {
+    pub content: Vec<u8>,
+    pub download_duration: Duration,
+}
 
 impl Torrent {
     pub fn download(self, event_sender: &Sender<AppEvent>) -> Result<()> {
-        let info = self.info;
-
         let peer_id = PeerId::default();
         let announce_request = AnnounceRequest {
-            tracker_url: self.announce,
-            info_hash: info.sha1,
+            tracker_url: self.announce.clone(),
+            info_hash: self.info.sha1,
             peer_id,
         };
         let peer_addrs = announce_request.fetch_peer_addresses()?;
         info!(peer_count = peer_addrs.len(), "Received peer addresses");
 
+        let downloaded = self.download_from(peer_id, peer_addrs, event_sender)?;
+        info!(
+            file_bytes = hex::encode(&downloaded.content[..128]),
+            file_size = downloaded.content.len(),
+            download_duration = format!("{:.2?}", downloaded.download_duration),
+            "Downloaded file"
+        );
+
+        Ok(())
+    }
+
+    pub fn download_from(
+        self,
+        peer_id: PeerId,
+        peer_addrs: Vec<SocketAddr>,
+        event_sender: &Sender<AppEvent>,
+    ) -> Result<DownloadedFile> {
+        let info = self.info;
+
         info!("Probing peers");
-        if let Some(mut channel) = probe_peers_sequential(&peer_addrs, |addr, cur_idx| {
-            event_sender.send(AppEvent::Probing {
-                address: *addr,
-                current_index: cur_idx,
-                total_count: peer_addrs.len(),
-            })?;
-            request_complete_file(addr, &peer_id, &info)
-        }) {
+        let result = if let Some(mut channel) =
+            probe_peers_sequential(&peer_addrs, |addr, cur_idx| {
+                event_sender.send(AppEvent::Probing {
+                    address: *addr,
+                    current_index: cur_idx,
+                    total_count: peer_addrs.len(),
+                })?;
+                request_complete_file(addr, &peer_id, &info)
+            }) {
             info!(
                 file_size = info.length,
                 piece_count = info.pieces.len(),
@@ -60,18 +84,16 @@ impl Torrent {
                 })
                 .download()
             })?;
-            info!(
-                file_bytes = hex::encode(&file_content[..128]),
-                file_size = info.length,
-                download_duration = format!("{:.2?}", download_duration),
-                "Received entire file"
-            );
+            Ok(DownloadedFile {
+                content: file_content,
+                download_duration,
+            })
         } else {
-            error!("No peer responded");
-        }
+            Err("No peer responded".into())
+        };
 
         event_sender.send(AppEvent::Completed)?;
-        Ok(())
+        result
     }
 }
 
