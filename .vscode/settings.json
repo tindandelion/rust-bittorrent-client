@@ -100,6 +100,7 @@
         "Axum",
         "Actix",
         "Tauri",
-        "ratatui"
+        "ratatui",
+        "LineGauge"
     ]
 } 

@@ -22,7 +22,7 @@ I'm going to use the torrent file for the Debian distribution.
 - Build your own BitTorrent (challenge): https://app.codecrafters.io/join/bittorrent?via=jonhoo 
 
 # Links to UI 
-- https://crates.io/crates/tui-term
+- Terminal in the TUI: https://crates.io/crates/tui-term
 
 # Resurces
 - Too Many Linked Lists 
