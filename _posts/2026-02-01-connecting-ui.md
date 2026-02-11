@@ -49,8 +49,6 @@ That looks quite satisfying! Let's reflect on what we've achieved during the las
 
 That's quite a lot! To mark the milestone, I'm proudly tagging [this release as 0.1.0][github-0.1.0] and moving on to the next challenge. 
 
-# Looking ahead
-
 [*Current version (0.1.0) on GitHub*][github-0.1.0]{: .no-github-icon}
 
 [background-tasks-post]: {{site.baseurl}}/{% post_url 2026-01-12-background-tasks-ratatui %}
