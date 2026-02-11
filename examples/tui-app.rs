@@ -26,7 +26,7 @@ fn download_file(tx: &Sender<AppEvent>) -> Result<()> {
     }
 
     for i in 0..100 {
-        tx.send(AppEvent::Downloading(i, 100))?;
+        tx.send(AppEvent::Downloading(i * 1024, 100 * 1024))?;
         thread::sleep(Duration::from_millis(100));
     }
 

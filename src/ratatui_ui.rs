@@ -4,6 +4,7 @@ use std::{
     thread,
 };
 
+use humansize::FormatSizeOptions;
 use ratatui::{
     Frame,
     buffer::Buffer,
@@ -120,7 +121,7 @@ impl App {
         let content_area = app_block.inner(f.area());
         f.render_widget(app_block, f.area());
 
-        match &self.app_state {
+        match self.app_state {
             DownloadState::Idle => {
                 f.render_widget(Paragraph::new(Line::from("Idle").green()), content_area);
             }
@@ -130,13 +131,13 @@ impl App {
                 total_count,
             } => {
                 f.render_widget(
-                    ProbingStatusWidget::probing(*address, *current_index, *total_count),
+                    ProbingStatusWidget::probing(address, current_index, total_count),
                     content_area,
                 );
             }
             DownloadState::Downloading(downloaded, total) => {
                 f.render_widget(
-                    DownloadingStatusWidget::new(*downloaded, *total),
+                    DownloadingStatusWidget::new(downloaded, total),
                     content_area,
                 );
             }
@@ -193,19 +194,24 @@ impl Widget for ProbingStatusWidget {
 struct DownloadingStatusWidget {
     downloaded: usize,
     total: usize,
+    format: FormatSizeOptions,
 }
 
 impl DownloadingStatusWidget {
     pub fn new(downloaded: usize, total: usize) -> Self {
-        Self { downloaded, total }
+        Self {
+            downloaded,
+            total,
+            format: humansize::BINARY.decimal_zeroes(2),
+        }
     }
 }
 
 impl Widget for DownloadingStatusWidget {
     fn render(self, area: Rect, buf: &mut Buffer) {
-        let downloaded = humansize::format_size(self.downloaded, humansize::DECIMAL);
-        let total = humansize::format_size(self.total, humansize::DECIMAL);
-        let label = format!("Downloading {} / {}", downloaded, total);
+        let downloaded = humansize::format_size(self.downloaded, self.format);
+        let total = humansize::format_size(self.total, self.format);
+        let label = format!("Downloading {downloaded} / {total}");
         let ratio = self.downloaded as f64 / self.total as f64;
 
         LineGauge::default()
