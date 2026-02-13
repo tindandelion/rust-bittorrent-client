@@ -15,7 +15,7 @@ fn download_file_successfully() -> Result<()> {
     let peer_id = PeerId::default();
 
     let (tx, _rx) = mpsc::channel();
-    let downloaded = torrent.download_from(peer_id, vec![peer_address], &tx)?;
+    let downloaded = torrent.download_from(vec![peer_address], peer_id, &tx)?;
     assert_eq!(TestEnv::read_data_file()?, downloaded.content);
 
     Ok(())
@@ -29,7 +29,7 @@ fn fail_to_connect_to_peer() -> Result<()> {
 
     let (tx, _rx) = mpsc::channel();
     torrent
-        .download_from(peer_id, vec![peer_address], &tx)
+        .download_from(vec![peer_address], peer_id, &tx)
         .expect_err("Expected error");
 
     Ok(())

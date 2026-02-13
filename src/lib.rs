@@ -34,7 +34,7 @@ impl Torrent {
         let peer_addrs = announce_request.fetch_peer_addresses()?;
         info!(peer_count = peer_addrs.len(), "Received peer addresses");
 
-        let downloaded = self.download_from(peer_id, peer_addrs, event_sender)?;
+        let downloaded = self.download_from(peer_addrs, peer_id, event_sender)?;
         info!(
             file_bytes = hex::encode(&downloaded.content[..128]),
             file_size = downloaded.content.len(),
@@ -47,8 +47,8 @@ impl Torrent {
 
     pub fn download_from(
         self,
-        peer_id: PeerId,
         peer_addrs: Vec<SocketAddr>,
+        peer_id: PeerId,
         event_sender: &Sender<AppEvent>,
     ) -> Result<DownloadedFile> {
         let info = self.info;
