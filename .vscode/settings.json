@@ -101,6 +101,7 @@
         "Actix",
         "Tauri",
         "ratatui",
-        "LineGauge"
+        "LineGauge",
+        "Dockerfile"
     ]
 } 

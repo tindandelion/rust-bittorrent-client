@@ -87,5 +87,17 @@ COPY war-and-peace/war-and-peace.torrent /watch
 
 When the container starts and Transmission is launched, it looks into the `/watch` folder for torrent files to add. Since we've already placed the data file into the `/downloads/complete` folder, it picks up that data file and gets ready to serve it. By default configuration, the container exposes TCP port 51413 for BitTorrent communication. 
 
+Having introduced the Docker container with that customized setup, I've effectively eliminated the need for configuring my local environment manually: the only thing I need to set up the environment from scratch is to build and run the Docker container from the provided Dockerfile, which I will now store along with the source code. Not even Transmission needs to be installed on my local machine! 
+
+The second effect of the containerized solution is that I can now more easily introduce other BitTorrent clients, provided that they can be run inside the Docker container. That opens up a lot of possibilities for further tests: I can now have several different BitTorrent clients running in Docker containers, and run the same test against each client. I believe that will come in handy later on. 
+
+Notice though, that I still have to build and launch the Docker container manually. Though it is much easier to do than recreate the environment manually from scratch, it's still a step that separates us from a fully automated test environment. 
+
+Let's address it next. 
+
+# Automate container management with _testcontainers_ 
+
+
+
 
 
