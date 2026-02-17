@@ -12,9 +12,9 @@ Until now, I was primarily relying on the suite of unit-level tests to drive the
 
 One reason is that at this point I already have a working solution, and I would like to keep it functioning as I introduce more features related to the core of the BitTorrent client. I expect that there will be quite a bit of refactoring of the application structure, so having a high-level test that's decoupled from the internals is going to be helpful when it comes to making serious design changes. 
 
-The second reason is that I'm about to start playing with some pretty low-level stuff, such as (spoiler alert!) non-blocking and asynchronous I/O, and I suspect that some aspects will be hard to test using only unit tests. So far I was testing the application end-to-end by just launching the main application, but it's quite tedious and time-consuming to do so as often as I would like to. 
+The second reason is that I'm about to start playing with some pretty low-level stuff, such as (spoiler alert!) non-blocking and asynchronous I/O, and I suspect that some aspects will be hard to test using only unit tests. So far I have been testing the application end-to-end by just launching the main application, but it's quite tedious and time-consuming to do so as often as I would like to. 
 
-Finally, as I'm moving towards unknown grounds, I would like to have a local environment with a _real_ BitTorrent client that I could use to write and quickly check any experimental code against it, instead of relying on some kind of a mocked solution. Mocks are useful when you know the details of the behaviour of a mocked part, but they are useless when you're just discovering that behavior. 
+Finally, as I'm moving towards unknown grounds, I would like to have a local environment with a _real_ BitTorrent client that I could use to write and quickly check any experimental code against it, instead of relying on some kind of mocked solution. Mocks are useful when you know the details of the behaviour of a mocked part, but they are useless when you're just discovering that behavior. 
 
 Hopefully, I've persuaded myself and the readers that spending some time on a repeatable integration test in a controlled test environment is a good investment of time and effort, so let's move on. 
 
@@ -24,7 +24,7 @@ In fact, I've already peeked into using a local BitTorrent client installation (
 
 #### Torrent file for tests
 
-In theory, I could still use the Debian torrent file for integration tests, but it's big size makes it cumbersome. Even in the local environment it takes more than 10 seconds to download, and it's a drag to wait for so long. Luckily, in TRansmission it's pretty easy to create a new torrent from a smaller file of my own choice, and use it in the integration tests. I've decided to use the full text of _War and Peace_ by Leo Tolstoy, [freely available](https://www.gutenberg.org/cache/epub/2600/pg2600.txt) on the Internet. With a decent size of 3.3 megabytes, it looks like a good pick: not too short and not too big. 
+In theory, I could still use the Debian torrent file for integration tests, but its big size makes it cumbersome. Even in the local environment it takes more than 10 seconds to download, and it's a drag to wait for so long. Luckily, in Transmission it's pretty easy to create a new torrent from a smaller file of my own choice, and use it in the integration tests. I've decided to use the full text of _War and Peace_ by Leo Tolstoy, [freely available](https://www.gutenberg.org/cache/epub/2600/pg2600.txt) on the Internet. With a decent size of 3.3 megabytes, it looks like a good pick: not too short and not too big. 
 
 ![Local Transmission]({{ site.baseurl }}/assets/images/first-integration-test/transmission.png)
 
@@ -133,7 +133,7 @@ impl TestEnv {
 }
 ```
 
-This struct also provides a few other additional methods to isolate the tests from the details of the test environment configuration. That helps me to keep the code of the actual test [readable and easy to understand](https://github.com/tindandelion/rust-bittorrent-client/blob/0.1.1/tests/download_file.rs#L10): 
+This struct also provides a few additional methods to isolate the tests from the details of the test environment configuration. That helps me to keep the code of the actual test [readable and easy to understand](https://github.com/tindandelion/rust-bittorrent-client/blob/0.1.1/tests/download_file.rs#L10): 
 
 ```rust 
 #[test]
@@ -154,14 +154,14 @@ fn download_file_successfully() -> Result<()> {
 
 I've also added a second integration test for the obvious failing scenario: when the peer doesn't exist on the other end. Not showing it here for brevity, it's available on [GitHub](https://github.com/tindandelion/rust-bittorrent-client/blob/0.1.1/tests/download_file.rs#L25).
 
-At last, we've arrived at the fully automated solution: all I need to have on my local machine is Docker installed. Starting and tearing down the Docker container for each test (that's what `testcontainer` does by default) adds a bit of a delay to the test execution, but I think it's still OK for the integration tests: 
+At last, we've arrived at the fully automated solution: all I need to have on my local machine is Docker installed. Starting and tearing down the Docker container for each test (that's what `testcontainers` does by default) adds a bit of a delay to the test execution, but I think it's still OK for the integration tests: 
 
 ```console
 [main] $ cargo test -q --test download_file
 
-running 1 test
-.
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 11.02s
+running 2 tests
+..
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 11.11s
 ```
 
 Good job, time to move forward! 
