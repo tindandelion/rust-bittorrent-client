@@ -102,6 +102,10 @@
         "Tauri",
         "ratatui",
         "LineGauge",
-        "Dockerfile"
+        "Dockerfile",
+        "testcontainers",
+        "programmatically",
+        "Testcontainers",
+        "internet"
     ]
 } 

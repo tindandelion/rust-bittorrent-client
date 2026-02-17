@@ -20,7 +20,7 @@ Hopefully, I've persuaded myself and the readers that spending some time on a re
 
 # Step one: local BitTorrent client 
 
-In fact, I've already peeked into using a local BitTorrent client installation (using [Transmission](https://transmissionbt.com/)) when I was [experimenting with improving the download speed][link-missing]. Let's use that experience to start elaborating our first integration test! 
+In fact, I've already peeked into using a local BitTorrent client installation (using [Transmission](https://transmissionbt.com/)) when I was [experimenting with improving the download speed][prev-post-download-speed]. Let's use that experience to start elaborating our first integration test! 
 
 #### Torrent file for tests
 
@@ -56,14 +56,14 @@ fn read_test_file() -> Result<Vec<u8>> {
 }
 ```
 
-Run the test, and it passes. The test takes 3 seconds to execute, I can tolerate that: 
+Run the test, and it passes. The test takes a few seconds to execute, but I can tolerate that: 
 
 ```console
 [main] $ cargo test -q --test wap_download
 
 running 1 test
 .
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.10s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 8.46s
 ```
 
 So now we have an integration test that works in the local environment. But I'm not fully satisfied yet: I don't want to rely on a manually configured Transmission client. I think we can do even better: let's make a fully automated test environment that does not involve a manual setup! 
@@ -72,7 +72,7 @@ So now we have an integration test that works in the local environment. But I'm 
 
 Let's take a step further and remove the need to manually add our test torrent file into Transmission. Fortunately, that's quite easy to do using Docker. There's already a [Docker image for Transmission container](https://hub.docker.com/r/linuxserver/transmission) in DockerHub, and we can utilize it for our purposes. 
 
-We only need to make a subtle customization to the vanilla image: add our test data file to the `/downloads/complete` directory in the container, and the torrent file to the `/watch` directory. We can do that by providing a custom [`Dockerfile`][link-missing] that builds a custom image based on the vanilla image from the DockerHub: 
+We only need to make a subtle customization to the vanilla image: add our test data file to the `/downloads/complete` directory in the container, and the torrent file to the `/watch` directory. We can do that by providing a custom [`Dockerfile`](https://github.com/tindandelion/rust-bittorrent-client/blob/0.1.1/test-env/Dockerfile) that builds a custom image based on the vanilla image from the DockerHub: 
 
 ```docker
 FROM linuxserver/transmission:latest
@@ -85,7 +85,7 @@ COPY war-and-peace/war-and-peace.txt /downloads/complete
 COPY war-and-peace/war-and-peace.torrent /watch
 ```
 
-When the container starts and Transmission is launched, it looks into the `/watch` folder for torrent files to add. Since we've already placed the data file into the `/downloads/complete` folder, it picks up that data file and gets ready to serve it. By default configuration, the container exposes TCP port 51413 for BitTorrent communication. 
+When the container starts and Transmission is launched, it looks into the `/watch` folder for torrent files to add. Since we've already placed the data file into the `/downloads/complete` folder, it picks up that data file and gets ready to serve it. With default configuration, the container exposes TCP port 51413 for BitTorrent communication. 
 
 Having introduced the Docker container with that customized setup, I've effectively eliminated the need for configuring my local environment manually: the only thing I need to set up the environment from scratch is to build and run the Docker container from the provided Dockerfile, which I will now store along with the source code. Not even Transmission needs to be installed on my local machine! 
 
@@ -95,8 +95,82 @@ Notice though, that I still have to build and launch the Docker container manual
 
 Let's address it next. 
 
-# Automate container management with _testcontainers_ 
+# Step three: automate container management with _testcontainers_ 
 
+Just as with many other routine tasks, the problem of building and running containers for tests has been solved for us by the open source community. Enter [testcontainers](https://rust.testcontainers.org/) library: 
+
+> Testcontainers for Rust is a Rust library that makes it simple to create and clean up container-based dependencies for automated integration/smoke tests. The clean, easy-to-use API enables developers to programmatically define containers that should be run as part of a test and clean up those resources when the test is done.
+
+Among many features, `testcontainers` gives us the ability to [build and run containers from custom Dockerfiles](https://rust.testcontainers.org/features/building_images/) directly from the test code, which is exactly what we need! 
+
+Additionally, when the container is launched, `testcontainers` can map its exposed port to a random available host port. The mapped port number can be accessed from the test code, so there's no need to use a hard-coded port number in tests. Very handy for flexible environment setups! 
+
+Finally, `testcontainers` takes care of the cleanup: when the container is no longer needed, it will be stopped and deleted. By the way, this is not always desirable: sometimes you need to keep the container running after the test for debugging. You can change the default behaviour by setting the environment variable `TESTCONTAINERS_COMMAND=keep`.
+
+#### Fully autonomous integration test
+
+When it comes to test code organization, I prefer to keep tests focused and readable. When the test setup starts to get complicated and detail-heavy, I usually extract that code into supporting modules and hide that accidental complexity behind a simple facade. 
+
+For our purposes, I've created a supporting struct [`TestEnv`](https://github.com/tindandelion/rust-bittorrent-client/blob/0.1.1/tests/test_env/mod.rs#L19) to do the heavy lifting of container management: 
+
+```rust
+impl TestEnv {
+    pub fn start() -> Result<Self> {
+        let image = GenericBuildableImage::new("bt-client-transmission", "latest")
+            .with_dockerfile(Self::dockerfile_path())
+            .with_file(Self::test_data_dir(), "./war-and-peace")
+            .build_image()?;
+
+        let container = image
+            .with_exposed_port(51413.tcp())
+            .with_wait_for(WaitFor::message_on_stdout("[ls.io-init] done."))
+            .start()?;
+
+        Ok(Self { container })
+    }
+
+    // ... skipped the rest 
+}
+```
+
+This struct also provides a few other additional methods to isolate the tests from the details of the test environment configuration. That helps me to keep the code of the actual test [readable and easy to understand](https://github.com/tindandelion/rust-bittorrent-client/blob/0.1.1/tests/download_file.rs#L10): 
+
+```rust 
+#[test]
+fn download_file_successfully() -> Result<()> {
+    let env = TestEnv::start()?;
+
+    let peer_address = env.get_peer_address()?;
+    let torrent = TestEnv::read_torrent_file()?;
+    let peer_id = PeerId::default();
+
+    let (tx, _rx) = mpsc::channel();
+    let downloaded = torrent.download_from(vec![peer_address], peer_id, &tx)?;
+    assert_eq!(TestEnv::read_data_file()?, downloaded.content);
+
+    Ok(())
+}
+```
+
+I've also added a second integration test for the obvious failing scenario: when the peer doesn't exist on the other end. Not showing it here for brevity, it's available on [GitHub](https://github.com/tindandelion/rust-bittorrent-client/blob/0.1.1/tests/download_file.rs#L25).
+
+At last, we've arrived at the fully automated solution: all I need to have on my local machine is Docker installed. Starting and tearing down the Docker container for each test (that's what `testcontainer` does by default) adds a bit of a delay to the test execution, but I think it's still OK for the integration tests: 
+
+```console
+[main] $ cargo test -q --test download_file
+
+running 1 test
+.
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 11.02s
+```
+
+Good job, time to move forward! 
+
+# Next steps 
+
+With the integration tests in place, I feel very well prepared to dive deep and start making serious changes to the core functionality of this BitTorrent client. The first thing I would like to address is that painfully slow process of probing the peers one by one. There's a lot of possibilities to improve that: let's dive in! 
+
+[prev-post-download-speed]: {{site.baseurl}}/{% post_url 2025-07-25-improve-download-speed %}
 
 
 
