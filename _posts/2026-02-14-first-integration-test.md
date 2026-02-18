@@ -6,6 +6,8 @@ date: 2026-02-14
 
 I'm about to start doing some serious changes to the core logic of the download process. However, before diving in head-first, I would like to strengthen my test suite by introducing the first _integration test_ that would utilize a real BitTorrent client as a remote peer. Moreover, I would like to create a _controlled test environment_, so that test execution will not rely on anything that lives somewhere else on the internet and therefore is outside of my reach. 
 
+[*Version 0.1.1 on GitHub*][github-0.1.1]{: .no-github-icon}
+
 # The need for the integration tests 
 
 Until now, I was primarily relying on the suite of unit-level tests to drive the development forward. That served me pretty well so far, but now I'm at the point where I feel that having only unit tests is not sufficient. 
@@ -170,7 +172,10 @@ Good job, time to move forward!
 
 With the integration tests in place, I feel very well prepared to dive deep and start making serious changes to the core functionality of this BitTorrent client. The first thing I would like to address is that painfully slow process of probing the peers one by one. There's a lot of possibilities to improve that: let's dive in! 
 
+[*Current version (0.1.1) on GitHub*][github-0.1.1]{: .no-github-icon}
+
 [prev-post-download-speed]: {{site.baseurl}}/{% post_url 2025-07-25-improve-download-speed %}
+[github-0.1.1]: https://github.com/tindandelion/rust-bittorrent-client/tree/0.1.1
 
 
 
