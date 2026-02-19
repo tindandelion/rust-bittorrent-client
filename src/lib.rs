@@ -24,14 +24,22 @@ pub struct DownloadedFile {
 }
 
 impl Torrent {
-    pub fn download(self, event_sender: &Sender<AppEvent>) -> Result<()> {
-        let peer_id = PeerId::default();
+    pub fn fetch_peer_addresses(&self, peer_id: PeerId) -> Result<Vec<SocketAddr>> {
         let announce_request = AnnounceRequest {
             tracker_url: self.announce.clone(),
             info_hash: self.info.sha1,
             peer_id,
         };
-        let peer_addrs = announce_request.fetch_peer_addresses()?;
+        announce_request.fetch_peer_addresses()
+    }
+
+    pub fn request_file(&self, addr: SocketAddr, peer_id: PeerId) -> Result<PeerChannel> {
+        request_complete_file(&addr, &peer_id, &self.info)
+    }
+
+    pub fn download(self, event_sender: &Sender<AppEvent>) -> Result<()> {
+        let peer_id = PeerId::default();
+        let peer_addrs = self.fetch_peer_addresses(peer_id)?;
         info!(peer_count = peer_addrs.len(), "Received peer addresses");
 
         let downloaded = self.download_from(peer_addrs, peer_id, event_sender)?;
