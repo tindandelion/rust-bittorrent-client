@@ -7,7 +7,7 @@ mod tracker;
 pub mod types;
 mod util;
 
-use tracing::{Level, debug, error, info, instrument};
+use tracing::{Level, debug, debug_span, error, info, instrument};
 
 use crate::{
     downloader::PeerChannel, probe_peers::probe_peers_sequential, ratatui_ui::AppEvent,
@@ -38,7 +38,30 @@ impl Torrent {
     }
 
     pub fn request_file(&self, addr: SocketAddr, peer_id: PeerId) -> Result<PeerChannel> {
-        request_complete_file(&addr, &peer_id, &self.info)
+        let stream = TcpStream::connect_timeout(&addr, CONNECT_TIMEOUT)?;
+        request_complete_file(stream, &peer_id, &self.info)
+    }
+
+    fn request_file_from_peers(
+        &self,
+        peer_addrs: Vec<SocketAddr>,
+        peer_id: PeerId,
+        event_sender: &Sender<AppEvent>,
+    ) -> Option<PeerChannel> {
+        probe_peers_sequential(&peer_addrs, |addr, cur_idx| {
+            event_sender.send(AppEvent::Probing {
+                address: *addr,
+                current_index: cur_idx,
+                total_count: peer_addrs.len(),
+            })?;
+
+            let span = debug_span!("request_file", address = %addr);
+            let _enter = span.enter();
+            debug!("Connecting to peer");
+            let stream = TcpStream::connect_timeout(addr, CONNECT_TIMEOUT)
+                .inspect_err(|error| debug!(%error, "Failed to connect"))?;
+            request_complete_file(stream, &peer_id, &self.info)
+        })
     }
 
     pub fn download(self, event_sender: &Sender<AppEvent>) -> Result<()> {
@@ -63,18 +86,12 @@ impl Torrent {
         peer_id: PeerId,
         event_sender: &Sender<AppEvent>,
     ) -> Result<DownloadedFile> {
-        let info = self.info;
+        let info = &self.info;
 
         info!("Probing peers");
         let result = if let Some(mut channel) =
-            probe_peers_sequential(&peer_addrs, |addr, cur_idx| {
-                event_sender.send(AppEvent::Probing {
-                    address: *addr,
-                    current_index: cur_idx,
-                    total_count: peer_addrs.len(),
-                })?;
-                request_complete_file(addr, &peer_id, &info)
-            }) {
+            self.request_file_from_peers(peer_addrs, peer_id, event_sender)
+        {
             info!(
                 file_size = info.length,
                 piece_count = info.pieces.len(),
@@ -85,7 +102,7 @@ impl Torrent {
             let (file_content, download_duration) = util::elapsed(|| {
                 downloader::FileDownloader::new(
                     &mut channel,
-                    info.pieces,
+                    info.pieces.clone(),
                     info.piece_length,
                     info.length,
                 )
@@ -111,17 +128,10 @@ impl Torrent {
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 
-#[instrument(skip(info, peer_id), level = Level::DEBUG)]
-fn request_complete_file(
-    peer_addr: &SocketAddr,
-    peer_id: &PeerId,
-    info: &Info,
-) -> Result<PeerChannel> {
-    debug!("Connecting to peer");
-    let stream = TcpStream::connect_timeout(peer_addr, CONNECT_TIMEOUT)?;
+#[instrument(skip_all, level = Level::DEBUG)]
+fn request_complete_file(stream: TcpStream, peer_id: &PeerId, info: &Info) -> Result<PeerChannel> {
     let mut channel = PeerChannel::handshake(stream, &info.sha1, peer_id)
-        .inspect(|channel| debug!(remote_id = %channel.remote_id(), "Connected"))
-        .inspect_err(|error| debug!(%error, "Failed to connect"))?;
+        .inspect(|channel| debug!(remote_id = %channel.remote_id(), "Connected"))?;
 
     debug!("Connected, requesting file");
     downloader::request_complete_file(&mut channel, info.pieces.len())?;
