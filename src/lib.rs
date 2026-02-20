@@ -1,5 +1,4 @@
 mod downloader;
-mod probe_peers;
 pub mod ratatui_ui;
 pub mod result;
 mod torrent;
@@ -7,11 +6,14 @@ mod tracker;
 pub mod types;
 mod util;
 
-use tracing::{Level, debug, debug_span, error, info, instrument};
+use tracing::{Level, debug, error, info, instrument};
 
 use crate::{
-    downloader::PeerChannel, probe_peers::probe_peers_sequential, ratatui_ui::AppEvent,
-    torrent::Info, tracker::AnnounceRequest, types::PeerId,
+    downloader::{PeerChannel, peer_connectors::SeqPeerConnector},
+    ratatui_ui::AppEvent,
+    torrent::Info,
+    tracker::AnnounceRequest,
+    types::PeerId,
 };
 use result::Result;
 use std::{
@@ -37,31 +39,36 @@ impl Torrent {
         announce_request.fetch_peer_addresses()
     }
 
-    pub fn request_file(&self, addr: SocketAddr, peer_id: PeerId) -> Result<PeerChannel> {
+    pub fn request_file_from_address(
+        &self,
+        addr: SocketAddr,
+        peer_id: PeerId,
+    ) -> Result<PeerChannel> {
         let stream = TcpStream::connect_timeout(&addr, CONNECT_TIMEOUT)?;
         request_complete_file(stream, &peer_id, &self.info)
     }
 
-    fn request_file_from_peers(
+    fn request_file(
         &self,
         peer_addrs: Vec<SocketAddr>,
         peer_id: PeerId,
         event_sender: &Sender<AppEvent>,
     ) -> Option<PeerChannel> {
-        probe_peers_sequential(&peer_addrs, |addr, cur_idx| {
-            event_sender.send(AppEvent::Probing {
-                address: *addr,
-                current_index: cur_idx,
-                total_count: peer_addrs.len(),
-            })?;
-
-            let span = debug_span!("request_file", address = %addr);
-            let _enter = span.enter();
-            debug!("Connecting to peer");
-            let stream = TcpStream::connect_timeout(addr, CONNECT_TIMEOUT)
-                .inspect_err(|error| debug!(%error, "Failed to connect"))?;
-            request_complete_file(stream, &peer_id, &self.info)
-        })
+        let total_peers = peer_addrs.len();
+        let connector = SeqPeerConnector::default().with_progress_callback(|addr, total_probed| {
+            let _ = event_sender
+                .send(AppEvent::Probing {
+                    address: addr,
+                    current_index: total_probed,
+                    total_count: total_peers,
+                })
+                .inspect_err(|e| error!(%e, "Failed to send probing event"));
+        });
+        connector
+            .connect(peer_addrs)
+            .map(|stream| request_complete_file(stream, &peer_id, &self.info))
+            .filter_map(Result::ok)
+            .next()
     }
 
     pub fn download(self, event_sender: &Sender<AppEvent>) -> Result<()> {
@@ -89,8 +96,7 @@ impl Torrent {
         let info = &self.info;
 
         info!("Probing peers");
-        let result = if let Some(mut channel) =
-            self.request_file_from_peers(peer_addrs, peer_id, event_sender)
+        let result = if let Some(mut channel) = self.request_file(peer_addrs, peer_id, event_sender)
         {
             info!(
                 file_size = info.length,

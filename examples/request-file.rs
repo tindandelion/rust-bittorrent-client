@@ -14,7 +14,7 @@ fn main() -> Result<()> {
     for addr in addrs {
         print!("{addr}\t\t\t");
         let start = Instant::now();
-        let result = torrent.request_file(addr, peer_id);
+        let result = torrent.request_file_from_address(addr, peer_id);
         let duration = start.elapsed().as_millis();
         match result {
             Ok(_) => println!("OK ({duration}ms)"),

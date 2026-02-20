@@ -20,15 +20,17 @@ impl<'a> Default for SeqPeerConnector<'a> {
 }
 
 impl<'a> SeqPeerConnector<'a> {
-    pub fn with_timeout(mut self, timeout: Duration) -> Self {
-        self.connect_timeout = timeout;
-        self
-    }
     pub fn with_progress_callback(
         mut self,
         progress_callback: impl Fn(SocketAddr, usize) + 'a,
     ) -> Self {
         self.progress_callback = Box::new(progress_callback);
+        self
+    }
+
+    #[cfg(test)]
+    pub fn with_timeout(mut self, timeout: Duration) -> Self {
+        self.connect_timeout = timeout;
         self
     }
 
