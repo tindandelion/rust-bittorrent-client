@@ -14,7 +14,11 @@ use crate::{
     torrent::Info, tracker::AnnounceRequest, types::PeerId,
 };
 use result::Result;
-use std::{net::SocketAddr, sync::mpsc::Sender, time::Duration};
+use std::{
+    net::{SocketAddr, TcpStream},
+    sync::mpsc::Sender,
+    time::Duration,
+};
 pub use torrent::Torrent;
 
 #[derive(Debug)]
@@ -105,6 +109,8 @@ impl Torrent {
     }
 }
 
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
+
 #[instrument(skip(info, peer_id), level = Level::DEBUG)]
 fn request_complete_file(
     peer_addr: &SocketAddr,
@@ -112,7 +118,8 @@ fn request_complete_file(
     info: &Info,
 ) -> Result<PeerChannel> {
     debug!("Connecting to peer");
-    let mut channel = PeerChannel::connect(peer_addr, &info.sha1, peer_id)
+    let stream = TcpStream::connect_timeout(peer_addr, CONNECT_TIMEOUT)?;
+    let mut channel = PeerChannel::handshake(stream, &info.sha1, peer_id)
         .inspect(|channel| debug!(remote_id = %channel.remote_id(), "Connected"))
         .inspect_err(|error| debug!(%error, "Failed to connect"))?;
 

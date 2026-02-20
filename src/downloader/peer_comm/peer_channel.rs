@@ -18,24 +18,23 @@ pub struct PeerChannel {
 }
 
 impl PeerChannel {
-    const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
     const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
     const MESSAGE_READ_TIMEOUT: Duration = Duration::from_secs(60);
 
-    pub fn connect(
-        addr: &SocketAddr,
+    pub fn handshake(
+        mut stream: TcpStream,
         info_hash: &Sha1,
         peer_id: &PeerId,
     ) -> io::Result<PeerChannel> {
-        let mut stream = TcpStream::connect_timeout(addr, Self::CONNECT_TIMEOUT)?;
         stream.set_read_timeout(Some(Self::HANDSHAKE_TIMEOUT))?;
-        let remote_id = Self::handshake(&mut stream, info_hash, peer_id)?;
+        let remote_id = Self::exchange_handshake(&mut stream, info_hash, peer_id)?;
         stream.set_read_timeout(Some(Self::MESSAGE_READ_TIMEOUT))?;
+        let peer_addr = stream.peer_addr()?;
 
         Ok(PeerChannel {
             stream,
             remote_id,
-            peer_addr: *addr,
+            peer_addr,
         })
     }
 
@@ -47,7 +46,11 @@ impl PeerChannel {
         &self.remote_id
     }
 
-    fn handshake(stream: &mut TcpStream, info_hash: &Sha1, peer_id: &PeerId) -> io::Result<PeerId> {
+    fn exchange_handshake(
+        stream: &mut TcpStream,
+        info_hash: &Sha1,
+        peer_id: &PeerId,
+    ) -> io::Result<PeerId> {
         HandshakeMessage::new(info_hash, peer_id).send(stream)?;
         HandshakeMessage::receive(stream).map(|msg| PeerId::new(msg.peer_id))
     }
