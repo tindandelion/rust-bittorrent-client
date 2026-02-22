@@ -62,7 +62,7 @@ impl Torrent {
                     current_index: total_probed,
                     total_count: total_peers,
                 })
-                .inspect_err(|e| error!(%e, "Failed to send probing event"));
+                .inspect_err(|e| error!(%e, "Failed to send AppEvent to the UI thread"));
         });
         connector
             .connect(peer_addrs)

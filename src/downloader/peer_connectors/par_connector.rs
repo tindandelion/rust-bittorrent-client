@@ -6,19 +6,31 @@ use std::{
 
 use mio::{Events, Poll, Token};
 
-pub struct ParPeerConnector {
+pub struct ParPeerConnector<'a> {
     timeout: Duration,
+    progress_callback: Box<dyn Fn(SocketAddr, usize) + 'a>,
+    peers_probed: usize,
 }
 
-impl Default for ParPeerConnector {
+impl<'a> Default for ParPeerConnector<'a> {
     fn default() -> Self {
         Self {
             timeout: super::CONNECT_TIMEOUT,
+            progress_callback: Box::new(|_, _| {}),
+            peers_probed: 0,
         }
     }
 }
 
-impl ParPeerConnector {
+impl<'a> ParPeerConnector<'a> {
+    pub fn with_progress_callback(
+        mut self,
+        progress_callback: impl Fn(SocketAddr, usize) + 'a,
+    ) -> Self {
+        self.progress_callback = Box::new(progress_callback);
+        self
+    }
+
     pub fn with_timeout(mut self, timeout: Duration) -> Self {
         self.timeout = timeout;
         self
@@ -28,20 +40,24 @@ impl ParPeerConnector {
         self,
         peer_addrs: impl IntoIterator<Item = SocketAddr>,
     ) -> impl Iterator<Item = TcpStream> {
-        PeerPoller::new(peer_addrs, self.timeout).expect("Failed to create peer iterator")
+        PeerPoller::new(peer_addrs, self.timeout, self.progress_callback)
+            .expect("Failed to create peer iterator")
     }
 }
 
-struct PeerPoller {
+struct PeerPoller<'a> {
     probes: HashMap<Token, PeerProbe>,
     poll: Poll,
     poll_timeout: Duration,
+    peers_probed: usize,
+    progress_callback: Box<dyn Fn(SocketAddr, usize) + 'a>,
 }
 
-impl PeerPoller {
+impl<'a> PeerPoller<'a> {
     fn new(
         peer_addrs: impl IntoIterator<Item = SocketAddr>,
         poll_timeout: Duration,
+        progress_callback: Box<dyn Fn(SocketAddr, usize) + 'a>,
     ) -> IoResult<Self> {
         let mut probes: HashMap<Token, PeerProbe> = HashMap::new();
         let mut poll = Poll::new()?;
@@ -57,6 +73,8 @@ impl PeerPoller {
             probes,
             poll,
             poll_timeout,
+            peers_probed: 0,
+            progress_callback,
         })
     }
 
@@ -78,16 +96,20 @@ impl PeerPoller {
     }
 
     fn remove_errored_probes(&mut self) -> IoResult<()> {
-        for probe in self.probes.values_mut() {
-            if probe.state == ProbeState::Error {
-                probe.unregister(&mut self.poll)?;
+        let errored_tokens: Vec<Token> = self
+            .probes
+            .iter()
+            .filter(|(_, probe)| probe.state == ProbeState::Error)
+            .map(|(token, _)| *token)
+            .collect();
+
+        for token in errored_tokens {
+            if let Some(mut probe) = self.probes.remove(&token) {
+                self.unregister_probe(&mut probe)?;
             }
         }
-        self.probes
-            .retain(|_, probe| probe.state != ProbeState::Error);
         Ok(())
     }
-
     fn get_connected_stream(&mut self) -> IoResult<Option<TcpStream>> {
         let connected_probe_token = self
             .probes
@@ -97,7 +119,8 @@ impl PeerPoller {
 
         if let Some(token) = connected_probe_token {
             let mut probe = self.probes.remove(&token).unwrap();
-            probe.unregister(&mut self.poll)?;
+            self.unregister_probe(&mut probe)?;
+
             probe.into_std_tcp_stream().map(Some)
         } else {
             Ok(None)
@@ -114,11 +137,18 @@ impl PeerPoller {
             probe.handle_connect_event();
         }
     }
+
+    fn unregister_probe(&mut self, probe: &mut PeerProbe) -> IoResult<()> {
+        probe.unregister(&mut self.poll)?;
+        self.peers_probed += 1;
+        (self.progress_callback)(probe.addr, self.peers_probed);
+        Ok(())
+    }
 }
 
 type IoResult<T> = std::result::Result<T, std::io::Error>;
 
-impl Iterator for PeerPoller {
+impl<'a> Iterator for PeerPoller<'a> {
     type Item = TcpStream;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -137,6 +167,7 @@ struct PeerProbe {
     token: Token,
     stream: mio::net::TcpStream,
     state: ProbeState,
+    addr: SocketAddr,
 }
 
 impl PeerProbe {
@@ -146,6 +177,7 @@ impl PeerProbe {
             token,
             stream,
             state: ProbeState::Connecting,
+            addr,
         })
     }
 
@@ -176,7 +208,7 @@ impl PeerProbe {
 #[cfg(test)]
 mod tests {
     use crate::result::Result;
-    use std::net::TcpListener;
+    use std::{cell::RefCell, collections::HashSet, net::TcpListener};
 
     use super::*;
 
@@ -225,6 +257,35 @@ mod tests {
             .collect::<Vec<_>>();
 
         assert_eq!(connected_addresses, vec![]);
+
+        Ok(())
+    }
+
+    #[test]
+    fn invoke_progress_callback_for_each_responsive_peer() -> Result<()> {
+        let listener = TcpListener::bind("127.0.0.1:0")?;
+        let peer_addresses = vec![
+            "127.0.0.1:12345".parse()?, // refuse to connect
+            "192.0.2.1:6881".parse()?,  // timeout to connect
+            listener.local_addr()?,     // responsive peer
+        ];
+        let progress = RefCell::new(HashSet::<SocketAddr>::new());
+        let progress_callback = |addr: SocketAddr, _: usize| {
+            let mut curr = progress.borrow_mut();
+            curr.insert(addr);
+        };
+
+        let connector = ParPeerConnector::default()
+            .with_timeout(Duration::from_secs(1))
+            .with_progress_callback(progress_callback);
+
+        let iterator = connector.connect(peer_addresses.clone());
+        let _ = iterator.collect::<Vec<_>>();
+
+        assert_eq!(
+            HashSet::from([peer_addresses[0], peer_addresses[2]]),
+            *progress.borrow()
+        );
 
         Ok(())
     }
