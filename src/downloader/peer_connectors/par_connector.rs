@@ -31,6 +31,7 @@ impl<'a> ParPeerConnector<'a> {
         self
     }
 
+    #[cfg(test)]
     pub fn with_timeout(mut self, timeout: Duration) -> Self {
         self.timeout = timeout;
         self
@@ -40,24 +41,25 @@ impl<'a> ParPeerConnector<'a> {
         self,
         peer_addrs: impl IntoIterator<Item = SocketAddr>,
     ) -> impl Iterator<Item = TcpStream> {
-        PeerPoller::new(peer_addrs, self.timeout, self.progress_callback)
-            .expect("Failed to create peer iterator")
+        PeerPoller::new(peer_addrs, self).expect("Failed to create peer iterator")
+    }
+
+    fn report_progress(&mut self, addr: SocketAddr) {
+        self.peers_probed += 1;
+        (self.progress_callback)(addr, self.peers_probed);
     }
 }
 
 struct PeerPoller<'a> {
     probes: HashMap<Token, PeerProbe>,
     poll: Poll,
-    poll_timeout: Duration,
-    peers_probed: usize,
-    progress_callback: Box<dyn Fn(SocketAddr, usize) + 'a>,
+    connector: ParPeerConnector<'a>,
 }
 
 impl<'a> PeerPoller<'a> {
     fn new(
         peer_addrs: impl IntoIterator<Item = SocketAddr>,
-        poll_timeout: Duration,
-        progress_callback: Box<dyn Fn(SocketAddr, usize) + 'a>,
+        connector: ParPeerConnector<'a>,
     ) -> IoResult<Self> {
         let mut probes: HashMap<Token, PeerProbe> = HashMap::new();
         let mut poll = Poll::new()?;
@@ -72,9 +74,7 @@ impl<'a> PeerPoller<'a> {
         Ok(Self {
             probes,
             poll,
-            poll_timeout,
-            peers_probed: 0,
-            progress_callback,
+            connector,
         })
     }
 
@@ -85,7 +85,7 @@ impl<'a> PeerPoller<'a> {
                 return Ok(Some(stream));
             }
 
-            self.poll.poll(&mut events, Some(self.poll_timeout))?;
+            self.poll.poll(&mut events, Some(self.connector.timeout))?;
             if events.is_empty() {
                 return Ok(None);
             }
@@ -110,6 +110,7 @@ impl<'a> PeerPoller<'a> {
         }
         Ok(())
     }
+
     fn get_connected_stream(&mut self) -> IoResult<Option<TcpStream>> {
         let connected_probe_token = self
             .probes
@@ -140,8 +141,7 @@ impl<'a> PeerPoller<'a> {
 
     fn unregister_probe(&mut self, probe: &mut PeerProbe) -> IoResult<()> {
         probe.unregister(&mut self.poll)?;
-        self.peers_probed += 1;
-        (self.progress_callback)(probe.addr, self.peers_probed);
+        self.connector.report_progress(probe.addr);
         Ok(())
     }
 }
