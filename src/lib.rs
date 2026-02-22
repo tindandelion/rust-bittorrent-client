@@ -9,15 +9,10 @@ mod util;
 use tracing::{Level, debug, error, info, instrument};
 
 use crate::{
-    downloader::{
-        PeerChannel,
-        peer_connectors::{ParPeerConnector, SeqPeerConnector},
-    },
-    ratatui_ui::AppEvent,
-    torrent::Info,
-    tracker::AnnounceRequest,
+    downloader::PeerChannel, ratatui_ui::AppEvent, torrent::Info, tracker::AnnounceRequest,
     types::PeerId,
 };
+pub use downloader::peer_connectors::ParPeerConnector;
 use result::Result;
 use std::{
     net::{SocketAddr, TcpStream},
@@ -138,7 +133,11 @@ impl Torrent {
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 
 #[instrument(skip_all, level = Level::DEBUG)]
-fn request_complete_file(stream: TcpStream, peer_id: &PeerId, info: &Info) -> Result<PeerChannel> {
+pub fn request_complete_file(
+    stream: TcpStream,
+    peer_id: &PeerId,
+    info: &Info,
+) -> Result<PeerChannel> {
     let mut channel = PeerChannel::handshake(stream, &info.sha1, peer_id)
         .inspect(|channel| debug!(remote_id = %channel.remote_id(), "Connected"))?;
 
