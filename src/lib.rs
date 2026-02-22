@@ -42,7 +42,7 @@ impl Torrent {
         addr: SocketAddr,
         peer_id: PeerId,
     ) -> Result<PeerChannel> {
-        let stream = TcpStream::connect_timeout(&addr, CONNECT_TIMEOUT)?;
+        let stream = TcpStream::connect_timeout(&addr, Duration::from_secs(5))?;
         request_complete_file(stream, &peer_id, &self.info)
     }
 
@@ -129,8 +129,6 @@ impl Torrent {
         result
     }
 }
-
-const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 
 #[instrument(skip_all, level = Level::DEBUG)]
 pub fn request_complete_file(
