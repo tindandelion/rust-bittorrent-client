@@ -8,6 +8,8 @@ use bt_client::result::Result;
 use bt_client::types::PeerId;
 
 fn main() -> Result<()> {
+    setup_tracing()?;
+
     let torrent = Torrent::read_default_file()?;
     let peer_id = PeerId::default();
     let mut errors = HashMap::<String, usize>::new();
@@ -44,6 +46,18 @@ fn main() -> Result<()> {
     for (err, count) in errors {
         println!("{err}: {count}");
     }
+
+    Ok(())
+}
+
+fn setup_tracing() -> Result<()> {
+    let crate_name = env!("CARGO_PKG_NAME");
+    let log_filename = format!("{}.log", crate_name);
+
+    tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::DEBUG)
+        .with_writer(std::fs::File::create(&log_filename)?)
+        .init();
 
     Ok(())
 }

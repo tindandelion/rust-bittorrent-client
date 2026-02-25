@@ -5,6 +5,7 @@ use std::{
 };
 
 use mio::{Events, Poll, Token};
+use tracing::{Span, debug, debug_span};
 
 pub struct ParPeerConnector<'a> {
     timeout: Duration,
@@ -168,16 +169,22 @@ struct PeerProbe {
     stream: mio::net::TcpStream,
     state: ProbeState,
     addr: SocketAddr,
+    span: Span,
 }
 
 impl PeerProbe {
     fn connect(token: Token, addr: SocketAddr) -> IoResult<Self> {
-        let stream = mio::net::TcpStream::connect(addr)?;
+        let span = debug_span!("connect_to_peer", addr = %addr);
+        let stream = span.in_scope(|| {
+            debug!("initiating connection");
+            mio::net::TcpStream::connect(addr)
+        })?;
         Ok(Self {
             token,
             stream,
             state: ProbeState::Connecting,
             addr,
+            span,
         })
     }
 
@@ -188,11 +195,16 @@ impl PeerProbe {
     }
 
     fn handle_connect_event(&mut self) {
-        self.state = match self.stream.peer_addr() {
-            Ok(_) => ProbeState::Connected,
-            Err(e) if e.kind() == std::io::ErrorKind::NotConnected => ProbeState::Error,
-            Err(_) => ProbeState::Error,
-        }
+        self.state = self.span.in_scope(|| match self.stream.peer_addr() {
+            Ok(_) => {
+                debug!("connection established");
+                ProbeState::Connected
+            }
+            Err(err) => {
+                debug!(%err,"connection failed");
+                ProbeState::Error
+            }
+        });
     }
 
     fn into_std_tcp_stream(self) -> IoResult<std::net::TcpStream> {
