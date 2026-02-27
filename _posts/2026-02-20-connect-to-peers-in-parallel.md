@@ -40,14 +40,25 @@ Fortunately, a better solution exist, that allows us to handle multiple TCP conn
 
 # I/O: blocking vs non-blocking
 
-So far, we've been using _blocking I/O_ to communicate with peers over TCP. In that mode, the operating system suspends the execution thread until the I/O operation is complete. For example, when the program makes a `connect()` syscall to establish a TCP connection over a socket, it does not return until the connection is established, or an error condition occurs. Similarly, the call to `read()` to read data will not return until the data is ready. 
+So far, we've been using _blocking I/O_ to communicate with peers over TCP. In that mode, any potentially long-lasting I/O system call, such as `connect()` or `read()`, will block until the operation is complete. The OS suspends the calling thread and wakes it up only when the data is ready, or an error has occurred. 
 
-In many cases, this is what the programmer wants. For example, suppose we write a simple program that talks to a remote service. There's not much that program can do until it receives a response from the service, so waiting idly until it receives the data is a sensible thing to do. 
+Blocking I/O is a very convenient model for programmers in many cases. First, the program flow is easy to follow: it consists of subsequent calls to I/O system calls. Second, in many cases the program has nothing to do but wait until the data is ready: the OS does its best to keep the thread suspended while the I/O operation is still in progress. 
 
-The advantage of blocking I/O is its simplicity for the programmer: the program is a linear sequence of I/O operations. 
+Things get different when there is other work that the program can do while waiting for an I/O operation to finish. In that case, blocking calls become a limitation rather than assistance. Hence, I/O operations support so-called _non-blocking I/O_. 
 
-Things get different when there is work that the program could do while waiting for a response from the remote server. 
+In non-blocking mode, I/O system calls (for example `connect()` or `read()`) return immediately. If the operation is not ready yet, the OS signals about it with an error code `EWOULDBLOCK` or `EAGAIN` (depending on the operating system). In that case, the caller can switch to doing some other work, and retry the operation again according to its own logic. 
 
-# Non-blocking I/O
+#### OS event queues 
+
+So non-blocking I/O gives programmers much more flexibility about what to do while the I/O operation is still ongoing. But then the question becomes: what should we do when we've run out of all available work and really need to wait for the I/O operation to finish? 
+
+One possible approach could be polling. Speaking abstractly, we could query the OS in a loop if the result of the I/O operation is ready or not. The actual mechanism by which we can obtain the status of the operation depends on its type, but generally we can obtain the operation status one way or another. 
+
+Polling isn't very efficient, though. If we poll too frequently, we wake up the thread unnecessarily, thus occupying CPU time just to ask for the updated status. If we poll at longer intervals, we end up reacting too slowly. We need a solution that could allow us unnecessary thread wake-ups, but also to react to the I/O events quickly without long delays. 
+
+
+
+
+
 
 [mpsc-channels-post]: {{site.baseurl}}/{% post_url 2026-01-12-background-tasks-ratatui %}#inter-thread-event-channel
