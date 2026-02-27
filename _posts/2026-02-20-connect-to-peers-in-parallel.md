@@ -56,7 +56,7 @@ One possible approach could be polling. Speaking abstractly, we could query the 
 
 Polling isn't very efficient, though. If we poll too frequently, we wake up the thread unnecessarily, thus occupying CPU time just to ask for the updated status. If we poll at longer intervals, we end up reacting too slowly. We need a solution that could allow us unnecessary thread wake-ups, but also to react to the I/O events quickly without long delays. 
 
-
+Luckily, modern operating systems provide us with such a mechanism: event queues. 
 
 
 
