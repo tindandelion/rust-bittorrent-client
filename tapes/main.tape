@@ -6,10 +6,10 @@ Set Width 1200
 Set Height 600
 
 # Type a command in the terminal.
-Type "cargo run -q"
+Type "RUSTFLAGS='-A warnings' cargo run -q"
 Sleep 0.5
 Enter
 
-Sleep 60
+Sleep 10
 
 
