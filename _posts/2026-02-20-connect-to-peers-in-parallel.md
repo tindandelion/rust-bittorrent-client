@@ -1,12 +1,16 @@
 ---
 layout: post
-title:  "Non-blocking I/O: Connect to multiple peers in parallel"
+title:  "Non-blocking I/O: Connect to multiple peers concurrently"
 date: 2026-02-20 
 ---
 
+In this section, I'm taking a first shot at dealing with multiple peers concurrently using non-blocking I/O. We'll revisit the process of connecting to remote hosts and try to eliminate the biggest time-sucker we've had so far: **connection timeouts**. 
+
+[*Version 0.1.2 on GitHub*][github-0.1.2]{: .no-github-icon}
+
 # What errors do we get from peers? 
 
-I was interested to see what kinds of errors we usually get when we try to connect to a remote peer. To dive into it, I wrote a simple [side program][link-missing] to collect that data. That program just iterates over the collection of peer addresses received from the torrent tracker, and tries to request the file from each peer. It counts the types of errors by type, along with the time it took to receive the response. 
+I was interested to see what kinds of errors we usually get when we try to connect to a remote peer. To dive into it, I wrote a small [side program](https://github.com/tindandelion/rust-bittorrent-client/blob/0.1.2/examples/request-file.rs) to collect that data. That program just iterates over the collection of peer addresses received from the torrent tracker, and tries to request the file from each peer. It counts errors by type, along with the time it took to receive the response. 
 
 Running this program, we get the following statistics at the end: 
 
@@ -23,19 +27,21 @@ That result has in fact confirmed my suspicions. As you can see, we waste most o
 
 The general idea for optimization really lies on the surface: instead of trying each peer one by one in sequence, we can try to connect to all of them in parallel, and then continue working with the one that responds first. 
 
-The very first solution that comes to mind is to use multiple threads: just spawn as many worker threads as there are IP addresses, and let each thread try to connect to the remote host. When the worker connects or receives an error, it can report to the main thread via [MPSC channel][mpsc-channels-post]. The main thread simply waits for the first successful message in the channel, and then proceeds with the connected TCP stream. 
+# Why not multiple threads? 
+
+The very first solution that comes to mind is to use multiple threads: just spawn as many worker threads as there are IP addresses, and let each thread try to connect to the remote host. When the worker connects or receives an error, it should report to the main thread via [MPSC channel][mpsc-channels-post]. The main thread simply waits for the first successful message in the channel, and then proceeds with the connected TCP stream. 
 
 In fact, this is a pretty viable solution. However, it doesn't look that appealing to me, for two reasons. 
 
-The first reason is that there's not a lot of new learning opportunities. I already know how to work with threads and channels in Rust, so it won't be a big challenge to implement that solution. I'd like to try something new instead. 
+The **first reason** is that there's not a lot of new learning opportunities. I already know how to work with threads and channels in Rust, so it won't be a big challenge to implement that solution. I'd like to try something new instead. 
 
-The second reason is that this solution is unnecessarily wasteful. The majority of spawned threads will just be sitting there doing nothing. However, each thread comes with an overhead: the OS allocates a sizable chunk of user space memory to maintain the thread's stack, plus some kernel memory for thread bookkeeping. The actual size of allocated memory depends on the operating system, but it can be as large as 8 megabytes per thread's stack for 64-bit Linux architectures. 
+**Another reason** is that this solution is unnecessarily wasteful. The majority of spawned threads will just be sitting there doing nothing. However, each thread comes with an overhead: the OS allocates a sizable chunk of user space memory to maintain the thread's stack, plus some kernel memory for thread bookkeeping. The actual size of allocated memory depends on the operating system, but it can be as large as 8 megabytes per thread's stack for 64-bit Linux architectures. 
 
 Granted, in our case that memory overhead is not a big problem: we'd only spawn around 50 threads, which is peanuts for the modern hardware. That overhead usually becomes a bottleneck in heavily loaded server applications. However, for sake of learning, let's pretend that we are memory-bound and that overhead is really a problem. 
 
 It's not a strictly theoretical problem, indeed. Let's imagine that I want to run a BitTorrent client on an AWS instance, and I want to use the smallest possible instance type, to save the costs. As of 2026, the smallest instance type is [t4g.nano](https://aws.amazon.com/ec2/instance-types/t4/), which only gives us 512 MB of memory. For sure, in such a tight environment we would like to use as little memory as possible, and wasting 400 MB (50 threads &times; 8 MB stack size) becomes very unreasonable. 
 
-Fortunately, a better solution exist, that allows us to handle multiple TCP connections concurrently using only a single thread. Enter _Non-blocking I/O_. 
+Fortunately, a better solution exists that allows us to handle multiple TCP connections concurrently using only a single thread. Enter _non-blocking I/O_. 
 
 
 # I/O: blocking vs non-blocking
@@ -54,11 +60,95 @@ So non-blocking I/O gives programmers much more flexibility about what to do whi
 
 One possible approach could be polling. Speaking abstractly, we could query the OS in a loop if the result of the I/O operation is ready or not. The actual mechanism by which we can obtain the status of the operation depends on its type, but generally we can obtain the operation status one way or another. 
 
-Polling isn't very efficient, though. If we poll too frequently, we wake up the thread unnecessarily, thus occupying CPU time just to ask for the updated status. If we poll at longer intervals, we end up reacting too slowly. We need a solution that could allow us unnecessary thread wake-ups, but also to react to the I/O events quickly without long delays. 
+Polling isn't very efficient, though. If we poll too frequently, we wake up the thread unnecessarily, thus occupying CPU time just to ask for the updated status. If we poll at longer intervals, we end up reacting too slowly. We need a solution that could allow us to avoid unnecessary thread wake-ups, but also to react to the I/O events quickly without long delays. 
 
-Luckily, modern operating systems provide us with such a mechanism: event queues. 
+Luckily, modern operating systems provide us with such a mechanism: event queues. OS event queues work in conjunction with the non-blocking I/O as follows: 
 
+* The application creates an event queue and registers event sources, such as sockets or file descriptors, in that queue, along with some additional information: event types, trigger conditions, etc. One queue can handle multiple event sources, acting as a multiplexer. 
 
+* When the application needs more data to move forward, it polls the queue. The OS suspends the calling thread and wakes it up only when there's an event waiting to be processed; 
 
+* The application wakes up, receives the event and moves forward. 
+
+Thus, event queues give us a tool to facilitate the following tasks: 
+
+* Wait for I/O events efficiently, avoiding unnecessary thread wake-ups when the data is not ready yet; 
+* Merge events from different sources, allowing us to use a single event loop to process multiple I/O sources concurrently. 
+
+#### Dealing with the zoo: _mio_ library
+
+Unfortunately, there's no consensus among different platforms in event queue implementations: 
+
+* **epoll** API in Linux systems; 
+* **kqueue** API in BSD systems, including MacOS; 
+* **IOCP** in Windows-based systems
+
+All these APIs essentially serve the same purpose of managing I/O events, but differ in behaviour and implementation details, which complicates cross-platform application development. It's no wonder that over time a bunch of cross-platform libraries have emerged, that provide a layer of abstraction on top of OS-specific APIs and mitigate the platform-specific differences. 
+
+In Rust, the most popular library for working with non-blocking I/O is [_mio (Metal I/O)_](https://docs.rs/mio/latest/mio/): 
+
+> Mio is a fast, low-level I/O library for Rust focusing on non-blocking APIs and event notification for building high performance I/O apps with as little overhead as possible over the OS abstractions.
+
+As of version _1.1.1_, **mio** provides support for a variety of platforms: 
+
+* Linux; 
+* Windows;
+* BSD-based: macOS, OpenBSD, FreeBSD, etc.; 
+* Mobile: iOS, Android.
+
+So in a nutshell, mio looks like an obvious choice when it comes to working with non-blocking I/O in Rust, so let's give it a shot. 
+
+# Connecting to peers concurrently
+
+First thing I decided to do is to hide the pesky details of connecting to peers (concurrent or otherwise), and provide a nice abstraction that I could use in the main app code. In my mind, I'd like to have an entity with the following simple API: 
+
+```rust
+struct PeerConnector { ... }
+
+impl PeerConnector { 
+    pub fn connect(self, peer_addrs: Vec<SocketAddr>) -> impl Iterator<Item = TcpStream> { ... }
+}
+```
+
+Essentially, we could give `PeerConnector` a list of socket addresses, and it would return an `Iterator` over connected `TcpStream`s of peers. The clients of this struct are not interested in how exactly the connection process goes: the details are hidden behind that simple API. 
+
+#### Old logic: _SeqPeerConnector_
+
+So I ended up with two different implementations that support that kind of API. The first one is [`SeqPeerConnector`](https://github.com/tindandelion/rust-bittorrent-client/blob/0.1.2/src/downloader/peer_connectors/seq_connector.rs) that uses our familiar blocking I/O. This is more of a refactoring artifact: it emerged as I was refactoring the existing code into a new code structure. I think this implementation will go away in the next version, but I keep it for now for nostalgic reasons. 
+
+#### New logic: _ParPeerConnector_
+
+The second implementation is [`ParPeerConnector`](https://github.com/tindandelion/rust-bittorrent-client/blob/0.1.2/src/downloader/peer_connectors/par_connector.rs), and that's where our non-blocking I/O lives. That struct itself is simply an entry point, the bulk of logic is spread across a couple of helper data types: `PeerProbe` and `PeerPoller`. 
+
+[`PeerProbe`](https://github.com/tindandelion/rust-bittorrent-client/blob/0.1.2/src/downloader/peer_connectors/par_connector.rs#L60) is a struct that tracks the current [state](https://github.com/tindandelion/rust-bittorrent-client/blob/0.1.2/src/downloader/peer_connectors/par_connector.rs#L60) of connection process for each individual IP address. It starts in `Connecting` state and then updates the state each time its [`handle_connect_event()`](https://github.com/tindandelion/rust-bittorrent-client/blob/0.1.2/src/downloader/peer_connectors/par_connector.rs#L60) method is called: 
+
+* We check if the underlying `TcpStream` is connected by querying its `peer_addr()` method;
+* If `peer_addr` returns `Ok` we consider that stream connected and enter the `Connected` state;
+* If `peer_addr` results in `Err`, we assume that the peer refused to connect and enter the `Error` state. 
+
+The polling logic itself resides in the [`PeerPoller`](https://github.com/tindandelion/rust-bittorrent-client/blob/0.1.2/src/downloader/peer_connectors/par_connector.rs#L60) helper struct that implements `Iterator<TcpStream>` trait. `PeerPoller` keeps a list of active probes, one per each IP address, and manages that list at every call to `next()` in a loop: 
+
+1. We first search for a probe in the `Connected` state. If such probe is found, we remove it from the list of active probes and return its `TcpStream` as the result of `Iterator::next()`; 
+2. If there are no connected probes at the moment, we poll the event queue by calling mio's [`Poll::poll()`](https://docs.rs/mio/latest/mio/struct.Poll.html#method.poll) method. That puts our thread to sleep until there are events ready to be handled; 
+3. When the `poll()` returns, we receive the list of occurred I/O events, and update the state of affected probes. 
+4. Finally, we remove errored probes from the active probe list and repeat from step _1_. 
+
+On occasion, `poll()` would finish because of the timeout, and the event list remains empty. In that case, we assume that all remaining peers were unresponsive, and we return `None` as a result of `next()`. To the caller it signals that there are no more peers to work with. 
+
+# Does it work? 
+
+So let's recap what our `ParPeerConnector` does: 
+
+* When we call `ParPeerConnector::connect()` it sends a non-blocking connect request to all peers from the list and returns an iterator over connected `TcpStream`s; 
+* Each call to `next()` either returns immediately, or blocks until we connect to _any_ of not yet connected peers;
+* Once we've obtained a connected `TcpStream`, we can proceed to request a file and start downloading; 
+* If the peer refuses to serve the torrent, we call `next()` again to get the next connected `TcpStream`. 
+
+It's worth emphasizing that we only handle `connect` in a non-blocking manner. **The rest of communication is still going in the old-fashioned blocking way**. However, that's a good starting point that addresses the [biggest annoyance](#what-errors-do-we-get-from-peers) we've had so far:
+
+![Application UI]({{ site.baseurl }}/assets/images/connect-to-peers-in-parallel/main.gif)
+
+[*Current version (0.1.2) on GitHub*][github-0.1.2]{: .no-github-icon}
 
 [mpsc-channels-post]: {{site.baseurl}}/{% post_url 2026-01-12-background-tasks-ratatui %}#inter-thread-event-channel
+[github-0.1.2]: https://github.com/tindandelion/rust-bittorrent-client/tree/0.1.2

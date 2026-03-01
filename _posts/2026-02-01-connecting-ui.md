@@ -47,7 +47,7 @@ That looks quite satisfying! Let's reflect on what we've achieved during the las
 * We can [run a long-running task in a separate thread][background-tasks-post] and connect it to the UI via channels.
 * In this post we've tied everything together and got the entire application working end-to-end.
 
-That's quite a lot! To mark the milestone, I'm proudly tagging [this release as 0.1.0][github-0.1.0] and moving on to the next challenge. 
+That's quite a lot! To mark the milestone, I'm proudly tagging [this release as 0.1.0][github-0.1.0] and moving on to the [next challenge][next-post]. 
 
 [*Current version (0.1.0) on GitHub*][github-0.1.0]{: .no-github-icon}
 
@@ -55,3 +55,4 @@ That's quite a lot! To mark the milestone, I'm proudly tagging [this release as 
 [prev-ui]: {{site.baseurl}}/{% post_url 2026-01-12-background-tasks-ratatui %}#fake-it-till-you-make-it
 [build-terminal-ui]: {{site.baseurl}}/{% post_url 2025-12-27-starting-with-ratatui %}
 [github-0.1.0]: https://github.com/tindandelion/rust-bittorrent-client/tree/0.1.0
+[next-post]: {{site.baseurl}}/{% post_url 2026-02-14-first-integration-test %}

@@ -170,12 +170,13 @@ Good job, time to move forward!
 
 # Next steps 
 
-With the integration tests in place, I feel very well prepared to dive deep and start making serious changes to the core functionality of this BitTorrent client. The first thing I would like to address is that painfully slow process of probing the peers one by one. There's a lot of possibilities to improve that: let's dive in! 
+With the integration tests in place, I feel very well prepared to dive deep and start making serious changes to the core functionality of this BitTorrent client. The first thing I would like to address is that painfully slow process of probing the peers one by one. There's a lot of possibilities to improve that: [let's dive in!][next-post] 
 
 [*Current version (0.1.1) on GitHub*][github-0.1.1]{: .no-github-icon}
 
 [prev-post-download-speed]: {{site.baseurl}}/{% post_url 2025-07-25-improve-download-speed %}
 [github-0.1.1]: https://github.com/tindandelion/rust-bittorrent-client/tree/0.1.1
+[next-post]: {{site.baseurl}}/{% post_url 2026-02-20-connect-to-peers-in-parallel %}
 
 
 
