@@ -10,7 +10,7 @@ In this section, I'm taking a first shot at dealing with multiple peers concurre
 
 # What errors do we get from peers? 
 
-I was interested to see what kinds of errors we usually get when we try to connect to a remote peer. To dive into it, I wrote a small [side program](https://github.com/tindandelion/rust-bittorrent-client/blob/0.1.2/examples/request-file.rs) to collect that data. That program just iterates over the collection of peer addresses received from the torrent tracker, and tries to request the file from each peer. It counts errors by type, along with the time it took to receive the response. 
+I was curious to see what kinds of errors we usually get when we try to connect to a remote host. To give me some insight, I wrote a small [side program](https://github.com/tindandelion/rust-bittorrent-client/blob/0.1.2/examples/request-file.rs) to collect that data. This program receives the list of peers from the torrent tracker and tries to request the file from each peer. It counts errors by type, along with the time it took to receive the response. 
 
 Running this program, we get the following statistics at the end: 
 
@@ -23,7 +23,7 @@ Running this program, we get the following statistics at the end:
 4:      Connection refused (os error 61): 1 (total 207 ms)
 ```
 
-That result confirmed my suspicions. As you can see, we waste most of the time trying to connect to unresponsive peers, only to get the "connection timed out" in the end. This is good news, actually: establishing the TCP connection with a peer is the very first step in the interaction, so we can detect and discard unresponsive peers very early on. If we focus only on that part of the interaction and manage to optimize it, we'll already have reduced the time to request the file by a very large amount. 
+That result confirmed my intuitions. As you can see, we waste most of the time trying to connect to unresponsive hosts, only to get the "connection timed out" in the end. This is good news, actually: establishing the TCP connection with a peer is the very first step in the interaction, so we can detect and discard unresponsive peers very early on. If we focus only on that part of the interaction and manage to optimize it, we'll already have reduced the time to request the file by a very large amount! 
 
 The general idea for optimization is simple: instead of trying each peer one by one in sequence, we can try to connect to all of them in parallel, and then continue working with the one that responds first. 
 
@@ -50,7 +50,7 @@ So far, we've been using _blocking I/O_ to communicate with peers over TCP. In t
 
 Blocking I/O is a very convenient model for programmers in many cases. First, the program flow is easy to follow: it consists of subsequent calls to I/O system calls. Second, in many cases the program has nothing to do but wait until the data is ready: the OS does its best to keep the thread suspended while the I/O operation is still in progress. 
 
-It's different when there is other work that the program can do while waiting for an I/O operation to finish. In that case, blocking calls become a limitation rather than assistance. Hence, I/O operations support so-called _non-blocking I/O_. 
+Things are different, though, when there is other work that the program can do while waiting for an I/O operation to finish. In that case, blocking calls become a limitation rather than assistance. Hence, I/O operations support so-called _non-blocking I/O_. 
 
 In non-blocking mode, I/O system calls (for example `connect()` or `read()`) return immediately. If the operation is not ready yet, the OS signals this with an error code `EWOULDBLOCK` or `EAGAIN` (depending on the operating system). In that case, the caller can switch to doing some other work, and retry the operation again according to its own logic. 
 
@@ -58,7 +58,7 @@ In non-blocking mode, I/O system calls (for example `connect()` or `read()`) ret
 
 So non-blocking I/O gives programmers much more flexibility about what to do while the I/O operation is still ongoing. But then the question becomes: what should we do when we've run out of all available work and really need to wait for the I/O operation to finish? 
 
-One possible approach could be polling. Speaking abstractly, we could query the OS in a loop to see whether the I/O operation has completed. The actual mechanism by which we can obtain the status of the operation depends on its type, but generally we can obtain the operation status one way or another. 
+One possible approach could be polling. Speaking abstractly, we could query the OS in a loop to see whether the I/O operation has completed. The actual mechanism by which we can obtain the status of the operation depends on its type, but generally we can get the operation status one way or another. 
 
 Polling isn't very efficient, though. If we poll too frequently, we wake up the thread unnecessarily, thus occupying CPU time just to ask for the updated status. If we poll at longer intervals, we end up reacting too slowly. We need a solution that could allow us to avoid unnecessary thread wake-ups, but also to react to the I/O events quickly without long delays. 
 
@@ -96,7 +96,7 @@ As of version _1.1.1_, **mio** provides support for a variety of platforms:
 * BSD-based: macOS, OpenBSD, FreeBSD, etc.; 
 * Mobile: iOS, Android.
 
-In a nutshell, mio is an obvious choice for non-blocking I/O in Rust, so let's give it a shot. 
+In a nutshell, mio is an obvious choice for programming non-blocking I/O in Rust, so let's give it a shot. 
 
 # Connecting to peers concurrently
 
@@ -120,26 +120,26 @@ So I ended up with two different implementations that support that kind of API. 
 
 The second implementation is [`ParPeerConnector`](https://github.com/tindandelion/rust-bittorrent-client/blob/0.1.2/src/downloader/peer_connectors/par_connector.rs), and that's where our non-blocking I/O lives. That struct itself is simply an entry point; the bulk of the logic is spread across a couple of helper data types: `PeerProbe` and `PeerPoller`. 
 
-[`PeerProbe`](https://github.com/tindandelion/rust-bittorrent-client/blob/0.1.2/src/downloader/peer_connectors/par_connector.rs#L60) is a struct that tracks the current [state](https://github.com/tindandelion/rust-bittorrent-client/blob/0.1.2/src/downloader/peer_connectors/par_connector.rs#L60) of connection process for each individual IP address. It starts in `Connecting` state and then updates the state each time its [`handle_connect_event()`](https://github.com/tindandelion/rust-bittorrent-client/blob/0.1.2/src/downloader/peer_connectors/par_connector.rs#L60) method is called: 
+[`PeerProbe`](https://github.com/tindandelion/rust-bittorrent-client/blob/0.1.2/src/downloader/peer_connectors/par_connector.rs#L60) is a struct that tracks the current [state](https://github.com/tindandelion/rust-bittorrent-client/blob/0.1.2/src/downloader/peer_connectors/par_connector.rs#L60) of connection process for each individual IP address. It starts in `Connecting` state and then updates the state when its [`handle_connect_event()`](https://github.com/tindandelion/rust-bittorrent-client/blob/0.1.2/src/downloader/peer_connectors/par_connector.rs#L60) method is called: 
 
 * We check if the underlying `TcpStream` is connected by querying its `peer_addr()` method;
 * If `peer_addr` returns `Ok` we consider that stream connected and enter the `Connected` state;
 * If `peer_addr` results in `Err`, we assume that the peer refused to connect and enter the `Error` state. 
 
-The polling logic itself resides in the [`PeerPoller`](https://github.com/tindandelion/rust-bittorrent-client/blob/0.1.2/src/downloader/peer_connectors/par_connector.rs#L60) helper struct that implements `Iterator<TcpStream>` trait. `PeerPoller` keeps a list of active probes, one per IP address, and manages that list at every call to `next()` in a loop: 
+The polling logic itself resides in the [`PeerPoller`](https://github.com/tindandelion/rust-bittorrent-client/blob/0.1.2/src/downloader/peer_connectors/par_connector.rs#L60) helper struct that implements `Iterator` over `TcpStream`s. `PeerPoller` keeps a list of active probes, one per IP address, and manages that list at every call to `Iterator::next()` in a loop: 
 
-1. We first search for a probe in the `Connected` state. If such a probe is found, we remove it from the list of active probes and return its `TcpStream` as the result of `Iterator::next()`; 
+1. We first search for a probe that's aleady in the `Connected` state. If such a probe is found, we remove it from the list of active probes and return its `TcpStream` as the result of `Iterator::next()`; 
 2. If there are no connected probes at the moment, we poll the event queue by calling mio's [`Poll::poll()`](https://docs.rs/mio/latest/mio/struct.Poll.html#method.poll) method. That puts our thread to sleep until there are events ready to be handled; 
-3. When the `poll()` returns, we receive the list of I/O events that occurred, and update the state of affected probes. 
+3. When the `poll()` returns, we receive the list of I/O events that have occurred, and update the state of affected probes. 
 4. Finally, we remove errored probes from the active probe list and repeat from step _1_. 
 
-On occasion, `poll()` would finish because of the timeout, and the event list remains empty. In that case, we assume that all remaining peers were unresponsive, and we return `None` as a result of `next()`. To the caller it signals that there are no more peers to work with. 
+On occasion, `poll()` would finish because of the timeout, and the event list ends up empty. In that case, we assume that all remaining peers were unresponsive, and we return `None` as a result of `next()`. To the caller it signals that there are no more peers to work with. 
 
 # Does it work? 
 
 So let's recap what our `ParPeerConnector` does: 
 
-* When we call `ParPeerConnector::connect()` it sends a non-blocking connect request to all peers from the list and returns an iterator over connected `TcpStream`s; 
+* When we call `ParPeerConnector::connect()` it sends a non-blocking connect request to all peers from the list and returns an iterator over `TcpStream`s; 
 * Each call to `next()` either returns immediately, or blocks until we connect to _any_ of the not-yet-connected peers;
 * Once we've obtained a connected `TcpStream`, we can proceed to request a file and start downloading; 
 * If the peer refuses to serve the torrent, we call `next()` again to get the next connected `TcpStream`. 
@@ -148,7 +148,10 @@ It's worth emphasizing that we only handle `connect` in a non-blocking manner. *
 
 ![Application UI]({{ site.baseurl }}/assets/images/connect-to-peers-in-parallel/main.gif)
 
+Great! Looks like a significant improvement compared to the [previous behavior][prev-screenshot]!
+
 [*Current version (0.1.2) on GitHub*][github-0.1.2]{: .no-github-icon}
 
 [mpsc-channels-post]: {{site.baseurl}}/{% post_url 2026-01-12-background-tasks-ratatui %}#inter-thread-event-channel
 [github-0.1.2]: https://github.com/tindandelion/rust-bittorrent-client/tree/0.1.2
+[prev-screenshot]: {{site.baseurl}}/{% post_url 2026-02-01-connecting-ui %}#wiring-the-whole-app-together
