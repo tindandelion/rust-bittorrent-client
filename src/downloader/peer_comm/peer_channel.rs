@@ -4,6 +4,8 @@ use std::{
     time::Duration,
 };
 
+use tracing::{Level, instrument};
+
 use crate::{
     downloader::MessageChannel,
     types::{PeerId, Sha1},
@@ -46,6 +48,7 @@ impl PeerChannel {
         &self.remote_id
     }
 
+    #[instrument(skip_all, err(level=Level::WARN), level = Level::DEBUG)]
     fn exchange_handshake(
         stream: &mut TcpStream,
         info_hash: &Sha1,

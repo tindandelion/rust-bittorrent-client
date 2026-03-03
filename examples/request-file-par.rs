@@ -51,8 +51,7 @@ fn main() -> Result<()> {
 }
 
 fn setup_tracing() -> Result<()> {
-    let crate_name = env!("CARGO_PKG_NAME");
-    let log_filename = format!("{}.log", crate_name);
+    let log_filename = "request-file-par.log";
 
     tracing_subscriber::fmt()
         .with_max_level(tracing::Level::DEBUG)

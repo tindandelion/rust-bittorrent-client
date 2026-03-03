@@ -121,7 +121,7 @@ impl Torrent {
     }
 }
 
-#[instrument(skip_all, level = Level::DEBUG)]
+#[instrument(skip_all, err(level = Level::WARN), level = Level::DEBUG)]
 pub fn request_complete_file(
     stream: TcpStream,
     peer_id: &PeerId,
