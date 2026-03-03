@@ -135,7 +135,7 @@ impl<'a> PeerPoller<'a> {
             let probe = self
                 .probes
                 .get_mut(&token)
-                .expect(&format!("Unexpected token in received event: {token:?}"));
+                .unwrap_or_else(|| panic!("Unexpected token in received event: {token:?}"));
             probe.handle_connect_event();
         }
     }

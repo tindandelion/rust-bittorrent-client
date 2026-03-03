@@ -37,15 +37,6 @@ impl Torrent {
         announce_request.fetch_peer_addresses()
     }
 
-    pub fn request_file_from_address(
-        &self,
-        addr: SocketAddr,
-        peer_id: PeerId,
-    ) -> Result<PeerChannel> {
-        let stream = TcpStream::connect_timeout(&addr, Duration::from_secs(5))?;
-        request_complete_file(stream, &peer_id, &self.info)
-    }
-
     fn request_file(
         &self,
         peer_addrs: Vec<SocketAddr>,
