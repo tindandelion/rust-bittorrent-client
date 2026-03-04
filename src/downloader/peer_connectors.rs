@@ -1,3 +1,4 @@
+mod channel_connector;
 mod par_connector;
 
 use std::time::Duration;

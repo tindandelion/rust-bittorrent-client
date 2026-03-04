@@ -1,5 +1,5 @@
 mod file_downloader;
-mod peer_comm;
+pub mod peer_comm;
 pub mod peer_connectors;
 pub mod request_download;
 

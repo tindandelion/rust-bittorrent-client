@@ -1,4 +1,4 @@
-mod handshake_message;
+pub mod handshake_message;
 mod peer_channel;
 mod peer_message;
 

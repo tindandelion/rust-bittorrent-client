@@ -1,4 +1,4 @@
-mod downloader;
+pub mod downloader;
 pub mod ratatui_ui;
 pub mod result;
 mod torrent;

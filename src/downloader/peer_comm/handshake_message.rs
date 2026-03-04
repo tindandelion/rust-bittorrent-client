@@ -4,7 +4,7 @@ use crate::types::{PeerId, Sha1};
 
 const PROTOCOL_ID: &[u8; 19] = b"BitTorrent protocol";
 
-#[derive(Debug, PartialEq, Default)]
+#[derive(Debug, PartialEq, Default, Clone, Copy)]
 #[repr(C, packed)]
 pub struct HandshakeMessage {
     pstrlen: u8,
