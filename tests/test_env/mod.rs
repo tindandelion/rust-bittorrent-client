@@ -24,7 +24,7 @@ impl TestEnv {
         let image = GenericBuildableImage::new("bt-client-transmission", "latest")
             .with_dockerfile(Self::dockerfile_path())
             .with_file(Self::test_data_dir(), "./war-and-peace")
-            .into_image();
+            .build_image()?;
 
         let container = image
             .with_exposed_port(51413.tcp())

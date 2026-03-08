@@ -6,6 +6,7 @@ pub struct PeerId([u8; 20]);
 pub struct Sha1([u8; 20]);
 
 impl PeerId {
+    #[cfg(test)]
     pub fn random() -> Self {
         use rand::prelude::*;
 
@@ -14,6 +15,7 @@ impl PeerId {
         Self(value)
     }
 
+    #[cfg(test)]
     pub fn new(value: [u8; 20]) -> Self {
         Self(value)
     }
