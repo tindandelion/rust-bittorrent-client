@@ -4,7 +4,7 @@ use std::{
     time::Duration,
 };
 
-use mio::{Events, Poll, Token};
+use mio::{Events, Poll, Token, event::Event};
 use tracing::{Span, debug, debug_span};
 
 pub struct ChannelConnector<'a> {
@@ -136,7 +136,7 @@ impl<'a> PeerPoller<'a> {
                 .probes
                 .get_mut(&token)
                 .unwrap_or_else(|| panic!("Unexpected token in received event: {token:?}"));
-            probe.handle_connect_event();
+            probe.handle_event(event);
         }
     }
 
@@ -194,17 +194,23 @@ impl PeerProbe {
         Ok(())
     }
 
-    fn handle_connect_event(&mut self) {
-        self.state = self.span.in_scope(|| match self.stream.peer_addr() {
-            Ok(_) => {
-                debug!("connection established");
-                ProbeState::Connected
-            }
-            Err(err) => {
-                debug!(%err,"connection failed");
-                ProbeState::Error
-            }
-        });
+    fn handle_event(&mut self, event: &Event) {
+        let _guard = self.span.enter();
+
+        match self.state {
+            ProbeState::Connecting => match self.stream.peer_addr() {
+                Ok(_) => {
+                    debug!("connection established");
+                    self.state = ProbeState::Connected;
+                }
+                Err(err) => {
+                    debug!(%err,"connection failed");
+                    self.state = ProbeState::Error;
+                }
+            },
+            ProbeState::Connected => todo!("Connected"),
+            ProbeState::Error => todo!("Error"),
+        }
     }
 
     fn into_std_tcp_stream(self) -> IoResult<std::net::TcpStream> {
