@@ -25,8 +25,8 @@ impl PeerChannel {
 
     pub fn handshake(
         mut stream: TcpStream,
-        info_hash: &Sha1,
-        peer_id: &PeerId,
+        info_hash: Sha1,
+        peer_id: PeerId,
     ) -> io::Result<PeerChannel> {
         stream.set_read_timeout(Some(Self::HANDSHAKE_TIMEOUT))?;
         let remote_id = Self::exchange_handshake(&mut stream, info_hash, peer_id)?;
@@ -59,8 +59,8 @@ impl PeerChannel {
     #[instrument(skip_all, err(level=Level::WARN), level = Level::DEBUG)]
     fn exchange_handshake(
         stream: &mut TcpStream,
-        info_hash: &Sha1,
-        peer_id: &PeerId,
+        info_hash: Sha1,
+        peer_id: PeerId,
     ) -> io::Result<PeerId> {
         HandshakeMessage::new(info_hash, peer_id).send(stream)?;
         HandshakeMessage::receive(stream).map(|msg| PeerId::new(msg.peer_id))

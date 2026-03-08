@@ -33,7 +33,7 @@ fn main() -> Result<()> {
         );
 
         let start = Instant::now();
-        let result = request_complete_file(stream, &peer_id, &torrent.info);
+        let result = request_complete_file(stream, peer_id, &torrent.info);
         let duration = start.elapsed().as_millis();
         match result {
             Ok(_) => println!("OK ({duration}ms)"),
@@ -68,8 +68,8 @@ fn setup_tracing() -> Result<()> {
 }
 
 #[instrument(skip_all, err(level = Level::WARN), level = Level::DEBUG)]
-fn request_complete_file(stream: TcpStream, peer_id: &PeerId, info: &Info) -> Result<PeerChannel> {
-    let mut channel = PeerChannel::handshake(stream, &info.sha1, peer_id)
+fn request_complete_file(stream: TcpStream, peer_id: PeerId, info: &Info) -> Result<PeerChannel> {
+    let mut channel = PeerChannel::handshake(stream, info.sha1, peer_id)
         .inspect(|channel| debug!(remote_id = %channel.remote_id(), "Connected"))?;
 
     debug!("Connected, requesting file");

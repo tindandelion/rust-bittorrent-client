@@ -70,7 +70,7 @@ impl<'a> PeerPoller<'a> {
 
         for (index, addr) in peer_addrs.into_iter().enumerate() {
             let token = Token(index);
-            let handshake = HandshakeMessage::new(&connector.info_hash, &connector.peer_id);
+            let handshake = HandshakeMessage::new(connector.info_hash, connector.peer_id);
             let mut probe = PeerProbe::connect(token, addr, handshake)?;
             probe.register(&mut poll)?;
             probes.insert(token, probe);
@@ -352,7 +352,7 @@ mod tests {
                 } else {
                     let incoming_info_hash = Sha1::from_bytes(&incoming_handshake.info_hash);
                     let response_info_hash = response_info_hash.unwrap_or(incoming_info_hash);
-                    let message = HandshakeMessage::new(&response_info_hash, &peer_id);
+                    let message = HandshakeMessage::new(response_info_hash, peer_id);
                     message.send(&mut stream).unwrap();
                 }
             });
