@@ -10,8 +10,8 @@ pub struct HandshakeMessage {
     pstrlen: u8,
     pstr: [u8; PROTOCOL_ID.len()],
     reserved: [u8; 8],
-    pub info_hash: [u8; 20],
-    pub peer_id: [u8; 20],
+    pub info_hash: Sha1,
+    pub peer_id: PeerId,
 }
 
 impl HandshakeMessage {
@@ -20,8 +20,8 @@ impl HandshakeMessage {
             pstrlen: PROTOCOL_ID.len() as u8,
             pstr: *PROTOCOL_ID,
             reserved: [0; 8],
-            info_hash: *info_hash.as_bytes(),
-            peer_id: *peer_id.as_bytes(),
+            info_hash,
+            peer_id,
         }
     }
 

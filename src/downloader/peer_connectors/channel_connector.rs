@@ -244,7 +244,7 @@ impl PeerProbe {
                 match HandshakeMessage::receive(&mut self.stream) {
                     Ok(remote_handshake) => {
                         if remote_handshake.info_hash == self.handshake.info_hash {
-                            let remote_id = PeerId::new(remote_handshake.peer_id);
+                            let remote_id = remote_handshake.peer_id;
                             debug!(%remote_id, "connected to peer");
                             self.state = ProbeState::Connected(remote_id);
                         } else {
@@ -350,7 +350,7 @@ mod tests {
                         .write_all(handshake_data.unwrap().as_slice())
                         .expect("failed to send custom response data");
                 } else {
-                    let incoming_info_hash = Sha1::from_bytes(&incoming_handshake.info_hash);
+                    let incoming_info_hash = incoming_handshake.info_hash;
                     let response_info_hash = response_info_hash.unwrap_or(incoming_info_hash);
                     let message = HandshakeMessage::new(response_info_hash, peer_id);
                     message.send(&mut stream).unwrap();

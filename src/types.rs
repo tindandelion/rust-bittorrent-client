@@ -79,3 +79,9 @@ impl std::fmt::Display for Sha1 {
         write!(f, "{}", hex::encode(self.0))
     }
 }
+
+impl Default for Sha1 {
+    fn default() -> Self {
+        Self([0; 20])
+    }
+}

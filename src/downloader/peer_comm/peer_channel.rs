@@ -63,7 +63,7 @@ impl PeerChannel {
         peer_id: PeerId,
     ) -> io::Result<PeerId> {
         HandshakeMessage::new(info_hash, peer_id).send(stream)?;
-        HandshakeMessage::receive(stream).map(|msg| PeerId::new(msg.peer_id))
+        HandshakeMessage::receive(stream).map(|msg| msg.peer_id)
     }
 }
 
