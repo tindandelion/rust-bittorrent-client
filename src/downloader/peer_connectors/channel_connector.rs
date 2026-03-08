@@ -218,7 +218,6 @@ impl PeerProbe {
     fn handle_event(&mut self, event: &Event) {
         let _guard = self.span.enter();
         trace!(?event, "received event");
-        eprintln!("received event: {event:?}");
 
         if event.is_error() {
             self.state = ProbeState::Error;
@@ -262,7 +261,7 @@ impl PeerProbe {
                     }
                 }
             }
-            ProbeState::Connected(_) => todo!("Connected"),
+            ProbeState::Connected(_) => unreachable!("Connected"),
             ProbeState::Error => {}
             _ => {}
         }
