@@ -6,6 +6,14 @@ pub struct PeerId([u8; 20]);
 pub struct Sha1([u8; 20]);
 
 impl PeerId {
+    pub fn random() -> Self {
+        use rand::prelude::*;
+
+        let mut value = [0; 20];
+        rand::rng().fill(&mut value);
+        Self(value)
+    }
+
     pub fn new(value: [u8; 20]) -> Self {
         Self(value)
     }
@@ -26,6 +34,15 @@ impl std::fmt::Display for PeerId {
 }
 
 impl Sha1 {
+    #[cfg(test)]
+    pub fn random() -> Self {
+        use rand::prelude::*;
+
+        let mut value = [0; 20];
+        rand::rng().fill(&mut value);
+        Self(value)
+    }
+
     #[cfg(test)]
     pub fn new(value: [u8; 20]) -> Self {
         Self(value)

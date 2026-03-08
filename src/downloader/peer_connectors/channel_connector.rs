@@ -232,7 +232,7 @@ mod tests {
 
     impl TestRemotePeer {
         pub fn new() -> Self {
-            let peer_id = PeerId::new([0x04; 20]);
+            let peer_id = PeerId::random();
             Self { peer_id }
         }
 
@@ -259,7 +259,7 @@ mod tests {
 
     #[test]
     fn handshake_with_peer() -> Result<()> {
-        let info_hash = Sha1::new([0x01; 20]);
+        let info_hash = Sha1::random();
 
         let remote_peer = TestRemotePeer::new();
         let peer_addr = remote_peer.start()?;
@@ -268,7 +268,7 @@ mod tests {
         let mut stream = connector.connect(vec![peer_addr]).next().unwrap();
         stream.set_read_timeout(Some(Duration::from_secs(1)))?;
 
-        let message = HandshakeMessage::new(&info_hash, &PeerId::new([0x02; 20]));
+        let message = HandshakeMessage::new(&info_hash, &PeerId::random());
         message.send(&mut stream)?;
         let received_message = HandshakeMessage::receive(&mut stream)?;
 
