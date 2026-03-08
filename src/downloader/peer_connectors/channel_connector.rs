@@ -5,25 +5,32 @@ use std::{
 };
 
 use mio::{Events, Poll, Token, event::Event};
-use tracing::{Span, debug, debug_span};
+use tracing::{Span, debug, debug_span, trace};
+
+use crate::{
+    downloader::peer_comm::handshake_message::HandshakeMessage,
+    types::{PeerId, Sha1},
+};
 
 pub struct ChannelConnector<'a> {
+    info_hash: Sha1,
+    peer_id: PeerId,
     timeout: Duration,
     progress_callback: Box<dyn Fn(SocketAddr, usize) + 'a>,
     peers_probed: usize,
 }
 
-impl<'a> Default for ChannelConnector<'a> {
-    fn default() -> Self {
+impl<'a> ChannelConnector<'a> {
+    pub fn new(info_hash: Sha1, peer_id: PeerId) -> Self {
         Self {
+            info_hash,
+            peer_id,
             timeout: super::CONNECT_TIMEOUT,
             progress_callback: Box::new(|_, _| {}),
             peers_probed: 0,
         }
     }
-}
 
-impl<'a> ChannelConnector<'a> {
     pub fn with_progress_callback(
         mut self,
         progress_callback: impl Fn(SocketAddr, usize) + 'a,
@@ -67,7 +74,8 @@ impl<'a> PeerPoller<'a> {
 
         for (index, addr) in peer_addrs.into_iter().enumerate() {
             let token = Token(index);
-            let mut probe = PeerProbe::connect(token, addr)?;
+            let handshake = HandshakeMessage::new(&connector.info_hash, &connector.peer_id);
+            let mut probe = PeerProbe::connect(token, addr, handshake)?;
             probe.register(&mut poll)?;
             probes.insert(token, probe);
         }
@@ -160,6 +168,7 @@ impl<'a> Iterator for PeerPoller<'a> {
 #[derive(PartialEq, Eq)]
 enum ProbeState {
     Connecting,
+    Handshaking,
     Connected,
     Error,
 }
@@ -168,12 +177,13 @@ struct PeerProbe {
     token: Token,
     stream: mio::net::TcpStream,
     state: ProbeState,
+    handshake: HandshakeMessage,
     addr: SocketAddr,
     span: Span,
 }
 
 impl PeerProbe {
-    fn connect(token: Token, addr: SocketAddr) -> IoResult<Self> {
+    fn connect(token: Token, addr: SocketAddr, handshake: HandshakeMessage) -> IoResult<Self> {
         let span = debug_span!("connect_to_peer", addr = %addr);
         let stream = span.in_scope(|| {
             debug!("initiating connection");
@@ -183,19 +193,24 @@ impl PeerProbe {
             token,
             stream,
             state: ProbeState::Connecting,
+            handshake,
             addr,
             span,
         })
     }
 
     fn register(&mut self, poll: &mut Poll) -> IoResult<()> {
-        poll.registry()
-            .register(&mut self.stream, self.token, mio::Interest::WRITABLE)?;
+        poll.registry().register(
+            &mut self.stream,
+            self.token,
+            mio::Interest::WRITABLE | mio::Interest::READABLE,
+        )?;
         Ok(())
     }
 
     fn handle_event(&mut self, event: &Event) {
         let _guard = self.span.enter();
+        trace!(?event, "received event");
 
         match self.state {
             ProbeState::Connecting => match self.stream.peer_addr() {
@@ -208,8 +223,9 @@ impl PeerProbe {
                     self.state = ProbeState::Error;
                 }
             },
+            ProbeState::Handshaking => todo!("Handshaking"),
             ProbeState::Connected => todo!("Connected"),
-            ProbeState::Error => todo!("Error"),
+            ProbeState::Error => {}
         }
     }
 
@@ -270,7 +286,8 @@ mod tests {
         let remote_peer = TestRemotePeer::new();
         let peer_addr = remote_peer.start()?;
 
-        let connector = ChannelConnector::default().with_timeout(Duration::from_secs(1));
+        let connector =
+            ChannelConnector::new(info_hash, PeerId::random()).with_timeout(Duration::from_secs(1));
         let mut stream = connector.connect(vec![peer_addr]).next().unwrap();
         stream.set_read_timeout(Some(Duration::from_secs(1)))?;
 
@@ -280,6 +297,23 @@ mod tests {
 
         assert_eq!(&received_message.info_hash, info_hash.as_bytes());
         assert_eq!(&received_message.peer_id, remote_peer.peer_id().as_bytes());
+
+        Ok(())
+    }
+
+    #[test]
+    fn connect_refused() -> Result<()> {
+        let peer_addresses = vec![
+            "127.0.0.1:12345".parse()?, // refuse to connect
+        ];
+
+        let connector = make_connector().with_timeout(Duration::from_secs(1));
+        let connected_addresses = connector
+            .connect(peer_addresses)
+            .map(|stream| stream.peer_addr().unwrap())
+            .collect::<Vec<_>>();
+
+        assert_eq!(connected_addresses, vec![]);
 
         Ok(())
     }
@@ -302,7 +336,7 @@ mod tests {
             responsive_addresses[2],    // responsive peer
         ];
 
-        let connector = ChannelConnector::default().with_timeout(Duration::from_secs(1));
+        let connector = make_connector().with_timeout(Duration::from_secs(1));
         let mut connected_addresses = connector
             .connect(peer_addresses)
             .map(|stream| stream.peer_addr().unwrap())
@@ -322,7 +356,7 @@ mod tests {
             "192.0.2.1:6881".parse()?,  // timeout to connect
         ];
 
-        let connector = ChannelConnector::default().with_timeout(Duration::from_secs(1));
+        let connector = make_connector().with_timeout(Duration::from_secs(1));
         let connected_addresses = connector
             .connect(peer_addresses)
             .map(|stream| stream.peer_addr().unwrap())
@@ -347,7 +381,7 @@ mod tests {
             curr.insert(addr);
         };
 
-        let connector = ChannelConnector::default()
+        let connector = make_connector()
             .with_timeout(Duration::from_secs(1))
             .with_progress_callback(progress_callback);
 
@@ -360,5 +394,9 @@ mod tests {
         );
 
         Ok(())
+    }
+
+    fn make_connector<'a>() -> ChannelConnector<'a> {
+        ChannelConnector::new(Sha1::random(), PeerId::random())
     }
 }
