@@ -1,19 +1,11 @@
 use std::collections::HashMap;
-use std::net::TcpStream;
 use std::time::Instant;
 
-use bt_client::ParPeerConnector;
 use bt_client::Torrent;
-use bt_client::downloader;
-use bt_client::downloader::PeerChannel;
 use bt_client::downloader::peer_connectors::ChannelConnector;
 use bt_client::request_complete_file;
 use bt_client::result::Result;
-use bt_client::torrent::Info;
 use bt_client::types::PeerId;
-use tracing::Level;
-use tracing::debug;
-use tracing::instrument;
 
 fn main() -> Result<()> {
     setup_tracing()?;
