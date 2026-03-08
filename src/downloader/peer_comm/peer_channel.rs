@@ -40,6 +40,14 @@ impl PeerChannel {
         })
     }
 
+    pub fn new(stream: TcpStream, remote_id: PeerId, peer_addr: SocketAddr) -> Self {
+        Self {
+            stream,
+            remote_id,
+            peer_addr,
+        }
+    }
+
     pub fn peer_addr(&self) -> &SocketAddr {
         &self.peer_addr
     }

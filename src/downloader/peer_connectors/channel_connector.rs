@@ -8,7 +8,7 @@ use mio::{Events, Poll, Token, event::Event};
 use tracing::{Span, debug, debug_span, trace};
 
 use crate::{
-    downloader::peer_comm::handshake_message::HandshakeMessage,
+    downloader::{PeerChannel, peer_comm::handshake_message::HandshakeMessage},
     types::{PeerId, Sha1},
 };
 
@@ -48,7 +48,7 @@ impl<'a> ChannelConnector<'a> {
     pub fn connect(
         self,
         peer_addrs: impl IntoIterator<Item = SocketAddr>,
-    ) -> impl Iterator<Item = TcpStream> {
+    ) -> impl Iterator<Item = PeerChannel> {
         PeerPoller::new(peer_addrs, self).expect("Failed to create peer iterator")
     }
 
@@ -87,11 +87,11 @@ impl<'a> PeerPoller<'a> {
         })
     }
 
-    fn wait_for_connect_event(&mut self) -> IoResult<Option<TcpStream>> {
+    fn wait_for_connect_event(&mut self) -> IoResult<Option<PeerChannel>> {
         let mut events = mio::Events::with_capacity(1024);
         loop {
-            if let Some(stream) = self.get_connected_stream()? {
-                return Ok(Some(stream));
+            if let Some(channel) = self.get_connected_channel()? {
+                return Ok(Some(channel));
             }
 
             self.poll.poll(&mut events, Some(self.connector.timeout))?;
@@ -120,18 +120,18 @@ impl<'a> PeerPoller<'a> {
         Ok(())
     }
 
-    fn get_connected_stream(&mut self) -> IoResult<Option<TcpStream>> {
+    fn get_connected_channel(&mut self) -> IoResult<Option<PeerChannel>> {
         let connected_probe_token = self
             .probes
             .iter()
-            .find(|(_, probe)| probe.state == ProbeState::Connected)
+            .find(|(_, probe)| probe.state.is_connected())
             .map(|(token, _)| *token);
 
         if let Some(token) = connected_probe_token {
             let mut probe = self.probes.remove(&token).unwrap();
             self.unregister_probe(&mut probe)?;
 
-            probe.into_std_tcp_stream().map(Some)
+            probe.into_peer_channel().map(Some)
         } else {
             Ok(None)
         }
@@ -158,7 +158,7 @@ impl<'a> PeerPoller<'a> {
 type IoResult<T> = std::result::Result<T, std::io::Error>;
 
 impl<'a> Iterator for PeerPoller<'a> {
-    type Item = TcpStream;
+    type Item = PeerChannel;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.wait_for_connect_event().unwrap_or_default()
@@ -169,8 +169,14 @@ impl<'a> Iterator for PeerPoller<'a> {
 enum ProbeState {
     Connecting,
     Handshaking,
-    Connected,
+    Connected(PeerId),
     Error,
+}
+
+impl ProbeState {
+    fn is_connected(&self) -> bool {
+        matches!(self, ProbeState::Connected(_))
+    }
 }
 
 struct PeerProbe {
@@ -215,23 +221,48 @@ impl PeerProbe {
         match self.state {
             ProbeState::Connecting => match self.stream.peer_addr() {
                 Ok(_) => {
-                    debug!("connection established");
-                    self.state = ProbeState::Connected;
+                    debug!("sending handshake message");
+                    // TODO: handle error
+                    self.handshake
+                        .send(&mut self.stream)
+                        .expect("failed to send handshake message");
+                    self.state = ProbeState::Handshaking;
                 }
                 Err(err) => {
                     debug!(%err,"connection failed");
                     self.state = ProbeState::Error;
                 }
             },
-            ProbeState::Handshaking => todo!("Handshaking"),
-            ProbeState::Connected => todo!("Connected"),
+            ProbeState::Handshaking => {
+                eprintln!("Handshaking {event:?}");
+                if event.is_readable() {
+                    let remote_handshake = HandshakeMessage::receive(&mut self.stream)
+                        .expect("failed to receive remote handshake message");
+                    let remote_id = PeerId::new(remote_handshake.peer_id);
+                    self.state = ProbeState::Connected(remote_id);
+                }
+            }
+            ProbeState::Connected(_) => todo!("Connected"),
             ProbeState::Error => {}
         }
     }
 
-    fn into_std_tcp_stream(self) -> IoResult<std::net::TcpStream> {
-        let std_stream: std::net::TcpStream = self.stream.into();
-        std_stream.set_nonblocking(false).map(|_| std_stream)
+    fn into_peer_channel(self) -> IoResult<PeerChannel> {
+        match self.state {
+            ProbeState::Connected(remote_id) => {
+                let std_stream: std::net::TcpStream = self.stream.into();
+                std_stream.set_nonblocking(false)?;
+
+                let peer_channel = PeerChannel::new(std_stream, remote_id, self.addr);
+                return Ok(peer_channel);
+            }
+            _ => {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    "probe not connected",
+                ));
+            }
+        }
     }
 
     fn unregister(&mut self, poll: &mut Poll) -> IoResult<()> {
@@ -262,10 +293,12 @@ mod tests {
             self.peer_id
         }
 
-        pub fn start(&self) -> Result<SocketAddr> {
-            let listener = TcpListener::bind("127.0.0.1:0")?;
-            let peer_addr = listener.local_addr()?;
-
+        pub fn start(&self) -> SocketAddr {
+            let listener =
+                TcpListener::bind("127.0.0.1:0").expect("failed to start test peer listener");
+            let peer_addr = listener
+                .local_addr()
+                .expect("failed to get local peer address");
             let peer_id = self.peer_id;
 
             std::thread::spawn(move || {
@@ -275,47 +308,34 @@ mod tests {
                 let message = HandshakeMessage::new(&response_info_hash, &peer_id);
                 message.send(&mut stream).unwrap();
             });
-            Ok(peer_addr)
+            peer_addr
         }
     }
 
     #[test]
-    fn handshake_with_peer() -> Result<()> {
+    fn successful_handshake_with_remote_peer() {
         let info_hash = Sha1::random();
 
         let remote_peer = TestRemotePeer::new();
-        let peer_addr = remote_peer.start()?;
+        let peer_addr = remote_peer.start();
 
         let connector =
             ChannelConnector::new(info_hash, PeerId::random()).with_timeout(Duration::from_secs(1));
-        let mut stream = connector.connect(vec![peer_addr]).next().unwrap();
-        stream.set_read_timeout(Some(Duration::from_secs(1)))?;
+        let channel = connector.connect(vec![peer_addr]).next().unwrap();
 
-        let message = HandshakeMessage::new(&info_hash, &PeerId::random());
-        message.send(&mut stream)?;
-        let received_message = HandshakeMessage::receive(&mut stream)?;
-
-        assert_eq!(&received_message.info_hash, info_hash.as_bytes());
-        assert_eq!(&received_message.peer_id, remote_peer.peer_id().as_bytes());
-
-        Ok(())
+        assert_eq!(channel.peer_addr(), &peer_addr);
+        assert_eq!(channel.remote_id(), &remote_peer.peer_id());
     }
 
     #[test]
-    fn connect_refused() -> Result<()> {
+    fn connect_refused() {
         let peer_addresses = vec![
-            "127.0.0.1:12345".parse()?, // refuse to connect
+            "127.0.0.1:12345".parse().unwrap(), // refuse to connect
         ];
 
         let connector = make_connector().with_timeout(Duration::from_secs(1));
-        let connected_addresses = connector
-            .connect(peer_addresses)
-            .map(|stream| stream.peer_addr().unwrap())
-            .collect::<Vec<_>>();
-
-        assert_eq!(connected_addresses, vec![]);
-
-        Ok(())
+        let connected_peers = connector.connect(peer_addresses).collect::<Vec<_>>();
+        assert!(connected_peers.is_empty());
     }
 
     #[test]
@@ -339,7 +359,7 @@ mod tests {
         let connector = make_connector().with_timeout(Duration::from_secs(1));
         let mut connected_addresses = connector
             .connect(peer_addresses)
-            .map(|stream| stream.peer_addr().unwrap())
+            .map(|stream| *stream.peer_addr())
             .collect::<Vec<_>>();
 
         connected_addresses.sort();
@@ -359,7 +379,7 @@ mod tests {
         let connector = make_connector().with_timeout(Duration::from_secs(1));
         let connected_addresses = connector
             .connect(peer_addresses)
-            .map(|stream| stream.peer_addr().unwrap())
+            .map(|stream| *stream.peer_addr())
             .collect::<Vec<_>>();
 
         assert_eq!(connected_addresses, vec![]);

@@ -1,5 +1,5 @@
 use sha1::Digest;
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
 pub struct PeerId([u8; 20]);
 
 #[derive(Debug, PartialEq, Hash, Eq, Clone, Copy)]
