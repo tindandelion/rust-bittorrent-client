@@ -1,11 +1,17 @@
 use std::collections::HashMap;
+use std::net::TcpStream;
 use std::time::Instant;
 
 use bt_client::ParPeerConnector;
 use bt_client::Torrent;
-use bt_client::request_complete_file;
+use bt_client::downloader;
+use bt_client::downloader::PeerChannel;
 use bt_client::result::Result;
+use bt_client::torrent::Info;
 use bt_client::types::PeerId;
+use tracing::Level;
+use tracing::debug;
+use tracing::instrument;
 
 fn main() -> Result<()> {
     setup_tracing()?;
@@ -59,4 +65,15 @@ fn setup_tracing() -> Result<()> {
         .init();
 
     Ok(())
+}
+
+#[instrument(skip_all, err(level = Level::WARN), level = Level::DEBUG)]
+fn request_complete_file(stream: TcpStream, peer_id: &PeerId, info: &Info) -> Result<PeerChannel> {
+    let mut channel = PeerChannel::handshake(stream, &info.sha1, peer_id)
+        .inspect(|channel| debug!(remote_id = %channel.remote_id(), "Connected"))?;
+
+    debug!("Connected, requesting file");
+    downloader::request_complete_file(&mut channel, info.pieces.len())?;
+    debug!("Ready to download");
+    Ok(channel)
 }

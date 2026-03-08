@@ -1,7 +1,7 @@
 pub mod downloader;
 pub mod ratatui_ui;
 pub mod result;
-mod torrent;
+pub mod torrent;
 mod tracker;
 pub mod types;
 mod util;
@@ -9,16 +9,14 @@ mod util;
 use tracing::{Level, debug, error, info, instrument};
 
 use crate::{
-    downloader::PeerChannel, ratatui_ui::AppEvent, torrent::Info, tracker::AnnounceRequest,
+    downloader::{PeerChannel, peer_connectors::ChannelConnector},
+    ratatui_ui::AppEvent,
+    tracker::AnnounceRequest,
     types::PeerId,
 };
 pub use downloader::peer_connectors::ParPeerConnector;
 use result::Result;
-use std::{
-    net::{SocketAddr, TcpStream},
-    sync::mpsc::Sender,
-    time::Duration,
-};
+use std::{net::SocketAddr, sync::mpsc::Sender, time::Duration};
 pub use torrent::Torrent;
 
 #[derive(Debug)]
@@ -44,18 +42,20 @@ impl Torrent {
         event_sender: &Sender<AppEvent>,
     ) -> Option<PeerChannel> {
         let total_peers = peer_addrs.len();
-        let connector = ParPeerConnector::default().with_progress_callback(|addr, total_probed| {
-            let _ = event_sender
-                .send(AppEvent::Probing {
-                    address: addr,
-                    current_index: total_probed,
-                    total_count: total_peers,
-                })
-                .inspect_err(|e| error!(%e, "Failed to send AppEvent to the UI thread"));
-        });
+        let connector = ChannelConnector::new(self.info.sha1, peer_id).with_progress_callback(
+            |addr, total_probed| {
+                let _ = event_sender
+                    .send(AppEvent::Probing {
+                        address: addr,
+                        current_index: total_probed,
+                        total_count: total_peers,
+                    })
+                    .inspect_err(|e| error!(%e, "Failed to send AppEvent to the UI thread"));
+            },
+        );
         connector
             .connect(peer_addrs)
-            .map(|stream| request_complete_file(stream, &peer_id, &self.info))
+            .map(|stream| request_complete_file(stream, self.info.pieces.len()))
             .filter_map(Result::ok)
             .next()
     }
@@ -122,16 +122,9 @@ impl Torrent {
 }
 
 #[instrument(skip_all, err(level = Level::WARN), level = Level::DEBUG)]
-pub fn request_complete_file(
-    stream: TcpStream,
-    peer_id: &PeerId,
-    info: &Info,
-) -> Result<PeerChannel> {
-    let mut channel = PeerChannel::handshake(stream, &info.sha1, peer_id)
-        .inspect(|channel| debug!(remote_id = %channel.remote_id(), "Connected"))?;
-
+pub fn request_complete_file(mut channel: PeerChannel, num_pieces: usize) -> Result<PeerChannel> {
     debug!("Connected, requesting file");
-    downloader::request_complete_file(&mut channel, info.pieces.len())?;
+    downloader::request_complete_file(&mut channel, num_pieces)?;
     debug!("Ready to download");
     Ok(channel)
 }

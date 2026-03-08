@@ -8,9 +8,8 @@ use bt_client::Torrent;
 use bt_client::result::Result;
 
 use testcontainers::{
-    Container, GenericBuildableImage, GenericImage,
-    core::IntoContainerPort,
-    core::WaitFor,
+    BuildableImage, Container, GenericBuildableImage, GenericImage,
+    core::{IntoContainerPort, WaitFor},
     runners::{SyncBuilder, SyncRunner},
 };
 
@@ -25,7 +24,7 @@ impl TestEnv {
         let image = GenericBuildableImage::new("bt-client-transmission", "latest")
             .with_dockerfile(Self::dockerfile_path())
             .with_file(Self::test_data_dir(), "./war-and-peace")
-            .build_image()?;
+            .into_image();
 
         let container = image
             .with_exposed_port(51413.tcp())
