@@ -1,11 +1,7 @@
-use std::{
-    collections::HashMap,
-    net::{SocketAddr, TcpStream},
-    time::Duration,
-};
+use std::{collections::HashMap, net::SocketAddr, time::Duration};
 
 use mio::{Events, Poll, Token, event::Event};
-use tracing::{Span, debug, debug_span, trace};
+use tracing::{Span, debug, debug_span, error, trace};
 
 use crate::{
     downloader::{PeerChannel, peer_comm::handshake_message::HandshakeMessage},
@@ -87,7 +83,7 @@ impl<'a> PeerPoller<'a> {
         })
     }
 
-    fn wait_for_connect_event(&mut self) -> IoResult<Option<PeerChannel>> {
+    fn wait_for_connected_channel(&mut self) -> IoResult<Option<PeerChannel>> {
         let mut events = mio::Events::with_capacity(1024);
         loop {
             if let Some(channel) = self.get_connected_channel()? {
@@ -101,6 +97,9 @@ impl<'a> PeerPoller<'a> {
 
             self.update_probe_states(&events);
             self.remove_errored_probes()?;
+            if self.probes.is_empty() {
+                return Ok(None);
+            }
         }
     }
 
@@ -161,7 +160,9 @@ impl<'a> Iterator for PeerPoller<'a> {
     type Item = PeerChannel;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.wait_for_connect_event().unwrap_or_default()
+        self.wait_for_connected_channel()
+            .inspect_err(|err| error!(%err, "error while processing I/O events"))
+            .expect("error while processing I/O events")
     }
 }
 
@@ -217,6 +218,12 @@ impl PeerProbe {
     fn handle_event(&mut self, event: &Event) {
         let _guard = self.span.enter();
         trace!(?event, "received event");
+        eprintln!("received event: {event:?}");
+
+        if event.is_error() {
+            self.state = ProbeState::Error;
+            return;
+        }
 
         match self.state {
             ProbeState::Connecting => match self.stream.peer_addr() {
@@ -233,17 +240,31 @@ impl PeerProbe {
                     self.state = ProbeState::Error;
                 }
             },
-            ProbeState::Handshaking => {
-                eprintln!("Handshaking {event:?}");
-                if event.is_readable() {
-                    let remote_handshake = HandshakeMessage::receive(&mut self.stream)
-                        .expect("failed to receive remote handshake message");
-                    let remote_id = PeerId::new(remote_handshake.peer_id);
-                    self.state = ProbeState::Connected(remote_id);
+            ProbeState::Handshaking if event.is_readable() => {
+                debug!("receiving remote handshake");
+                match HandshakeMessage::receive(&mut self.stream) {
+                    Ok(remote_handshake) => {
+                        if remote_handshake.info_hash == self.handshake.info_hash {
+                            let remote_id = PeerId::new(remote_handshake.peer_id);
+                            debug!(%remote_id, "connected to peer");
+                            self.state = ProbeState::Connected(remote_id);
+                        } else {
+                            debug!(
+                                ?remote_handshake.info_hash,
+                                "info_hash mismatch in received handshake"
+                            );
+                            self.state = ProbeState::Error;
+                        }
+                    }
+                    Err(err) => {
+                        debug!(%err, "handshake failed");
+                        self.state = ProbeState::Error;
+                    }
                 }
             }
             ProbeState::Connected(_) => todo!("Connected"),
             ProbeState::Error => {}
+            _ => {}
         }
     }
 
@@ -275,6 +296,7 @@ mod tests {
     use crate::downloader::peer_comm::handshake_message::HandshakeMessage;
     use crate::result::Result;
     use crate::types::{PeerId, Sha1};
+    use std::io::Write;
     use std::{cell::RefCell, collections::HashSet, net::TcpListener};
 
     use super::*;
@@ -282,6 +304,8 @@ mod tests {
     struct TestRemotePeer {
         peer_id: PeerId,
         hangup_handshake: bool,
+        handshake_data: Option<Vec<u8>>,
+        handshake_info_hash: Option<Sha1>,
     }
 
     impl TestRemotePeer {
@@ -290,6 +314,8 @@ mod tests {
             Self {
                 peer_id,
                 hangup_handshake: false,
+                handshake_data: None,
+                handshake_info_hash: None,
             }
         }
 
@@ -310,6 +336,8 @@ mod tests {
                 .expect("failed to get local peer address");
             let peer_id = self.peer_id;
             let hangup_handshake = self.hangup_handshake;
+            let handshake_data = self.handshake_data.clone();
+            let response_info_hash = self.handshake_info_hash;
 
             std::thread::spawn(move || {
                 let (mut stream, _) = listener.accept().unwrap();
@@ -318,22 +346,37 @@ mod tests {
                 }
 
                 let incoming_handshake = HandshakeMessage::receive(&mut stream).unwrap();
-                let response_info_hash = Sha1::from_bytes(&incoming_handshake.info_hash);
-                let message = HandshakeMessage::new(&response_info_hash, &peer_id);
-                message.send(&mut stream).unwrap();
+                if handshake_data.is_some() {
+                    stream
+                        .write_all(handshake_data.unwrap().as_slice())
+                        .expect("failed to send custom response data");
+                } else {
+                    let incoming_info_hash = Sha1::from_bytes(&incoming_handshake.info_hash);
+                    let response_info_hash = response_info_hash.unwrap_or(incoming_info_hash);
+                    let message = HandshakeMessage::new(&response_info_hash, &peer_id);
+                    message.send(&mut stream).unwrap();
+                }
             });
             peer_addr
+        }
+
+        fn send_handshake_data(mut self, arg: &[u8]) -> Self {
+            self.handshake_data = Some(arg.to_vec());
+            self
+        }
+
+        fn send_info_hash(mut self, info_hash: Sha1) -> Self {
+            self.handshake_info_hash = Some(info_hash);
+            self
         }
     }
 
     #[test]
     fn successful_handshake_with_remote_peer() {
-        let info_hash = Sha1::random();
-
         let remote_peer = TestRemotePeer::new();
         let peer_addr = remote_peer.start();
 
-        let connector = ChannelConnector::new(info_hash, PeerId::random());
+        let connector = make_connector();
         let channel = connector.connect(vec![peer_addr]).next().unwrap();
 
         assert_eq!(channel.peer_addr(), &peer_addr);
@@ -346,6 +389,7 @@ mod tests {
 
         let connector = make_connector();
         let connected_peers = connector.connect(peer_addresses).collect::<Vec<_>>();
+
         assert!(connected_peers.is_empty());
     }
 
@@ -355,38 +399,53 @@ mod tests {
 
         let connector = make_connector();
         let connected_peers = connector.connect(peer_addresses).collect::<Vec<_>>();
+
         assert!(connected_peers.is_empty());
     }
 
     #[test]
     fn error_handshake_hangup() {
-        let info_hash = Sha1::random();
-
         let remote_peer = TestRemotePeer::new().hangup_handshake();
         let peer_addr = remote_peer.start();
 
-        let connector = ChannelConnector::new(info_hash, PeerId::random());
+        let connector = make_connector();
         let connected_peers = connector.connect(vec![peer_addr]).collect::<Vec<_>>();
+
         assert!(connected_peers.is_empty());
     }
 
     #[test]
-    #[ignore]
-    fn iterate_over_responsive_peers() -> Result<()> {
-        let first_listener = TcpListener::bind("127.0.0.1:0")?;
-        let second_listener = TcpListener::bind("127.0.0.1:0")?;
-        let third_listener = TcpListener::bind("127.0.0.1:0")?;
-        let mut responsive_addresses = vec![
-            first_listener.local_addr()?,
-            second_listener.local_addr()?,
-            third_listener.local_addr()?,
-        ];
+    fn error_handshake_invalid_response_handshake() {
+        let remote_peer = TestRemotePeer::new().send_handshake_data(&[0x01, 0x02]);
+        let peer_addr = remote_peer.start();
+
+        let connector = make_connector();
+        let connected_peers = connector.connect(vec![peer_addr]).collect::<Vec<_>>();
+
+        assert!(connected_peers.is_empty());
+    }
+
+    #[test]
+    fn error_handshake_mismatch_of_info_hash() {
+        let remote_peer = TestRemotePeer::new().send_info_hash(Sha1::random());
+        let peer_addr = remote_peer.start();
+
+        let connector = make_connector();
+        let connected_peers = connector.connect(vec![peer_addr]).collect::<Vec<_>>();
+
+        assert!(connected_peers.is_empty());
+    }
+
+    #[test]
+    fn iterate_over_responsive_peers() {
+        let first_peer = TestRemotePeer::new();
+        let second_peer = TestRemotePeer::new();
+        let mut responsive_addresses = vec![first_peer.start(), second_peer.start()];
         let peer_addresses = vec![
-            "127.0.0.1:12345".parse()?, // refuse to connect
-            "192.0.2.1:6881".parse()?,  // timeout to connect
-            responsive_addresses[0],    // responsive peer
-            responsive_addresses[1],    // responsive peer
-            responsive_addresses[2],    // responsive peer
+            "127.0.0.1:12345".parse().unwrap(), // refuse to connect
+            "192.0.2.1:6881".parse().unwrap(),  // timeout to connect
+            responsive_addresses[0],            // responsive peer
+            responsive_addresses[1],            // responsive peer
         ];
 
         let connector = make_connector().with_timeout(Duration::from_secs(1));
@@ -398,36 +457,28 @@ mod tests {
         connected_addresses.sort();
         responsive_addresses.sort();
         assert_eq!(connected_addresses, responsive_addresses);
-
-        Ok(())
     }
 
     #[test]
-    fn all_peers_are_unresponsive() -> Result<()> {
+    fn all_peers_are_unresponsive() {
         let peer_addresses = vec![
-            "127.0.0.1:12345".parse()?, // refuse to connect
-            "192.0.2.1:6881".parse()?,  // timeout to connect
+            "127.0.0.1:12345".parse().unwrap(), // refuse to connect
+            "192.0.2.1:6881".parse().unwrap(),  // timeout to connect
         ];
 
         let connector = make_connector().with_timeout(Duration::from_secs(1));
-        let connected_addresses = connector
-            .connect(peer_addresses)
-            .map(|stream| *stream.peer_addr())
-            .collect::<Vec<_>>();
+        let connected_peers = connector.connect(peer_addresses).collect::<Vec<_>>();
 
-        assert_eq!(connected_addresses, vec![]);
-
-        Ok(())
+        assert!(connected_peers.is_empty());
     }
 
     #[test]
-    #[ignore]
-    fn invoke_progress_callback_for_each_responsive_peer() -> Result<()> {
-        let listener = TcpListener::bind("127.0.0.1:0")?;
+    fn invoke_progress_callback_for_each_peer() -> Result<()> {
+        let remote_peer = TestRemotePeer::new();
         let peer_addresses = vec![
             "127.0.0.1:12345".parse()?, // refuse to connect
             "192.0.2.1:6881".parse()?,  // timeout to connect
-            listener.local_addr()?,     // responsive peer
+            remote_peer.start(),        // responsive peer
         ];
         let progress = RefCell::new(HashSet::<SocketAddr>::new());
         let progress_callback = |addr: SocketAddr, _: usize| {

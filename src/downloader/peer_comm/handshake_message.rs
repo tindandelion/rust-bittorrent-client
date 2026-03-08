@@ -29,6 +29,15 @@ impl HandshakeMessage {
         let mut instance = Self::default();
         let buffer_ptr = &mut instance as *mut Self as *mut [u8; size_of::<Self>()];
         unsafe { src.read_exact(&mut *buffer_ptr)? };
+        if instance.pstrlen as usize != PROTOCOL_ID.len() {
+            return Err(io::Error::other(format!(
+                "invalid pstrlen: {}",
+                instance.pstrlen
+            )));
+        }
+        if &instance.pstr != PROTOCOL_ID {
+            return Err(io::Error::other("invalid protocol id"));
+        }
         Ok(instance)
     }
 
@@ -60,5 +69,25 @@ mod tests {
 
         let received_message = HandshakeMessage::receive(&mut buffer.as_slice()).unwrap();
         assert_eq!(message_to_send, received_message);
+    }
+
+    #[test]
+    fn test_receive_invalid_pstrlen() {
+        let buffer = [0x01; std::mem::size_of::<HandshakeMessage>()];
+        let received_error =
+            HandshakeMessage::receive(&mut buffer.as_slice()).expect_err("expected an error");
+        let message = received_error.to_string();
+        assert_eq!(message, "invalid pstrlen: 1");
+    }
+
+    #[test]
+    fn test_receive_invalid_protocol_id() {
+        let pstrlen = PROTOCOL_ID.len() as u8;
+        let buffer = [pstrlen; std::mem::size_of::<HandshakeMessage>()];
+
+        let received_error =
+            HandshakeMessage::receive(&mut buffer.as_slice()).expect_err("expected an error");
+        let message = received_error.to_string();
+        assert_eq!(message, "invalid protocol id");
     }
 }
