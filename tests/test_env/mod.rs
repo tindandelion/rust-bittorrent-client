@@ -8,7 +8,7 @@ use bt_client::Torrent;
 use bt_client::result::Result;
 
 use testcontainers::{
-    BuildableImage, Container, GenericBuildableImage, GenericImage,
+    Container, GenericBuildableImage, GenericImage,
     core::{IntoContainerPort, WaitFor},
     runners::{SyncBuilder, SyncRunner},
 };
