@@ -13,6 +13,7 @@ fn main() -> Result<()> {
     let torrent = Torrent::read_default_file()?;
     let peer_id = PeerId::default();
     let mut errors = HashMap::<String, usize>::new();
+    let mut successes = 0;
 
     let addrs = torrent.fetch_peer_addresses(peer_id)?;
     let connector = ChannelConnector::new(torrent.info.sha1, peer_id);
@@ -24,7 +25,10 @@ fn main() -> Result<()> {
         let result = request_complete_file(channel, torrent.info.pieces.len());
         let duration = start.elapsed().as_millis();
         match result {
-            Ok(_) => println!("OK ({duration}ms)"),
+            Ok(_) => {
+                println!("OK ({duration}ms)");
+                successes += 1;
+            }
             Err(e) => {
                 let err_str = e.to_string();
                 println!("Err({err_str}) ({duration}ms)");
@@ -36,7 +40,9 @@ fn main() -> Result<()> {
         }
     }
 
-    println!("\n\n --- Errors:");
+    println!("\n\n ");
+    println!("--- Successes: {successes}");
+    println!("--- Errors:");
     for (err, count) in errors {
         println!("{err}: {count}");
     }
