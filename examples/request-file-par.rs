@@ -6,9 +6,11 @@ use bt_client::ParPeerConnector;
 use bt_client::Torrent;
 use bt_client::downloader;
 use bt_client::downloader::PeerChannel;
+use bt_client::downloader::peer_comm::handshake_message::HandshakeMessage;
 use bt_client::result::Result;
 use bt_client::torrent::Info;
 use bt_client::types::PeerId;
+use bt_client::types::Sha1;
 use tracing::Level;
 use tracing::debug;
 use tracing::instrument;
@@ -74,12 +76,27 @@ fn setup_tracing() -> Result<()> {
 }
 
 #[instrument(skip_all, err(level = Level::WARN), level = Level::DEBUG)]
-fn request_complete_file(stream: TcpStream, peer_id: PeerId, info: &Info) -> Result<PeerChannel> {
-    let mut channel = PeerChannel::handshake(stream, info.sha1, peer_id)
+fn request_complete_file(
+    mut stream: TcpStream,
+    peer_id: PeerId,
+    info: &Info,
+) -> Result<PeerChannel> {
+    let remote_id = exchange_handshake(&mut stream, info.sha1, peer_id)?;
+    let mut channel = PeerChannel::from_stream(stream, remote_id)
         .inspect(|channel| debug!(remote_id = %channel.remote_id(), "Connected"))?;
 
     debug!("Connected, requesting file");
     downloader::request_complete_file(&mut channel, info.pieces.len())?;
     debug!("Ready to download");
     Ok(channel)
+}
+
+#[instrument(skip_all, err(level=Level::WARN), level = Level::DEBUG)]
+pub fn exchange_handshake(
+    stream: &mut TcpStream,
+    info_hash: Sha1,
+    peer_id: PeerId,
+) -> std::io::Result<PeerId> {
+    HandshakeMessage::new(info_hash, peer_id).send(stream)?;
+    HandshakeMessage::receive(stream).map(|msg| msg.peer_id)
 }

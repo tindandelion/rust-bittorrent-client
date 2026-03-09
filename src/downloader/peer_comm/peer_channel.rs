@@ -4,14 +4,9 @@ use std::{
     time::Duration,
 };
 
-use tracing::{Level, instrument};
+use crate::{downloader::MessageChannel, types::PeerId};
 
-use crate::{
-    downloader::MessageChannel,
-    types::{PeerId, Sha1},
-};
-
-use super::{PeerMessage, handshake_message::HandshakeMessage};
+use super::PeerMessage;
 
 pub struct PeerChannel {
     peer_addr: SocketAddr,
@@ -20,18 +15,7 @@ pub struct PeerChannel {
 }
 
 impl PeerChannel {
-    const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
     const MESSAGE_READ_TIMEOUT: Duration = Duration::from_secs(60);
-
-    pub fn handshake(
-        mut stream: TcpStream,
-        info_hash: Sha1,
-        peer_id: PeerId,
-    ) -> io::Result<PeerChannel> {
-        stream.set_read_timeout(Some(Self::HANDSHAKE_TIMEOUT))?;
-        let remote_id = Self::exchange_handshake(&mut stream, info_hash, peer_id)?;
-        Self::from_stream(stream, remote_id)
-    }
 
     pub fn from_stream(stream: TcpStream, remote_id: PeerId) -> io::Result<PeerChannel> {
         let peer_addr = stream.peer_addr()?;
@@ -49,16 +33,6 @@ impl PeerChannel {
 
     pub fn remote_id(&self) -> PeerId {
         self.remote_id
-    }
-
-    #[instrument(skip_all, err(level=Level::WARN), level = Level::DEBUG)]
-    fn exchange_handshake(
-        stream: &mut TcpStream,
-        info_hash: Sha1,
-        peer_id: PeerId,
-    ) -> io::Result<PeerId> {
-        HandshakeMessage::new(info_hash, peer_id).send(stream)?;
-        HandshakeMessage::receive(stream).map(|msg| msg.peer_id)
     }
 }
 
