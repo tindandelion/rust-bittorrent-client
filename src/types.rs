@@ -2,7 +2,7 @@ use sha1::Digest;
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
 pub struct PeerId([u8; 20]);
 
-#[derive(Debug, PartialEq, Hash, Eq, Clone, Copy)]
+#[derive(Default, Debug, PartialEq, Hash, Eq, Clone, Copy)]
 pub struct Sha1([u8; 20]);
 
 impl PeerId {
@@ -79,11 +79,5 @@ impl Sha1 {
 impl std::fmt::Display for Sha1 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", hex::encode(self.0))
-    }
-}
-
-impl Default for Sha1 {
-    fn default() -> Self {
-        Self([0; 20])
     }
 }

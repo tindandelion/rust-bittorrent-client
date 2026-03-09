@@ -283,10 +283,7 @@ impl PeerProbe {
 
                 PeerChannel::from_stream(std_stream, remote_id)
             }
-            _ => Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                "probe not connected",
-            )),
+            _ => Err(std::io::Error::other("probe not connected")),
         }
     }
 
