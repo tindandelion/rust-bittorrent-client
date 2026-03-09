@@ -30,9 +30,12 @@ impl PeerChannel {
     ) -> io::Result<PeerChannel> {
         stream.set_read_timeout(Some(Self::HANDSHAKE_TIMEOUT))?;
         let remote_id = Self::exchange_handshake(&mut stream, info_hash, peer_id)?;
-        stream.set_read_timeout(Some(Self::MESSAGE_READ_TIMEOUT))?;
-        let peer_addr = stream.peer_addr()?;
+        Self::from_stream(stream, remote_id)
+    }
 
+    pub fn from_stream(stream: TcpStream, remote_id: PeerId) -> io::Result<PeerChannel> {
+        let peer_addr = stream.peer_addr()?;
+        stream.set_read_timeout(Some(Self::MESSAGE_READ_TIMEOUT))?;
         Ok(PeerChannel {
             stream,
             remote_id,
@@ -40,20 +43,12 @@ impl PeerChannel {
         })
     }
 
-    pub fn new(stream: TcpStream, remote_id: PeerId, peer_addr: SocketAddr) -> Self {
-        Self {
-            stream,
-            remote_id,
-            peer_addr,
-        }
+    pub fn peer_addr(&self) -> SocketAddr {
+        self.peer_addr
     }
 
-    pub fn peer_addr(&self) -> &SocketAddr {
-        &self.peer_addr
-    }
-
-    pub fn remote_id(&self) -> &PeerId {
-        &self.remote_id
+    pub fn remote_id(&self) -> PeerId {
+        self.remote_id
     }
 
     #[instrument(skip_all, err(level=Level::WARN), level = Level::DEBUG)]

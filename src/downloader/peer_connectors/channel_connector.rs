@@ -197,11 +197,13 @@ impl ProbeState {
         match stream.peer_addr() {
             Ok(_) => {
                 debug!("sending handshake message");
-                // TODO: handle error
-                handshake
-                    .send(stream)
-                    .expect("failed to send handshake message");
-                Self::Handshaking(handshake)
+                match handshake.send(stream) {
+                    Ok(_) => Self::Handshaking(handshake),
+                    Err(err) => {
+                        debug!(%err, "failed to send handshake message");
+                        Self::Error
+                    }
+                }
             }
             Err(err) => {
                 debug!(%err,"connection failed");
@@ -279,15 +281,12 @@ impl PeerProbe {
                 let std_stream: std::net::TcpStream = self.stream.into();
                 std_stream.set_nonblocking(false)?;
 
-                let peer_channel = PeerChannel::new(std_stream, remote_id, self.addr);
-                return Ok(peer_channel);
+                PeerChannel::from_stream(std_stream, remote_id)
             }
-            _ => {
-                return Err(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    "probe not connected",
-                ));
-            }
+            _ => Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                "probe not connected",
+            )),
         }
     }
 
@@ -314,8 +313,8 @@ mod tests {
         let connector = make_connector();
         let channel = connector.connect(vec![peer_addr]).next().unwrap();
 
-        assert_eq!(channel.peer_addr(), &peer_addr);
-        assert_eq!(channel.remote_id(), &remote_peer.peer_id());
+        assert_eq!(channel.peer_addr(), peer_addr);
+        assert_eq!(channel.remote_id(), remote_peer.peer_id());
     }
 
     #[test]
@@ -386,7 +385,7 @@ mod tests {
         let connector = make_connector().with_timeout(Duration::from_secs(1));
         let mut connected_addresses = connector
             .connect(peer_addresses)
-            .map(|stream| *stream.peer_addr())
+            .map(|stream| stream.peer_addr())
             .collect::<Vec<_>>();
 
         connected_addresses.sort();
