@@ -1,6 +1,6 @@
 use std::{collections::HashMap, net::SocketAddr, time::Duration};
 
-use mio::{Events, Poll, Token, event::Event};
+use mio::{Events, Poll, Token, event::Event, net::TcpStream};
 use tracing::{Span, debug, debug_span, error, trace};
 
 use crate::{
@@ -166,10 +166,10 @@ impl<'a> Iterator for PeerPoller<'a> {
     }
 }
 
-#[derive(PartialEq, Eq)]
+#[derive(PartialEq, Eq, Clone, Copy)]
 enum ProbeState {
-    Connecting,
-    Handshaking,
+    Connecting(HandshakeMessage),
+    Handshaking(HandshakeMessage),
     Connected(PeerId),
     Error,
 }
@@ -178,13 +178,66 @@ impl ProbeState {
     fn is_connected(&self) -> bool {
         matches!(self, ProbeState::Connected(_))
     }
+
+    fn handle_event(self, stream: &mut TcpStream, event: &Event) -> Self {
+        if event.is_error() {
+            return ProbeState::Error;
+        }
+
+        match self {
+            Self::Connecting(handshake) => Self::handle_connect(stream, handshake),
+            Self::Handshaking(handshake) if event.is_readable() => {
+                Self::handle_handshake(stream, handshake)
+            }
+            _ => self,
+        }
+    }
+
+    fn handle_connect(stream: &mut TcpStream, handshake: HandshakeMessage) -> Self {
+        match stream.peer_addr() {
+            Ok(_) => {
+                debug!("sending handshake message");
+                // TODO: handle error
+                handshake
+                    .send(stream)
+                    .expect("failed to send handshake message");
+                Self::Handshaking(handshake)
+            }
+            Err(err) => {
+                debug!(%err,"connection failed");
+                Self::Error
+            }
+        }
+    }
+
+    fn handle_handshake(stream: &mut TcpStream, handshake: HandshakeMessage) -> Self {
+        debug!("receiving remote handshake");
+        match HandshakeMessage::receive(stream) {
+            Ok(remote_handshake) => {
+                if remote_handshake.info_hash == handshake.info_hash {
+                    let remote_id = remote_handshake.peer_id;
+                    debug!(%remote_id, "connected to peer");
+                    Self::Connected(remote_id)
+                } else {
+                    debug!(
+                        ?remote_handshake.info_hash,
+                        "info_hash mismatch in received handshake"
+                    );
+                    Self::Error
+                }
+            }
+            Err(err) => {
+                debug!(%err, "handshake failed");
+                Self::Error
+            }
+        }
+    }
 }
 
 struct PeerProbe {
     token: Token,
     stream: mio::net::TcpStream,
     state: ProbeState,
-    handshake: HandshakeMessage,
     addr: SocketAddr,
     span: Span,
 }
@@ -199,8 +252,7 @@ impl PeerProbe {
         Ok(Self {
             token,
             stream,
-            state: ProbeState::Connecting,
-            handshake,
+            state: ProbeState::Connecting(handshake),
             addr,
             span,
         })
@@ -218,53 +270,7 @@ impl PeerProbe {
     fn handle_event(&mut self, event: &Event) {
         let _guard = self.span.enter();
         trace!(?event, "received event");
-
-        if event.is_error() {
-            self.state = ProbeState::Error;
-            return;
-        }
-
-        match self.state {
-            ProbeState::Connecting => match self.stream.peer_addr() {
-                Ok(_) => {
-                    debug!("sending handshake message");
-                    // TODO: handle error
-                    self.handshake
-                        .send(&mut self.stream)
-                        .expect("failed to send handshake message");
-                    self.state = ProbeState::Handshaking;
-                }
-                Err(err) => {
-                    debug!(%err,"connection failed");
-                    self.state = ProbeState::Error;
-                }
-            },
-            ProbeState::Handshaking if event.is_readable() => {
-                debug!("receiving remote handshake");
-                match HandshakeMessage::receive(&mut self.stream) {
-                    Ok(remote_handshake) => {
-                        if remote_handshake.info_hash == self.handshake.info_hash {
-                            let remote_id = remote_handshake.peer_id;
-                            debug!(%remote_id, "connected to peer");
-                            self.state = ProbeState::Connected(remote_id);
-                        } else {
-                            debug!(
-                                ?remote_handshake.info_hash,
-                                "info_hash mismatch in received handshake"
-                            );
-                            self.state = ProbeState::Error;
-                        }
-                    }
-                    Err(err) => {
-                        debug!(%err, "handshake failed");
-                        self.state = ProbeState::Error;
-                    }
-                }
-            }
-            ProbeState::Connected(_) => unreachable!("Connected"),
-            ProbeState::Error => {}
-            _ => {}
-        }
+        self.state = self.state.handle_event(&mut self.stream, event);
     }
 
     fn into_peer_channel(self) -> IoResult<PeerChannel> {
@@ -299,76 +305,6 @@ mod tests {
     use std::{cell::RefCell, collections::HashSet, net::TcpListener};
 
     use super::*;
-
-    struct TestRemotePeer {
-        peer_id: PeerId,
-        hangup_handshake: bool,
-        handshake_data: Option<Vec<u8>>,
-        handshake_info_hash: Option<Sha1>,
-    }
-
-    impl TestRemotePeer {
-        pub fn new() -> Self {
-            let peer_id = PeerId::random();
-            Self {
-                peer_id,
-                hangup_handshake: false,
-                handshake_data: None,
-                handshake_info_hash: None,
-            }
-        }
-
-        fn hangup_handshake(mut self) -> Self {
-            self.hangup_handshake = true;
-            self
-        }
-
-        pub fn peer_id(&self) -> PeerId {
-            self.peer_id
-        }
-
-        pub fn start(&self) -> SocketAddr {
-            let listener =
-                TcpListener::bind("127.0.0.1:0").expect("failed to start test peer listener");
-            let peer_addr = listener
-                .local_addr()
-                .expect("failed to get local peer address");
-            let peer_id = self.peer_id;
-            let hangup_handshake = self.hangup_handshake;
-            let handshake_data = self.handshake_data.clone();
-            let response_info_hash = self.handshake_info_hash;
-
-            std::thread::spawn(move || {
-                let (mut stream, _) = listener.accept().unwrap();
-                if hangup_handshake {
-                    return;
-                }
-
-                let incoming_handshake = HandshakeMessage::receive(&mut stream).unwrap();
-                if handshake_data.is_some() {
-                    stream
-                        .write_all(handshake_data.unwrap().as_slice())
-                        .expect("failed to send custom response data");
-                } else {
-                    let incoming_info_hash = incoming_handshake.info_hash;
-                    let response_info_hash = response_info_hash.unwrap_or(incoming_info_hash);
-                    let message = HandshakeMessage::new(response_info_hash, peer_id);
-                    message.send(&mut stream).unwrap();
-                }
-            });
-            peer_addr
-        }
-
-        fn send_handshake_data(mut self, arg: &[u8]) -> Self {
-            self.handshake_data = Some(arg.to_vec());
-            self
-        }
-
-        fn send_info_hash(mut self, info_hash: Sha1) -> Self {
-            self.handshake_info_hash = Some(info_hash);
-            self
-        }
-    }
 
     #[test]
     fn successful_handshake_with_remote_peer() {
@@ -502,5 +438,75 @@ mod tests {
 
     fn make_connector<'a>() -> ChannelConnector<'a> {
         ChannelConnector::new(Sha1::random(), PeerId::random()).with_timeout(Duration::from_secs(1))
+    }
+
+    struct TestRemotePeer {
+        peer_id: PeerId,
+        hangup_handshake: bool,
+        handshake_data: Option<Vec<u8>>,
+        handshake_info_hash: Option<Sha1>,
+    }
+
+    impl TestRemotePeer {
+        pub fn new() -> Self {
+            let peer_id = PeerId::random();
+            Self {
+                peer_id,
+                hangup_handshake: false,
+                handshake_data: None,
+                handshake_info_hash: None,
+            }
+        }
+
+        fn hangup_handshake(mut self) -> Self {
+            self.hangup_handshake = true;
+            self
+        }
+
+        pub fn peer_id(&self) -> PeerId {
+            self.peer_id
+        }
+
+        pub fn start(&self) -> SocketAddr {
+            let listener =
+                TcpListener::bind("127.0.0.1:0").expect("failed to start test peer listener");
+            let peer_addr = listener
+                .local_addr()
+                .expect("failed to get local peer address");
+            let peer_id = self.peer_id;
+            let hangup_handshake = self.hangup_handshake;
+            let handshake_data = self.handshake_data.clone();
+            let response_info_hash = self.handshake_info_hash;
+
+            std::thread::spawn(move || {
+                let (mut stream, _) = listener.accept().unwrap();
+                if hangup_handshake {
+                    return;
+                }
+
+                let incoming_handshake = HandshakeMessage::receive(&mut stream).unwrap();
+                if handshake_data.is_some() {
+                    stream
+                        .write_all(handshake_data.unwrap().as_slice())
+                        .expect("failed to send custom response data");
+                } else {
+                    let incoming_info_hash = incoming_handshake.info_hash;
+                    let response_info_hash = response_info_hash.unwrap_or(incoming_info_hash);
+                    let message = HandshakeMessage::new(response_info_hash, peer_id);
+                    message.send(&mut stream).unwrap();
+                }
+            });
+            peer_addr
+        }
+
+        fn send_handshake_data(mut self, arg: &[u8]) -> Self {
+            self.handshake_data = Some(arg.to_vec());
+            self
+        }
+
+        fn send_info_hash(mut self, info_hash: Sha1) -> Self {
+            self.handshake_info_hash = Some(info_hash);
+            self
+        }
     }
 }
