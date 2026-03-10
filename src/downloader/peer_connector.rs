@@ -1,12 +1,15 @@
+mod probe_state;
 use std::{collections::HashMap, net::SocketAddr, time::Duration};
 
-use mio::{Events, Poll, Token, event::Event, net::TcpStream};
+use mio::{Events, Poll, Token, event::Event};
 use tracing::{Span, debug, debug_span, error, trace};
 
 use crate::{
     downloader::{PeerChannel, peer_comm::handshake_message::HandshakeMessage},
     types::{PeerId, Sha1},
 };
+
+use probe_state::ProbeState;
 
 pub struct PeerConnector<'a> {
     info_hash: Sha1,
@@ -168,81 +171,6 @@ impl<'a> Iterator for PeerPoller<'a> {
     }
 }
 
-#[derive(Clone, Copy)]
-enum ProbeState {
-    Connecting(HandshakeMessage),
-    Handshaking(HandshakeMessage),
-    Connected(PeerId),
-    Error,
-}
-
-impl ProbeState {
-    fn is_connected(&self) -> bool {
-        matches!(self, ProbeState::Connected(_))
-    }
-
-    fn handle_event(self, stream: &mut TcpStream, event: &Event) -> Self {
-        if event.is_error() {
-            match stream.take_error() {
-                Ok(Some(err)) => debug!(%err, "I/O error"),
-                Ok(None) => {}
-                Err(err) => debug!(%err, "failed to take I/O error"),
-            }
-            return ProbeState::Error;
-        }
-
-        match self {
-            Self::Connecting(handshake) => Self::handle_connect(stream, handshake),
-            Self::Handshaking(handshake) if event.is_readable() => {
-                Self::handle_handshake(stream, handshake)
-            }
-            _ => self,
-        }
-    }
-
-    fn handle_connect(stream: &mut TcpStream, handshake: HandshakeMessage) -> Self {
-        match stream.peer_addr() {
-            Ok(_) => {
-                debug!("sending handshake message");
-                match handshake.send(stream) {
-                    Ok(_) => Self::Handshaking(handshake),
-                    Err(err) => {
-                        debug!(%err, "failed to send handshake message");
-                        Self::Error
-                    }
-                }
-            }
-            Err(err) => {
-                debug!(%err,"connection failed");
-                Self::Error
-            }
-        }
-    }
-
-    fn handle_handshake(stream: &mut TcpStream, handshake: HandshakeMessage) -> Self {
-        debug!("receiving remote handshake");
-        match HandshakeMessage::receive(stream) {
-            Ok(remote_handshake) => {
-                if remote_handshake.info_hash == handshake.info_hash {
-                    let remote_id = remote_handshake.peer_id;
-                    debug!(%remote_id, "connected to peer");
-                    Self::Connected(remote_id)
-                } else {
-                    debug!(
-                        ?remote_handshake.info_hash,
-                        "info_hash mismatch in received handshake"
-                    );
-                    Self::Error
-                }
-            }
-            Err(err) => {
-                debug!(%err, "handshake failed");
-                Self::Error
-            }
-        }
-    }
-}
-
 struct PeerProbe {
     token: Token,
     stream: mio::net::TcpStream,
@@ -279,7 +207,17 @@ impl PeerProbe {
     fn handle_event(&mut self, event: &Event) {
         let _guard = self.span.enter();
         trace!(?event, "received event");
-        self.state = self.state.handle_event(&mut self.stream, event);
+
+        if event.is_error() {
+            match self.stream.take_error() {
+                Ok(Some(err)) => debug!(%err, "I/O error"),
+                Ok(None) => {}
+                Err(err) => debug!(%err, "failed to take I/O error"),
+            }
+            self.state = ProbeState::Error;
+        } else {
+            self.state = self.state.handle_event(&mut self.stream, event);
+        }
     }
 
     fn into_peer_channel(self) -> IoResult<PeerChannel> {
