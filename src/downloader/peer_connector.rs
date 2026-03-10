@@ -109,7 +109,7 @@ impl<'a> PeerPoller<'a> {
         let errored_tokens: Vec<Token> = self
             .probes
             .iter()
-            .filter(|(_, probe)| probe.state == ProbeState::Error)
+            .filter(|(_, probe)| matches!(probe.state, ProbeState::Error))
             .map(|(token, _)| *token)
             .collect();
 
@@ -168,7 +168,7 @@ impl<'a> Iterator for PeerPoller<'a> {
     }
 }
 
-#[derive(PartialEq, Eq, Clone, Copy)]
+#[derive(Clone, Copy)]
 enum ProbeState {
     Connecting(HandshakeMessage),
     Handshaking(HandshakeMessage),
