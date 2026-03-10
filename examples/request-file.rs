@@ -51,7 +51,7 @@ fn main() -> Result<()> {
 }
 
 fn setup_tracing() -> Result<()> {
-    let log_filename = "request-file-channel.log";
+    let log_filename = "request-file.log";
 
     tracing_subscriber::fmt()
         .with_max_level(tracing::Level::DEBUG)

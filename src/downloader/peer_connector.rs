@@ -183,6 +183,11 @@ impl ProbeState {
 
     fn handle_event(self, stream: &mut TcpStream, event: &Event) -> Self {
         if event.is_error() {
+            match stream.take_error() {
+                Ok(Some(err)) => debug!(%err, "I/O error"),
+                Ok(None) => {}
+                Err(err) => debug!(%err, "failed to take I/O error"),
+            }
             return ProbeState::Error;
         }
 
