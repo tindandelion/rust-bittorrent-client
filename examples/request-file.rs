@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::time::Instant;
 
 use bt_client::Torrent;
-use bt_client::downloader::peer_connectors::ChannelConnector;
+use bt_client::downloader::peer_connector::PeerConnector;
 use bt_client::request_complete_file;
 use bt_client::result::Result;
 use bt_client::types::PeerId;
@@ -16,7 +16,7 @@ fn main() -> Result<()> {
     let mut successes = 0;
 
     let addrs = torrent.fetch_peer_addresses(peer_id)?;
-    let connector = ChannelConnector::new(torrent.info.sha1, peer_id);
+    let connector = PeerConnector::new(torrent.info.sha1, peer_id);
 
     for channel in connector.connect(addrs) {
         print!("{}\t\t\t", channel.peer_addr());

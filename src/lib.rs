@@ -9,12 +9,12 @@ mod util;
 use tracing::{Level, debug, error, info, instrument};
 
 use crate::{
-    downloader::{PeerChannel, peer_connectors::ChannelConnector},
+    downloader::{PeerChannel, peer_connector::PeerConnector},
     ratatui_ui::AppEvent,
     tracker::AnnounceRequest,
     types::PeerId,
 };
-pub use downloader::peer_connectors::ParPeerConnector;
+
 use result::Result;
 use std::{net::SocketAddr, sync::mpsc::Sender, time::Duration};
 pub use torrent::Torrent;
@@ -42,7 +42,7 @@ impl Torrent {
         event_sender: &Sender<AppEvent>,
     ) -> Option<PeerChannel> {
         let total_peers = peer_addrs.len();
-        let connector = ChannelConnector::new(self.info.sha1, peer_id).with_progress_callback(
+        let connector = PeerConnector::new(self.info.sha1, peer_id).with_progress_callback(
             |addr, total_probed| {
                 let _ = event_sender
                     .send(AppEvent::Probing {

@@ -1,6 +1,6 @@
 mod file_downloader;
 pub mod peer_comm;
-pub mod peer_connectors;
+pub mod peer_connector;
 pub mod request_download;
 
 use std::io;

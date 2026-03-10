@@ -8,7 +8,7 @@ use crate::{
     types::{PeerId, Sha1},
 };
 
-pub struct ChannelConnector<'a> {
+pub struct PeerConnector<'a> {
     info_hash: Sha1,
     peer_id: PeerId,
     timeout: Duration,
@@ -16,12 +16,14 @@ pub struct ChannelConnector<'a> {
     peers_probed: usize,
 }
 
-impl<'a> ChannelConnector<'a> {
+impl<'a> PeerConnector<'a> {
+    const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
+
     pub fn new(info_hash: Sha1, peer_id: PeerId) -> Self {
         Self {
             info_hash,
             peer_id,
-            timeout: super::CONNECT_TIMEOUT,
+            timeout: Self::CONNECT_TIMEOUT,
             progress_callback: Box::new(|_, _| {}),
             peers_probed: 0,
         }
@@ -57,13 +59,13 @@ impl<'a> ChannelConnector<'a> {
 struct PeerPoller<'a> {
     probes: HashMap<Token, PeerProbe>,
     poll: Poll,
-    connector: ChannelConnector<'a>,
+    connector: PeerConnector<'a>,
 }
 
 impl<'a> PeerPoller<'a> {
     fn new(
         peer_addrs: impl IntoIterator<Item = SocketAddr>,
-        connector: ChannelConnector<'a>,
+        connector: PeerConnector<'a>,
     ) -> IoResult<Self> {
         let mut probes: HashMap<Token, PeerProbe> = HashMap::new();
         let mut poll = Poll::new()?;
@@ -417,9 +419,7 @@ mod tests {
             curr.insert(addr);
         };
 
-        let connector = make_connector()
-            .with_timeout(Duration::from_secs(1))
-            .with_progress_callback(progress_callback);
+        let connector = make_connector().with_progress_callback(progress_callback);
 
         let iterator = connector.connect(peer_addresses.clone());
         let _ = iterator.collect::<Vec<_>>();
@@ -432,8 +432,8 @@ mod tests {
         Ok(())
     }
 
-    fn make_connector<'a>() -> ChannelConnector<'a> {
-        ChannelConnector::new(Sha1::random(), PeerId::random()).with_timeout(Duration::from_secs(1))
+    fn make_connector<'a>() -> PeerConnector<'a> {
+        PeerConnector::new(Sha1::random(), PeerId::random()).with_timeout(Duration::from_secs(1))
     }
 
     struct TestRemotePeer {
