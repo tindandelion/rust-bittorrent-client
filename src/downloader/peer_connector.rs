@@ -169,6 +169,12 @@ impl<'a> Iterator for PeerPoller<'a> {
     }
 }
 
+impl probe_state::PeerStream for mio::net::TcpStream {
+    fn peer_addr(&self) -> io::Result<SocketAddr> {
+        self.peer_addr()
+    }
+}
+
 struct PeerProbe {
     token: Token,
     stream: mio::net::TcpStream,
@@ -214,7 +220,9 @@ impl PeerProbe {
             }
             self.state = ProbeState::Error;
         } else {
-            self.state = self.state.handle_event(&mut self.stream, event);
+            self.state = self
+                .state
+                .handle_event(&mut self.stream, event.is_readable());
         }
     }
 
@@ -240,7 +248,6 @@ mod tests {
     use crate::downloader::peer_comm::handshake_message::HandshakeMessage;
     use crate::result::Result;
     use crate::types::{PeerId, Sha1};
-    use std::io::Write;
     use std::{cell::RefCell, collections::HashSet, net::TcpListener};
 
     use super::*;
@@ -280,28 +287,6 @@ mod tests {
     #[test]
     fn error_handshake_hangup() {
         let remote_peer = TestRemotePeer::new().hangup_handshake();
-        let peer_addr = remote_peer.start();
-
-        let connector = make_connector();
-        let connected_peers = connector.connect(vec![peer_addr]).collect::<Vec<_>>();
-
-        assert!(connected_peers.is_empty());
-    }
-
-    #[test]
-    fn error_handshake_invalid_response_handshake() {
-        let remote_peer = TestRemotePeer::new().send_handshake_data(&[0x01, 0x02]);
-        let peer_addr = remote_peer.start();
-
-        let connector = make_connector();
-        let connected_peers = connector.connect(vec![peer_addr]).collect::<Vec<_>>();
-
-        assert!(connected_peers.is_empty());
-    }
-
-    #[test]
-    fn error_handshake_mismatch_of_info_hash() {
-        let remote_peer = TestRemotePeer::new().send_info_hash(Sha1::random());
         let peer_addr = remote_peer.start();
 
         let connector = make_connector();
@@ -380,8 +365,6 @@ mod tests {
     struct TestRemotePeer {
         peer_id: PeerId,
         hangup_handshake: bool,
-        handshake_data: Option<Vec<u8>>,
-        handshake_info_hash: Option<Sha1>,
     }
 
     impl TestRemotePeer {
@@ -390,8 +373,6 @@ mod tests {
             Self {
                 peer_id,
                 hangup_handshake: false,
-                handshake_data: None,
-                handshake_info_hash: None,
             }
         }
 
@@ -412,8 +393,6 @@ mod tests {
                 .expect("failed to get local peer address");
             let peer_id = self.peer_id;
             let hangup_handshake = self.hangup_handshake;
-            let handshake_data = self.handshake_data.clone();
-            let response_info_hash = self.handshake_info_hash;
 
             std::thread::spawn(move || {
                 let (mut stream, _) = listener.accept().unwrap();
@@ -422,28 +401,11 @@ mod tests {
                 }
 
                 let incoming_handshake = HandshakeMessage::receive(&mut stream).unwrap();
-                if handshake_data.is_some() {
-                    stream
-                        .write_all(handshake_data.unwrap().as_slice())
-                        .expect("failed to send custom response data");
-                } else {
-                    let incoming_info_hash = incoming_handshake.info_hash;
-                    let response_info_hash = response_info_hash.unwrap_or(incoming_info_hash);
-                    let message = HandshakeMessage::new(response_info_hash, peer_id);
-                    message.send(&mut stream).unwrap();
-                }
+                let incoming_info_hash = incoming_handshake.info_hash;
+                let message = HandshakeMessage::new(incoming_info_hash, peer_id);
+                message.send(&mut stream).unwrap();
             });
             peer_addr
-        }
-
-        fn send_handshake_data(mut self, arg: &[u8]) -> Self {
-            self.handshake_data = Some(arg.to_vec());
-            self
-        }
-
-        fn send_info_hash(mut self, info_hash: Sha1) -> Self {
-            self.handshake_info_hash = Some(info_hash);
-            self
         }
     }
 }
