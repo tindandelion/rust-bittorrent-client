@@ -13,7 +13,7 @@ pub enum ProbeState {
 
 impl ProbeState {
     pub fn is_connected(&self) -> bool {
-        matches!(self, ProbeState::Connected(_))
+        matches!(self, Self::Connected(_))
     }
 
     pub fn handle_event(self, stream: &mut TcpStream, event: &Event) -> Self {
