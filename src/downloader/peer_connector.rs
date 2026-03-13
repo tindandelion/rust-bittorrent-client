@@ -1,5 +1,5 @@
 mod probe_state;
-use std::{collections::HashMap, net::SocketAddr, time::Duration};
+use std::{collections::HashMap, io, net::SocketAddr, time::Duration};
 
 use mio::{Events, Poll, Token, event::Event};
 use tracing::{Span, debug, debug_span, error, trace};
@@ -69,7 +69,7 @@ impl<'a> PeerPoller<'a> {
     fn new(
         peer_addrs: impl IntoIterator<Item = SocketAddr>,
         connector: PeerConnector<'a>,
-    ) -> IoResult<Self> {
+    ) -> io::Result<Self> {
         let mut probes: HashMap<Token, PeerProbe> = HashMap::new();
         let mut poll = Poll::new()?;
 
@@ -88,7 +88,7 @@ impl<'a> PeerPoller<'a> {
         })
     }
 
-    fn wait_for_connected_channel(&mut self) -> IoResult<Option<PeerChannel>> {
+    fn wait_for_connected_channel(&mut self) -> io::Result<Option<PeerChannel>> {
         let mut events = mio::Events::with_capacity(1024);
         loop {
             if let Some(channel) = self.get_connected_channel()? {
@@ -108,7 +108,7 @@ impl<'a> PeerPoller<'a> {
         }
     }
 
-    fn remove_errored_probes(&mut self) -> IoResult<()> {
+    fn remove_errored_probes(&mut self) -> io::Result<()> {
         let errored_tokens: Vec<Token> = self
             .probes
             .iter()
@@ -124,7 +124,7 @@ impl<'a> PeerPoller<'a> {
         Ok(())
     }
 
-    fn get_connected_channel(&mut self) -> IoResult<Option<PeerChannel>> {
+    fn get_connected_channel(&mut self) -> io::Result<Option<PeerChannel>> {
         let connected_probe_token = self
             .probes
             .iter()
@@ -152,14 +152,12 @@ impl<'a> PeerPoller<'a> {
         }
     }
 
-    fn unregister_probe(&mut self, probe: &mut PeerProbe) -> IoResult<()> {
+    fn unregister_probe(&mut self, probe: &mut PeerProbe) -> io::Result<()> {
         probe.unregister(&mut self.poll)?;
         self.connector.report_progress(probe.addr);
         Ok(())
     }
 }
-
-type IoResult<T> = std::result::Result<T, std::io::Error>;
 
 impl<'a> Iterator for PeerPoller<'a> {
     type Item = PeerChannel;
@@ -180,7 +178,7 @@ struct PeerProbe {
 }
 
 impl PeerProbe {
-    fn connect(token: Token, addr: SocketAddr, handshake: HandshakeMessage) -> IoResult<Self> {
+    fn connect(token: Token, addr: SocketAddr, handshake: HandshakeMessage) -> io::Result<Self> {
         let span = debug_span!("connect_to_peer", addr = %addr);
         let stream = span.in_scope(|| {
             debug!("initiating connection");
@@ -195,7 +193,7 @@ impl PeerProbe {
         })
     }
 
-    fn register(&mut self, poll: &mut Poll) -> IoResult<()> {
+    fn register(&mut self, poll: &mut Poll) -> io::Result<()> {
         poll.registry().register(
             &mut self.stream,
             self.token,
@@ -220,7 +218,7 @@ impl PeerProbe {
         }
     }
 
-    fn into_peer_channel(self) -> IoResult<PeerChannel> {
+    fn into_peer_channel(self) -> io::Result<PeerChannel> {
         match self.state {
             ProbeState::Connected(remote_id) => {
                 let std_stream: std::net::TcpStream = self.stream.into();
@@ -232,7 +230,7 @@ impl PeerProbe {
         }
     }
 
-    fn unregister(&mut self, poll: &mut Poll) -> IoResult<()> {
+    fn unregister(&mut self, poll: &mut Poll) -> io::Result<()> {
         poll.registry().deregister(&mut self.stream)
     }
 }
