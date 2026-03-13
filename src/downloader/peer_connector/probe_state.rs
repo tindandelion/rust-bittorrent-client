@@ -132,13 +132,14 @@ mod tests {
 
         #[test]
         fn handshake_with_remote_host_successfully() {
-            let (state, handshake) = make_state();
+            let (state, info_hash) = make_state();
+            let remote_handshake = HandshakeMessage::new(info_hash, PeerId::random());
 
             let mut stream = TestPeerStream::new();
-            stream.set_handshake(handshake);
+            stream.set_remote_handshake(remote_handshake);
             let next_state = state.handle_event(&mut stream, true);
 
-            assert_eq!(next_state, ProbeState::Connected(handshake.peer_id));
+            assert_eq!(next_state, ProbeState::Connected(remote_handshake.peer_id));
         }
 
         #[test]
@@ -146,7 +147,7 @@ mod tests {
             let (state, _) = make_state();
 
             let mut stream = TestPeerStream::new();
-            stream.set_handshake(HandshakeMessage::new(Sha1::random(), PeerId::random()));
+            stream.set_remote_handshake(HandshakeMessage::new(Sha1::random(), PeerId::random()));
             let next_state = state.handle_event(&mut stream, true);
 
             assert_eq!(next_state, ProbeState::Error);
@@ -163,10 +164,11 @@ mod tests {
             assert_eq!(next_state, ProbeState::Error);
         }
 
-        fn make_state() -> (ProbeState, HandshakeMessage) {
-            let handshake = HandshakeMessage::new(Sha1::random(), PeerId::random());
+        fn make_state() -> (ProbeState, Sha1) {
+            let info_hash = Sha1::random();
+            let handshake = HandshakeMessage::new(info_hash, PeerId::random());
             let state = ProbeState::Handshaking(handshake);
-            (state, handshake)
+            (state, info_hash)
         }
     }
 
@@ -201,7 +203,7 @@ mod tests {
             HandshakeMessage::receive(&mut self.received_data.as_slice()).unwrap()
         }
 
-        fn set_handshake(&mut self, handshake: HandshakeMessage) {
+        fn set_remote_handshake(&mut self, handshake: HandshakeMessage) {
             handshake.send(&mut self.data_to_send).unwrap();
         }
     }
