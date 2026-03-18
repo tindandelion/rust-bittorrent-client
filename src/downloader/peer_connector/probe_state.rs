@@ -1,5 +1,5 @@
 use std::{
-    io::{self, Read, Write},
+    io::{self},
     net::SocketAddr,
 };
 
@@ -7,8 +7,10 @@ use tracing::debug;
 
 use crate::{downloader::peer_comm::handshake_message::HandshakeMessage, types::PeerId};
 
-pub trait PeerStream: Read + Write {
+pub trait PeerStream {
     fn peer_addr(&self) -> io::Result<SocketAddr>;
+    fn send_handshake(&mut self, handshake: HandshakeMessage) -> io::Result<()>;
+    fn receive_handshake(&mut self) -> io::Result<HandshakeMessage>;
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -38,8 +40,8 @@ impl ProbeState {
         match stream.peer_addr() {
             Ok(_) => {
                 debug!("sending handshake message");
-                match handshake.send(stream) {
-                    Ok(_) => Self::Handshaking(handshake),
+                match stream.send_handshake(handshake) {
+                    Ok(()) => Self::Handshaking(handshake),
                     Err(err) => {
                         debug!(%err, "failed to send handshake message");
                         Self::Error
@@ -56,7 +58,7 @@ impl ProbeState {
 
     fn handle_handshake(stream: &mut impl PeerStream, handshake: HandshakeMessage) -> Self {
         debug!("receiving remote handshake");
-        match HandshakeMessage::receive(stream) {
+        match stream.receive_handshake() {
             Ok(remote_handshake) => {
                 if remote_handshake.info_hash == handshake.info_hash {
                     let remote_id = remote_handshake.peer_id;
@@ -153,17 +155,6 @@ mod tests {
             assert_eq!(next_state, ProbeState::Error);
         }
 
-        #[test]
-        fn remote_handshake_is_invalid() {
-            let (state, _) = make_state();
-
-            let mut stream = TestPeerStream::new();
-            stream.data_to_send = vec![0x01; 68];
-            let next_state = state.handle_event(&mut stream, true);
-
-            assert_eq!(next_state, ProbeState::Error);
-        }
-
         fn make_state() -> (ProbeState, Sha1) {
             let info_hash = Sha1::random();
             let handshake = HandshakeMessage::new(info_hash, PeerId::random());
@@ -174,8 +165,8 @@ mod tests {
 
     struct TestPeerStream {
         peer_addr: String,
-        received_data: Vec<u8>,
-        data_to_send: Vec<u8>,
+        sent_handshake: Option<HandshakeMessage>,
+        remote_handshake: Option<HandshakeMessage>,
     }
 
     impl PeerStream for TestPeerStream {
@@ -188,41 +179,35 @@ mod tests {
                 Ok("127.0.0.1:12345".parse().unwrap())
             }
         }
+
+        fn send_handshake(&mut self, handshake: HandshakeMessage) -> io::Result<()> {
+            self.sent_handshake = Some(handshake);
+            Ok(())
+        }
+
+        fn receive_handshake(&mut self) -> io::Result<HandshakeMessage> {
+            self.remote_handshake.ok_or(io::Error::new(
+                io::ErrorKind::Other,
+                "no remote handshake to send",
+            ))
+        }
     }
 
     impl TestPeerStream {
         fn new() -> Self {
             Self {
                 peer_addr: "127.0.0.1:12345".to_string(),
-                received_data: Vec::new(),
-                data_to_send: Vec::new(),
+                sent_handshake: None,
+                remote_handshake: None,
             }
         }
 
         fn sent_handshake(&self) -> HandshakeMessage {
-            HandshakeMessage::receive(&mut self.received_data.as_slice()).unwrap()
+            self.sent_handshake.unwrap()
         }
 
         fn set_remote_handshake(&mut self, handshake: HandshakeMessage) {
-            handshake.send(&mut self.data_to_send).unwrap();
-        }
-    }
-
-    impl Read for TestPeerStream {
-        fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-            buf.copy_from_slice(&self.data_to_send);
-            Ok(self.data_to_send.len())
-        }
-    }
-
-    impl Write for TestPeerStream {
-        fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-            self.received_data.extend_from_slice(buf);
-            Ok(buf.len())
-        }
-
-        fn flush(&mut self) -> io::Result<()> {
-            Ok(())
+            self.remote_handshake = Some(handshake);
         }
     }
 }

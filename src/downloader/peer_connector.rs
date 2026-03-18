@@ -173,6 +173,14 @@ impl probe_state::PeerStream for mio::net::TcpStream {
     fn peer_addr(&self) -> io::Result<SocketAddr> {
         self.peer_addr()
     }
+
+    fn send_handshake(&mut self, handshake: HandshakeMessage) -> io::Result<()> {
+        handshake.send(self)
+    }
+
+    fn receive_handshake(&mut self) -> io::Result<HandshakeMessage> {
+        HandshakeMessage::receive(self)
+    }
 }
 
 struct PeerProbe {
