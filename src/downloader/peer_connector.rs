@@ -2,7 +2,7 @@ mod probe_state;
 use std::{collections::HashMap, io, net::SocketAddr, time::Duration};
 
 use mio::{Events, Poll, Token, event::Event};
-use tracing::{Span, debug, debug_span, error, trace};
+use tracing::{Span, debug, debug_span, error, trace, warn};
 
 use crate::{
     downloader::{
@@ -44,7 +44,6 @@ impl<'a> PeerConnector<'a> {
         self
     }
 
-    #[cfg(test)]
     pub fn with_timeout(mut self, timeout: Duration) -> Self {
         self.timeout = timeout;
         self
@@ -249,8 +248,13 @@ impl PeerProbe {
                 Err(ProbeError::IO(err)) if err.kind() == io::ErrorKind::WouldBlock => {
                     break;
                 }
+                Err(ProbeError::IO(err)) => {
+                    debug!(?err, "I/O error");
+                    self.state = ProbeState::Error;
+                    break;
+                }
                 Err(err) => {
-                    debug!(?err, "Probe error");
+                    warn!(?err, "Probing error");
                     self.state = ProbeState::Error;
                     break;
                 }
