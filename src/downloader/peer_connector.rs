@@ -234,10 +234,26 @@ impl PeerProbe {
                 Err(err) => debug!(%err, "failed to take I/O error"),
             }
             self.state = ProbeState::Error;
-        } else {
-            self.state = self
-                .state
-                .handle_event(&mut self.stream, event.is_readable());
+            return;
+        }
+
+        loop {
+            match self.state.update(&mut self.stream) {
+                Ok(next_state) => {
+                    self.state = next_state;
+                    if self.state.is_terminal() {
+                        break;
+                    }
+                }
+                Err(err) if err.kind() == io::ErrorKind::WouldBlock => {
+                    break;
+                }
+                Err(err) => {
+                    error!(%err, "error while updating probe state");
+                    self.state = ProbeState::Error;
+                    break;
+                }
+            }
         }
     }
 
