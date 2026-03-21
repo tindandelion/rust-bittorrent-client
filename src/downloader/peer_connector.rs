@@ -8,6 +8,7 @@ use crate::{
     downloader::{
         PeerChannel,
         peer_comm::{PeerMessage, handshake_message::HandshakeMessage},
+        peer_connector::probe_state::ProbeError,
     },
     types::{PeerId, Sha1},
 };
@@ -245,11 +246,11 @@ impl PeerProbe {
                         break;
                     }
                 }
-                Err(err) if err.kind() == io::ErrorKind::WouldBlock => {
+                Err(ProbeError::IO(err)) if err.kind() == io::ErrorKind::WouldBlock => {
                     break;
                 }
                 Err(err) => {
-                    debug!(?err, "I/O error");
+                    debug!(?err, "Probe error");
                     self.state = ProbeState::Error;
                     break;
                 }

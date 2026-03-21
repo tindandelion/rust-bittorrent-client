@@ -3,7 +3,7 @@ use std::{
     net::SocketAddr,
 };
 
-use tracing::{error, trace};
+use tracing::{error, trace, warn};
 
 use crate::{
     downloader::peer_comm::{PeerMessage, handshake_message::HandshakeMessage},
@@ -26,6 +26,21 @@ pub enum ProbeState {
     Error,
 }
 
+#[derive(Debug)]
+pub enum ProbeError {
+    InfoHashMismatch,
+    UnexpectedPeerMessage,
+    IO(io::Error),
+}
+
+pub type ProbeUpdateResult = Result<ProbeState, ProbeError>;
+
+impl From<io::Error> for ProbeError {
+    fn from(error: io::Error) -> Self {
+        Self::IO(error)
+    }
+}
+
 impl ProbeState {
     pub fn is_connected(&self) -> bool {
         matches!(self, Self::BitfieldReceived(_, _))
@@ -35,7 +50,7 @@ impl ProbeState {
         matches!(self, Self::BitfieldReceived(_, _) | Self::Error)
     }
 
-    pub fn update(&self, stream: &mut impl PeerStream) -> io::Result<Self> {
+    pub fn update(&self, stream: &mut impl PeerStream) -> ProbeUpdateResult {
         match self {
             Self::Connecting(handshake) => Self::handle_connect(stream, *handshake),
             Self::Handshaking(handshake) => Self::handle_handshake(stream, *handshake),
@@ -47,7 +62,7 @@ impl ProbeState {
     fn handle_connect(
         stream: &mut impl PeerStream,
         handshake: HandshakeMessage,
-    ) -> io::Result<Self> {
+    ) -> ProbeUpdateResult {
         match stream.peer_addr() {
             Ok(_) => {
                 trace!("sending handshake message");
@@ -59,36 +74,36 @@ impl ProbeState {
             Err(err) if err.kind() == io::ErrorKind::NotConnected => {
                 Ok(Self::Connecting(handshake))
             }
-            Err(err) => Err(err),
+            Err(err) => Err(err.into()),
         }
     }
 
     fn handle_handshake(
         stream: &mut impl PeerStream,
         handshake: HandshakeMessage,
-    ) -> io::Result<Self> {
+    ) -> ProbeUpdateResult {
         trace!("receiving remote handshake");
         let remote_handshake = stream.receive_handshake()?;
         if remote_handshake.info_hash != handshake.info_hash {
-            error!(
+            warn!(
                 ?remote_handshake.info_hash,
                 "info_hash mismatch in received handshake"
             );
-            return Ok(Self::Error);
+            return Err(ProbeError::InfoHashMismatch);
         }
         let remote_id = remote_handshake.peer_id;
         trace!(%remote_id, "connected to peer");
         Ok(Self::WaitingForBitfield(remote_id))
     }
 
-    fn handle_bitfield(stream: &mut impl PeerStream, peer_id: PeerId) -> io::Result<Self> {
+    fn handle_bitfield(stream: &mut impl PeerStream, peer_id: PeerId) -> ProbeUpdateResult {
         trace!("receiving bitfield");
         let msg = stream.receive_message()?;
         if let PeerMessage::Bitfield(bitfield) = msg {
             Ok(Self::BitfieldReceived(peer_id, bitfield))
         } else {
             error!(?msg, "unexpected message received");
-            Ok(Self::Error)
+            Err(ProbeError::UnexpectedPeerMessage)
         }
     }
 }
@@ -163,10 +178,10 @@ mod tests {
             let (state, _) = make_state();
 
             let mut stream = TestPeerStream::new();
-            stream.set_remote_handshake(HandshakeMessage::new(Sha1::random(), PeerId::random()));
-            let next_state = state.update(&mut stream).unwrap();
-
-            assert_eq!(next_state, ProbeState::Error);
+            let remote_info_hash = Sha1::random();
+            stream.set_remote_handshake(HandshakeMessage::new(remote_info_hash, PeerId::random()));
+            let result = state.update(&mut stream);
+            assert!(matches!(result, Err(ProbeError::InfoHashMismatch)));
         }
 
         fn make_state() -> (ProbeState, Sha1) {
@@ -199,7 +214,19 @@ mod tests {
             let (state, _) = make_state();
 
             let mut stream = TestPeerStream::new();
-            let _ = state.update(&mut stream).expect_err("expected an error");
+            let result = state.update(&mut stream);
+            assert!(matches!(result, Err(ProbeError::IO(_))));
+        }
+
+        #[test]
+        fn error_when_unexpected_message_received() {
+            let (state, _) = make_state();
+
+            let mut stream = TestPeerStream::new();
+            stream.sends_peer_message(PeerMessage::Unchoke);
+            let result = state.update(&mut stream);
+
+            assert!(matches!(result, Err(ProbeError::UnexpectedPeerMessage)));
         }
 
         fn make_state() -> (ProbeState, PeerId) {
