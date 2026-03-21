@@ -45,6 +45,13 @@ impl PeerMessage {
 
     pub fn send(&self, dst: &mut impl io::Write) -> io::Result<()> {
         match self {
+            Self::Bitfield(bitfield) => {
+                let mut msg = vec![];
+                msg.extend_from_slice(&(bitfield.len() as u32 + 1).to_be_bytes());
+                msg.push(5);
+                msg.extend_from_slice(&bitfield);
+                dst.write_all(&msg)
+            }
             Self::Interested => {
                 let msg = vec![0, 0, 0, 1, 2];
                 dst.write_all(&msg)
@@ -102,8 +109,25 @@ mod tests {
     }
 
     #[test]
+    fn send_bitfield_message() {
+        let mut buffer = Vec::new();
+        let bitfield = vec![1, 2, 3, 4];
+
+        PeerMessage::Bitfield(bitfield).send(&mut buffer).unwrap();
+        assert_eq!(
+            buffer,
+            vec![
+                0, 0, 0, 5, // Message length,
+                5, // Message id,
+                1, 2, 3, 4, // Bitfield payload
+            ]
+        );
+    }
+
+    #[test]
     fn send_interested_message() {
         let mut buffer = Vec::new();
+
         PeerMessage::Interested.send(&mut buffer).unwrap();
         assert_eq!(
             buffer,
@@ -117,6 +141,7 @@ mod tests {
     #[test]
     fn send_request_message() {
         let mut buffer = Vec::new();
+
         PeerMessage::Request {
             piece_index: 1,
             offset: 10,

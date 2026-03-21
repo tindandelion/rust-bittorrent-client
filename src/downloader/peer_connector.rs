@@ -5,7 +5,10 @@ use mio::{Events, Poll, Token, event::Event};
 use tracing::{Span, debug, debug_span, error, trace};
 
 use crate::{
-    downloader::{PeerChannel, peer_comm::handshake_message::HandshakeMessage},
+    downloader::{
+        PeerChannel,
+        peer_comm::{PeerMessage, handshake_message::HandshakeMessage},
+    },
     types::{PeerId, Sha1},
 };
 
@@ -181,6 +184,10 @@ impl probe_state::PeerStream for mio::net::TcpStream {
     fn receive_handshake(&mut self) -> io::Result<HandshakeMessage> {
         HandshakeMessage::receive(self)
     }
+
+    fn receive_message(&mut self) -> io::Result<PeerMessage> {
+        PeerMessage::receive(self)
+    }
 }
 
 struct PeerProbe {
@@ -236,7 +243,7 @@ impl PeerProbe {
 
     fn into_peer_channel(self) -> io::Result<PeerChannel> {
         match self.state {
-            ProbeState::Connected(remote_id) => {
+            ProbeState::BitfieldReceived(remote_id, _) => {
                 let std_stream: std::net::TcpStream = self.stream.into();
                 std_stream.set_nonblocking(false)?;
 
@@ -410,8 +417,11 @@ mod tests {
 
                 let incoming_handshake = HandshakeMessage::receive(&mut stream).unwrap();
                 let incoming_info_hash = incoming_handshake.info_hash;
-                let message = HandshakeMessage::new(incoming_info_hash, peer_id);
-                message.send(&mut stream).unwrap();
+
+                let handshake = HandshakeMessage::new(incoming_info_hash, peer_id);
+                handshake.send(&mut stream).unwrap();
+                let bitfield = vec![0b11111111, 0b11111111];
+                PeerMessage::Bitfield(bitfield).send(&mut stream).unwrap();
             });
             peer_addr
         }
