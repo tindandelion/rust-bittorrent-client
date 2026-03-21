@@ -249,7 +249,7 @@ impl PeerProbe {
                     break;
                 }
                 Err(err) => {
-                    error!(%err, "error while updating probe state");
+                    error!(%err, "probe finished with error");
                     self.state = ProbeState::Error;
                     break;
                 }
@@ -259,11 +259,11 @@ impl PeerProbe {
 
     fn into_peer_channel(self) -> io::Result<PeerChannel> {
         match self.state {
-            ProbeState::BitfieldReceived(remote_id, _) => {
+            ProbeState::BitfieldReceived(remote_id, bitfield) => {
                 let std_stream: std::net::TcpStream = self.stream.into();
                 std_stream.set_nonblocking(false)?;
 
-                PeerChannel::from_stream(std_stream, remote_id)
+                PeerChannel::from_stream(std_stream, remote_id, bitfield)
             }
             _ => Err(std::io::Error::other("probe not connected")),
         }

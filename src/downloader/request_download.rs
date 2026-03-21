@@ -19,11 +19,9 @@ pub enum Error {
 type Result<T> = std::result::Result<T, Error>;
 
 pub fn request_complete_file(channel: &mut impl MessageChannel, piece_count: usize) -> Result<()> {
-    match channel.receive()? {
-        PeerMessage::Bitfield(bitfield) => check_bitfield_size(bitfield.len(), piece_count)
-            .and_then(|_| check_bitfield_completeness(&bitfield, piece_count)),
-        other => unexpected_message_error("bitfield", other),
-    }?;
+    let bitfield = channel.bitfield();
+    check_bitfield_size(bitfield.len(), piece_count)
+        .and_then(|_| check_bitfield_completeness(&bitfield, piece_count))?;
 
     channel.send(&PeerMessage::Interested)?;
 
@@ -93,29 +91,15 @@ mod tests {
 
     #[test]
     fn request_complete_file_message_sequence() {
-        let mut channel =
-            MockChannel::new(vec![PeerMessage::Bitfield(vec![255]), PeerMessage::Unchoke]);
+        let mut channel = MockChannel::new(vec![PeerMessage::Unchoke], vec![255]);
 
         request_complete_file(&mut channel, PIECE_COUNT).unwrap();
         assert_eq!(
             vec![
-                ("recv", PeerMessage::Bitfield(vec![255])),
                 ("send", PeerMessage::Interested),
                 ("recv", PeerMessage::Unchoke),
             ],
             channel.message_sequence
-        );
-    }
-
-    #[test]
-    fn error_when_first_received_message_is_not_bitfield() {
-        let unexpected_message = PeerMessage::Unchoke;
-        let mut channel = MockChannel::new(vec![unexpected_message.clone()]);
-
-        let result = request_complete_file(&mut channel, PIECE_COUNT);
-        assert_eq!(
-            unexpected_message_error("bitfield", unexpected_message),
-            result
         );
     }
 
@@ -125,10 +109,7 @@ mod tests {
             id: 1,
             payload: vec![],
         };
-        let mut channel = MockChannel::new(vec![
-            PeerMessage::Bitfield(vec![255]),
-            unexpected_message.clone(),
-        ]);
+        let mut channel = MockChannel::new(vec![unexpected_message.clone()], vec![255]);
 
         let result = request_complete_file(&mut channel, PIECE_COUNT);
         assert_eq!(
@@ -143,7 +124,7 @@ mod tests {
         #[test]
         fn bitfield_data_too_short() {
             let piece_count = 16;
-            let mut channel = MockChannel::new(vec![PeerMessage::Bitfield(vec![255])]);
+            let mut channel = MockChannel::new(vec![], vec![255]);
 
             let result = request_complete_file(&mut channel, piece_count);
             assert_eq!(
@@ -158,7 +139,7 @@ mod tests {
         #[test]
         fn bitfield_data_too_long() {
             let piece_count = 16;
-            let mut channel = MockChannel::new(vec![PeerMessage::Bitfield(vec![255, 255, 255])]);
+            let mut channel = MockChannel::new(vec![], vec![255, 255, 255]);
 
             let result = request_complete_file(&mut channel, piece_count);
             assert_eq!(
@@ -173,7 +154,7 @@ mod tests {
         #[test]
         fn bitfield_data_missing_intermediate_pieces() {
             let piece_count = 16;
-            let mut channel = MockChannel::new(vec![PeerMessage::Bitfield(vec![128, 255])]);
+            let mut channel = MockChannel::new(vec![], vec![128, 255]);
 
             let result = request_complete_file(&mut channel, piece_count);
             assert_eq!(Err(Error::IncompleteFile), result);
@@ -182,7 +163,7 @@ mod tests {
         #[test]
         fn bitfield_data_missing_last_piece() {
             let piece_count = 15;
-            let mut channel = MockChannel::new(vec![PeerMessage::Bitfield(vec![255, 0b11111100])]);
+            let mut channel = MockChannel::new(vec![], vec![255, 0b11111100]);
 
             let result = request_complete_file(&mut channel, piece_count);
             assert_eq!(Err(Error::IncompleteFile), result);
@@ -191,10 +172,7 @@ mod tests {
         #[test]
         fn bitfield_ignore_redundant_bits_in_last_byte() {
             let piece_count = 10;
-            let mut channel = MockChannel::new(vec![
-                PeerMessage::Bitfield(vec![255, 0b11001000]),
-                PeerMessage::Unchoke,
-            ]);
+            let mut channel = MockChannel::new(vec![PeerMessage::Unchoke], vec![255, 0b11001000]);
 
             let result = request_complete_file(&mut channel, piece_count);
             assert_eq!(Ok(()), result);
@@ -204,13 +182,15 @@ mod tests {
     struct MockChannel {
         to_send: Vec<PeerMessage>,
         message_sequence: Vec<(&'static str, PeerMessage)>,
+        bitfield: Vec<u8>,
     }
 
     impl MockChannel {
-        fn new(messages_to_send: Vec<PeerMessage>) -> Self {
+        fn new(messages_to_send: Vec<PeerMessage>, bitfield: Vec<u8>) -> Self {
             Self {
                 to_send: messages_to_send.into_iter().rev().collect(),
                 message_sequence: vec![],
+                bitfield,
             }
         }
     }
@@ -228,6 +208,10 @@ mod tests {
         fn send(&mut self, msg: &PeerMessage) -> io::Result<()> {
             self.message_sequence.push(("send", msg.clone()));
             Ok(())
+        }
+
+        fn bitfield(&self) -> &[u8] {
+            &self.bitfield
         }
     }
 }

@@ -8,6 +8,7 @@ pub use peer_channel::PeerChannel;
 pub use peer_message::PeerMessage;
 
 pub trait MessageChannel {
+    fn bitfield(&self) -> &[u8];
     fn receive(&mut self) -> io::Result<PeerMessage>;
     fn send(&mut self, msg: &PeerMessage) -> io::Result<()>;
 }
