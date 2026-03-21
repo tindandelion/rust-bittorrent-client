@@ -3,7 +3,7 @@ use std::{
     net::SocketAddr,
 };
 
-use tracing::{debug, error};
+use tracing::{error, trace};
 
 use crate::{
     downloader::peer_comm::{PeerMessage, handshake_message::HandshakeMessage},
@@ -50,19 +50,16 @@ impl ProbeState {
     ) -> io::Result<Self> {
         match stream.peer_addr() {
             Ok(_) => {
-                debug!("sending handshake message");
+                trace!("sending handshake message");
                 stream
                     .send_handshake(handshake)
-                    .inspect_err(|err| debug!(?err, "failed to send handshake message"))?;
+                    .inspect_err(|err| error!(?err, "failed to send handshake message"))?;
                 Ok(Self::Handshaking(handshake))
             }
             Err(err) if err.kind() == io::ErrorKind::NotConnected => {
                 Ok(Self::Connecting(handshake))
             }
-            Err(err) => {
-                debug!(?err, "connection failed");
-                Ok(Self::Error)
-            }
+            Err(err) => Err(err),
         }
     }
 
@@ -70,7 +67,7 @@ impl ProbeState {
         stream: &mut impl PeerStream,
         handshake: HandshakeMessage,
     ) -> io::Result<Self> {
-        debug!("receiving remote handshake");
+        trace!("receiving remote handshake");
         let remote_handshake = stream.receive_handshake()?;
         if remote_handshake.info_hash != handshake.info_hash {
             error!(
@@ -80,11 +77,12 @@ impl ProbeState {
             return Ok(Self::Error);
         }
         let remote_id = remote_handshake.peer_id;
-        debug!(%remote_id, "connected to peer");
+        trace!(%remote_id, "connected to peer");
         Ok(Self::WaitingForBitfield(remote_id))
     }
 
     fn handle_bitfield(stream: &mut impl PeerStream, peer_id: PeerId) -> io::Result<Self> {
+        trace!("receiving bitfield");
         let msg = stream.receive_message()?;
         if let PeerMessage::Bitfield(bitfield) = msg {
             Ok(Self::BitfieldReceived(peer_id, bitfield))
@@ -132,9 +130,7 @@ mod tests {
 
             let mut stream = TestPeerStream::new();
             stream.peer_addr = "error".to_string();
-            let next_state = state.update(&mut stream).unwrap();
-
-            assert_eq!(next_state, ProbeState::Error);
+            let _ = state.update(&mut stream).expect_err("expected an error");
         }
 
         fn make_state() -> (ProbeState, HandshakeMessage) {
