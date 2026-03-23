@@ -22,8 +22,16 @@ pub enum PeerMessage {
 }
 
 impl PeerMessage {
+    const MAX_MESSAGE_LENGTH: usize = 128 * 1024; // 128KB
+
     pub fn receive(src: &mut impl io::Read) -> io::Result<Self> {
         let msg_len = Self::read_message_length(src)?;
+        if msg_len > Self::MAX_MESSAGE_LENGTH {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("Message length is too long: {}", msg_len),
+            ));
+        }
         let (id, payload) = Self::read_message_payload(src, msg_len)?;
         let received = match id {
             1 => Self::Unchoke,
@@ -217,5 +225,16 @@ mod tests {
             },
             message
         );
+    }
+
+    #[test]
+    fn limit_message_length() {
+        // 0x100000
+        let buffer = vec![
+            0x00, 0x10, 0x00, 0x00, // Message length
+            2,    // Message id
+        ];
+        let result = PeerMessage::receive(&mut buffer.as_slice()).expect_err("Expected an error");
+        assert_eq!(result.kind(), io::ErrorKind::InvalidData);
     }
 }
