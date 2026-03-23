@@ -30,7 +30,7 @@ pub enum ProbeState {
     Connecting(ProbeContext),
     Handshaking(ProbeContext),
     WaitingForBitfield(ProbeContext, PeerId),
-    Interested(ProbeContext, PeerId),
+    Interested(PeerId),
     Error,
 }
 
@@ -53,11 +53,11 @@ impl From<io::Error> for ProbeError {
 
 impl ProbeState {
     pub fn is_connected(&self) -> bool {
-        matches!(self, Self::Interested(_, _))
+        matches!(self, Self::Interested(_))
     }
 
     pub fn is_terminal(&self) -> bool {
-        matches!(self, Self::Interested(_, _) | Self::Error)
+        matches!(self, Self::Interested(_) | Self::Error)
     }
 
     pub fn update(&self, stream: &mut impl PeerStream) -> ProbeUpdateResult {
@@ -117,7 +117,7 @@ impl ProbeState {
                 return Err(ProbeError::IncompleteFile);
             }
             stream.send_message(PeerMessage::Interested)?;
-            Ok(Self::Interested(*context, peer_id))
+            Ok(Self::Interested(peer_id))
         } else {
             error!(?msg, "unexpected message received");
             Err(ProbeError::UnexpectedPeerMessage)
@@ -244,7 +244,7 @@ mod tests {
 
         #[test]
         fn bitfield_received_successfully_sends_interested_message() {
-            let (state, context, remote_peer_id) = make_state(16);
+            let (state, _, remote_peer_id) = make_state(16);
             let bitfield = vec![0b11111111, 0b11111111];
 
             let mut stream = TestPeerStream::new();
@@ -253,7 +253,7 @@ mod tests {
             let next_state = state.update(&mut stream).unwrap();
 
             assert_eq!(stream.sent_messages(), vec![PeerMessage::Interested]);
-            assert_eq!(next_state, ProbeState::Interested(context, remote_peer_id));
+            assert_eq!(next_state, ProbeState::Interested(remote_peer_id));
         }
 
         #[test]
@@ -328,7 +328,7 @@ mod tests {
             stream.remote_sends_message(PeerMessage::Bitfield(vec![0b11111111, 0b11001000]));
             let result = state.update(&mut stream);
 
-            assert!(matches!(result, Ok(ProbeState::Interested(_, _))));
+            assert!(matches!(result, Ok(ProbeState::Interested(_))));
         }
 
         fn make_state(piece_count: usize) -> (ProbeState, ProbeContext, PeerId) {
