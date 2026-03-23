@@ -7,7 +7,7 @@ use tracing::{error, trace, warn};
 
 use crate::{
     downloader::peer_comm::{PeerMessage, handshake_message::HandshakeMessage},
-    types::PeerId,
+    types::{PeerId, Sha1},
 };
 
 pub trait PeerStream {
@@ -17,12 +17,19 @@ pub trait PeerStream {
     fn receive_message(&mut self) -> io::Result<PeerMessage>;
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ProbeContext {
+    pub peer_id: PeerId,
+    pub info_hash: Sha1,
+    pub piece_count: usize,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum ProbeState {
-    Connecting(HandshakeMessage),
-    Handshaking(HandshakeMessage),
-    WaitingForBitfield(PeerId),
-    BitfieldReceived(PeerId, Vec<u8>),
+    Connecting(ProbeContext),
+    Handshaking(ProbeContext),
+    WaitingForBitfield(ProbeContext, PeerId),
+    BitfieldReceived(ProbeContext, PeerId, Vec<u8>),
     Error,
 }
 
@@ -43,48 +50,43 @@ impl From<io::Error> for ProbeError {
 
 impl ProbeState {
     pub fn is_connected(&self) -> bool {
-        matches!(self, Self::BitfieldReceived(_, _))
+        matches!(self, Self::BitfieldReceived(_, _, _))
     }
 
     pub fn is_terminal(&self) -> bool {
-        matches!(self, Self::BitfieldReceived(_, _) | Self::Error)
+        matches!(self, Self::BitfieldReceived(_, _, _) | Self::Error)
     }
 
     pub fn update(&self, stream: &mut impl PeerStream) -> ProbeUpdateResult {
         match self {
-            Self::Connecting(handshake) => Self::handle_connect(stream, *handshake),
-            Self::Handshaking(handshake) => Self::handle_handshake(stream, *handshake),
-            Self::WaitingForBitfield(peer_id) => Self::handle_bitfield(stream, *peer_id),
+            Self::Connecting(context) => Self::handle_connect(stream, context),
+            Self::Handshaking(context) => Self::handle_handshake(stream, context),
+            Self::WaitingForBitfield(context, peer_id) => {
+                Self::handle_bitfield(stream, context, *peer_id)
+            }
             _ => Ok(self.clone()),
         }
     }
 
-    fn handle_connect(
-        stream: &mut impl PeerStream,
-        handshake: HandshakeMessage,
-    ) -> ProbeUpdateResult {
+    fn handle_connect(stream: &mut impl PeerStream, context: &ProbeContext) -> ProbeUpdateResult {
         match stream.peer_addr() {
             Ok(_) => {
                 trace!("sending handshake message");
+                let handshake = HandshakeMessage::new(context.info_hash, context.peer_id);
                 stream
                     .send_handshake(handshake)
                     .inspect_err(|err| error!(?err, "failed to send handshake message"))?;
-                Ok(Self::Handshaking(handshake))
+                Ok(Self::Handshaking(*context))
             }
-            Err(err) if err.kind() == io::ErrorKind::NotConnected => {
-                Ok(Self::Connecting(handshake))
-            }
+            Err(err) if err.kind() == io::ErrorKind::NotConnected => Ok(Self::Connecting(*context)),
             Err(err) => Err(err.into()),
         }
     }
 
-    fn handle_handshake(
-        stream: &mut impl PeerStream,
-        handshake: HandshakeMessage,
-    ) -> ProbeUpdateResult {
+    fn handle_handshake(stream: &mut impl PeerStream, context: &ProbeContext) -> ProbeUpdateResult {
         trace!("receiving remote handshake");
         let remote_handshake = stream.receive_handshake()?;
-        if remote_handshake.info_hash != handshake.info_hash {
+        if remote_handshake.info_hash != context.info_hash {
             warn!(
                 ?remote_handshake.info_hash,
                 "info_hash mismatch in received handshake"
@@ -93,14 +95,18 @@ impl ProbeState {
         }
         let remote_id = remote_handshake.peer_id;
         trace!(%remote_id, "connected to peer");
-        Ok(Self::WaitingForBitfield(remote_id))
+        Ok(Self::WaitingForBitfield(*context, remote_id))
     }
 
-    fn handle_bitfield(stream: &mut impl PeerStream, peer_id: PeerId) -> ProbeUpdateResult {
+    fn handle_bitfield(
+        stream: &mut impl PeerStream,
+        context: &ProbeContext,
+        peer_id: PeerId,
+    ) -> ProbeUpdateResult {
         trace!("receiving bitfield");
         let msg = stream.receive_message()?;
         if let PeerMessage::Bitfield(bitfield) = msg {
-            Ok(Self::BitfieldReceived(peer_id, bitfield))
+            Ok(Self::BitfieldReceived(*context, peer_id, bitfield))
         } else {
             error!(?msg, "unexpected message received");
             Err(ProbeError::UnexpectedPeerMessage)
@@ -119,13 +125,14 @@ mod tests {
 
         #[test]
         fn connect_to_remote_host_successfully() {
-            let (state, handshake) = make_state();
+            let (state, context) = make_state();
 
             let mut stream = TestPeerStream::new();
             let next_state = state.update(&mut stream).unwrap();
 
-            assert_eq!(next_state, ProbeState::Handshaking(handshake));
-            assert_eq!(stream.sent_handshake(), handshake);
+            let expected_handshake = HandshakeMessage::new(context.info_hash, context.peer_id);
+            assert_eq!(next_state, ProbeState::Handshaking(context));
+            assert_eq!(stream.sent_handshake(), expected_handshake);
         }
 
         #[test]
@@ -148,10 +155,14 @@ mod tests {
             let _ = state.update(&mut stream).expect_err("expected an error");
         }
 
-        fn make_state() -> (ProbeState, HandshakeMessage) {
-            let handshake = HandshakeMessage::new(Sha1::random(), PeerId::random());
-            let state = ProbeState::Connecting(handshake);
-            (state, handshake)
+        fn make_state() -> (ProbeState, ProbeContext) {
+            let context = ProbeContext {
+                peer_id: PeerId::random(),
+                info_hash: Sha1::random(),
+                piece_count: 1,
+            };
+            let state = ProbeState::Connecting(context);
+            (state, context)
         }
     }
 
@@ -160,8 +171,8 @@ mod tests {
 
         #[test]
         fn handshake_with_remote_host_successfully() {
-            let (state, info_hash) = make_state();
-            let remote_handshake = HandshakeMessage::new(info_hash, PeerId::random());
+            let (state, context) = make_state();
+            let remote_handshake = HandshakeMessage::new(context.info_hash, PeerId::random());
 
             let mut stream = TestPeerStream::new();
             stream.set_remote_handshake(remote_handshake);
@@ -169,7 +180,7 @@ mod tests {
 
             assert_eq!(
                 next_state,
-                ProbeState::WaitingForBitfield(remote_handshake.peer_id)
+                ProbeState::WaitingForBitfield(context, remote_handshake.peer_id)
             );
         }
 
@@ -184,11 +195,14 @@ mod tests {
             assert!(matches!(result, Err(ProbeError::InfoHashMismatch)));
         }
 
-        fn make_state() -> (ProbeState, Sha1) {
-            let info_hash = Sha1::random();
-            let handshake = HandshakeMessage::new(info_hash, PeerId::random());
-            let state = ProbeState::Handshaking(handshake);
-            (state, info_hash)
+        fn make_state() -> (ProbeState, ProbeContext) {
+            let context = ProbeContext {
+                peer_id: PeerId::random(),
+                info_hash: Sha1::random(),
+                piece_count: 1,
+            };
+            let state = ProbeState::Handshaking(context);
+            (state, context)
         }
     }
 
@@ -199,19 +213,22 @@ mod tests {
 
         #[test]
         fn bitfield_received_successfully() {
-            let (state, peer_id) = make_state();
+            let (state, context, remote_peer_id) = make_state();
             let bitfield = vec![0b11111111, 0b11111111];
 
             let mut stream = TestPeerStream::new();
             stream.sends_peer_message(PeerMessage::Bitfield(bitfield.clone()));
 
             let next_state = state.update(&mut stream).unwrap();
-            assert_eq!(next_state, ProbeState::BitfieldReceived(peer_id, bitfield));
+            assert_eq!(
+                next_state,
+                ProbeState::BitfieldReceived(context, remote_peer_id, bitfield)
+            );
         }
 
         #[test]
         fn error_when_error_receiving_message() {
-            let (state, _) = make_state();
+            let (state, _, _) = make_state();
 
             let mut stream = TestPeerStream::new();
             let result = state.update(&mut stream);
@@ -220,7 +237,7 @@ mod tests {
 
         #[test]
         fn error_when_unexpected_message_received() {
-            let (state, _) = make_state();
+            let (state, _, _) = make_state();
 
             let mut stream = TestPeerStream::new();
             stream.sends_peer_message(PeerMessage::Unchoke);
@@ -229,10 +246,15 @@ mod tests {
             assert!(matches!(result, Err(ProbeError::UnexpectedPeerMessage)));
         }
 
-        fn make_state() -> (ProbeState, PeerId) {
+        fn make_state() -> (ProbeState, ProbeContext, PeerId) {
             let peer_id = PeerId::random();
-            let state = ProbeState::WaitingForBitfield(peer_id);
-            (state, peer_id)
+            let context = ProbeContext {
+                peer_id: PeerId::random(),
+                info_hash: Sha1::random(),
+                piece_count: 1,
+            };
+            let state = ProbeState::WaitingForBitfield(context, peer_id);
+            (state, context, peer_id)
         }
     }
 

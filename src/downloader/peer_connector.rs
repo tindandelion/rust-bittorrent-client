@@ -8,7 +8,7 @@ use crate::{
     downloader::{
         PeerChannel,
         peer_comm::{PeerMessage, handshake_message::HandshakeMessage},
-        peer_connector::probe_state::ProbeError,
+        peer_connector::probe_state::{ProbeContext, ProbeError},
     },
     types::{PeerId, Sha1},
 };
@@ -21,15 +21,17 @@ pub struct PeerConnector<'a> {
     timeout: Duration,
     progress_callback: Box<dyn Fn(SocketAddr, usize) + 'a>,
     peers_probed: usize,
+    piece_count: usize,
 }
 
 impl<'a> PeerConnector<'a> {
     const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 
-    pub fn new(info_hash: Sha1, peer_id: PeerId) -> Self {
+    pub fn new(info_hash: Sha1, peer_id: PeerId, piece_count: usize) -> Self {
         Self {
             info_hash,
             peer_id,
+            piece_count,
             timeout: Self::CONNECT_TIMEOUT,
             progress_callback: Box::new(|_, _| {}),
             peers_probed: 0,
@@ -78,8 +80,12 @@ impl<'a> PeerPoller<'a> {
 
         for (index, addr) in peer_addrs.into_iter().enumerate() {
             let token = Token(index);
-            let handshake = HandshakeMessage::new(connector.info_hash, connector.peer_id);
-            let mut probe = PeerProbe::connect(token, addr, handshake)?;
+            let context = ProbeContext {
+                peer_id: connector.peer_id,
+                info_hash: connector.info_hash,
+                piece_count: connector.piece_count,
+            };
+            let mut probe = PeerProbe::connect(token, addr, context)?;
             probe.register(&mut poll)?;
             probes.insert(token, probe);
         }
@@ -199,7 +205,7 @@ struct PeerProbe {
 }
 
 impl PeerProbe {
-    fn connect(token: Token, addr: SocketAddr, handshake: HandshakeMessage) -> io::Result<Self> {
+    fn connect(token: Token, addr: SocketAddr, context: ProbeContext) -> io::Result<Self> {
         let span = debug_span!("connect_to_peer", addr = %addr);
         let stream = span.in_scope(|| {
             debug!("initiating connection");
@@ -208,7 +214,7 @@ impl PeerProbe {
         Ok(Self {
             token,
             stream,
-            state: ProbeState::Connecting(handshake),
+            state: ProbeState::Connecting(context),
             addr,
             span,
         })
@@ -264,7 +270,7 @@ impl PeerProbe {
 
     fn into_peer_channel(self) -> io::Result<PeerChannel> {
         match self.state {
-            ProbeState::BitfieldReceived(remote_id, bitfield) => {
+            ProbeState::BitfieldReceived(_context, remote_id, bitfield) => {
                 let std_stream: std::net::TcpStream = self.stream.into();
                 std_stream.set_nonblocking(false)?;
 
@@ -287,6 +293,8 @@ mod tests {
     use std::{cell::RefCell, collections::HashSet, net::TcpListener};
 
     use super::*;
+
+    const REMOTE_PIECE_COUNT: usize = 1;
 
     #[test]
     fn successful_handshake_with_remote_peer() {
@@ -395,7 +403,8 @@ mod tests {
     }
 
     fn make_connector<'a>() -> PeerConnector<'a> {
-        PeerConnector::new(Sha1::random(), PeerId::random()).with_timeout(Duration::from_secs(1))
+        PeerConnector::new(Sha1::random(), PeerId::random(), REMOTE_PIECE_COUNT)
+            .with_timeout(Duration::from_secs(1))
     }
 
     struct TestRemotePeer {

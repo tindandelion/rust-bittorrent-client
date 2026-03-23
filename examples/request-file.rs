@@ -16,8 +16,8 @@ fn main() -> Result<()> {
     let mut successes = 0;
 
     let addrs = torrent.fetch_peer_addresses(peer_id)?;
-    let connector =
-        PeerConnector::new(torrent.info.sha1, peer_id).with_timeout(Duration::from_secs(10));
+    let connector = PeerConnector::new(torrent.info.sha1, peer_id, torrent.info.pieces.len())
+        .with_timeout(Duration::from_secs(10));
 
     for channel in connector.connect(addrs) {
         print!("{}\t\t\t", channel.peer_addr());

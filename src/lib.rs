@@ -42,8 +42,8 @@ impl Torrent {
         event_sender: &Sender<AppEvent>,
     ) -> Option<PeerChannel> {
         let total_peers = peer_addrs.len();
-        let connector = PeerConnector::new(self.info.sha1, peer_id).with_progress_callback(
-            |addr, total_probed| {
+        let connector = PeerConnector::new(self.info.sha1, peer_id, self.info.pieces.len())
+            .with_progress_callback(|addr, total_probed| {
                 let _ = event_sender
                     .send(AppEvent::Probing {
                         address: addr,
@@ -51,8 +51,7 @@ impl Torrent {
                         total_count: total_peers,
                     })
                     .inspect_err(|e| error!(%e, "Failed to send AppEvent to the UI thread"));
-            },
-        );
+            });
         connector
             .connect(peer_addrs)
             .map(|stream| request_complete_file(stream, self.info.pieces.len()))
