@@ -274,7 +274,7 @@ impl PeerProbe {
 
     fn into_peer_channel(self) -> io::Result<PeerChannel> {
         match self.state {
-            ProbeState::Interested(_, remote_id) => {
+            ProbeState::Interested(remote_id) => {
                 let std_stream: std::net::TcpStream = self.stream.into();
                 std_stream.set_nonblocking(false)?;
 
