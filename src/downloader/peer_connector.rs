@@ -294,7 +294,7 @@ mod tests {
 
     use super::*;
 
-    const REMOTE_PIECE_COUNT: usize = 1;
+    const PIECE_COUNT: usize = 16;
 
     #[test]
     fn successful_handshake_with_remote_peer() {
@@ -403,7 +403,7 @@ mod tests {
     }
 
     fn make_connector<'a>() -> PeerConnector<'a> {
-        PeerConnector::new(Sha1::random(), PeerId::random(), REMOTE_PIECE_COUNT)
+        PeerConnector::new(Sha1::random(), PeerId::random(), PIECE_COUNT)
             .with_timeout(Duration::from_secs(1))
     }
 
