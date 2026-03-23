@@ -29,7 +29,7 @@ pub struct ProbeContext {
 pub enum ProbeState {
     Connecting(ProbeContext),
     Handshaking(ProbeContext),
-    WaitingForBitfield(ProbeContext, PeerId),
+    WaitingForBitfield(usize, PeerId),
     Interested(PeerId),
     Error,
 }
@@ -64,8 +64,8 @@ impl ProbeState {
         match self {
             Self::Connecting(context) => Self::handle_connect(stream, context),
             Self::Handshaking(context) => Self::handle_handshake(stream, context),
-            Self::WaitingForBitfield(context, peer_id) => {
-                Self::handle_bitfield(stream, context, *peer_id)
+            Self::WaitingForBitfield(piece_count, peer_id) => {
+                Self::handle_bitfield(stream, *piece_count, *peer_id)
             }
             _ => Ok(self.clone()),
         }
@@ -98,22 +98,22 @@ impl ProbeState {
         }
         let remote_id = remote_handshake.peer_id;
         trace!(%remote_id, "connected to peer");
-        Ok(Self::WaitingForBitfield(*context, remote_id))
+        Ok(Self::WaitingForBitfield(context.piece_count, remote_id))
     }
 
     fn handle_bitfield(
         stream: &mut impl PeerStream,
-        context: &ProbeContext,
+        piece_count: usize,
         peer_id: PeerId,
     ) -> ProbeUpdateResult {
         trace!("receiving bitfield");
         let msg = stream.receive_message()?;
         if let PeerMessage::Bitfield(bitfield) = msg {
-            let expected_bitfield_size = context.piece_count.div_ceil(8);
+            let expected_bitfield_size = piece_count.div_ceil(8);
             if bitfield.len() != expected_bitfield_size {
                 return Err(ProbeError::BitfieldSizeMismatch);
             }
-            if !is_bitfield_complete(&bitfield, context.piece_count) {
+            if !is_bitfield_complete(&bitfield, piece_count) {
                 return Err(ProbeError::IncompleteFile);
             }
             stream.send_message(PeerMessage::Interested)?;
@@ -211,7 +211,7 @@ mod tests {
 
             assert_eq!(
                 next_state,
-                ProbeState::WaitingForBitfield(context, remote_handshake.peer_id)
+                ProbeState::WaitingForBitfield(context.piece_count, remote_handshake.peer_id)
             );
         }
 
@@ -244,7 +244,7 @@ mod tests {
 
         #[test]
         fn bitfield_received_successfully_sends_interested_message() {
-            let (state, _, remote_peer_id) = make_state(16);
+            let (state, remote_peer_id) = make_state(16);
             let bitfield = vec![0b11111111, 0b11111111];
 
             let mut stream = TestPeerStream::new();
@@ -258,7 +258,7 @@ mod tests {
 
         #[test]
         fn error_when_error_receiving_message() {
-            let (state, _, _) = make_state(1);
+            let (state, _) = make_state(1);
 
             let mut stream = TestPeerStream::new();
             let result = state.update(&mut stream);
@@ -267,7 +267,7 @@ mod tests {
 
         #[test]
         fn error_when_unexpected_message_received() {
-            let (state, _, _) = make_state(1);
+            let (state, _) = make_state(1);
 
             let mut stream = TestPeerStream::new();
             stream.remote_sends_message(PeerMessage::Unchoke);
@@ -278,7 +278,7 @@ mod tests {
 
         #[test]
         fn error_when_bitfield_data_too_short() {
-            let (state, _, _) = make_state(16);
+            let (state, _) = make_state(16);
 
             let mut stream = TestPeerStream::new();
             stream.remote_sends_message(PeerMessage::Bitfield(vec![0b11111111]));
@@ -289,7 +289,7 @@ mod tests {
 
         #[test]
         fn error_when_bitfield_data_too_long() {
-            let (state, _, _) = make_state(8);
+            let (state, _) = make_state(8);
 
             let mut stream = TestPeerStream::new();
             stream.remote_sends_message(PeerMessage::Bitfield(vec![0b11111111, 0b11111111]));
@@ -300,7 +300,7 @@ mod tests {
 
         #[test]
         fn error_when_data_is_missing_intermediate_pieces() {
-            let (state, _, _) = make_state(16);
+            let (state, _) = make_state(16);
 
             let mut stream = TestPeerStream::new();
             stream.remote_sends_message(PeerMessage::Bitfield(vec![0b10000000, 0b11111111]));
@@ -311,7 +311,7 @@ mod tests {
 
         #[test]
         fn error_when_data_missing_last_piece() {
-            let (state, _, _) = make_state(15);
+            let (state, _) = make_state(15);
 
             let mut stream = TestPeerStream::new();
             stream.remote_sends_message(PeerMessage::Bitfield(vec![0b11111111, 0b11111100]));
@@ -322,7 +322,7 @@ mod tests {
 
         #[test]
         fn ignore_redundant_bits_in_last_byte() {
-            let (state, _, _) = make_state(10);
+            let (state, _) = make_state(10);
 
             let mut stream = TestPeerStream::new();
             stream.remote_sends_message(PeerMessage::Bitfield(vec![0b11111111, 0b11001000]));
@@ -331,15 +331,10 @@ mod tests {
             assert!(matches!(result, Ok(ProbeState::Interested(_))));
         }
 
-        fn make_state(piece_count: usize) -> (ProbeState, ProbeContext, PeerId) {
+        fn make_state(piece_count: usize) -> (ProbeState, PeerId) {
             let peer_id = PeerId::random();
-            let context = ProbeContext {
-                peer_id: PeerId::random(),
-                info_hash: Sha1::random(),
-                piece_count,
-            };
-            let state = ProbeState::WaitingForBitfield(context, peer_id);
-            (state, context, peer_id)
+            let state = ProbeState::WaitingForBitfield(piece_count, peer_id);
+            (state, peer_id)
         }
     }
 
