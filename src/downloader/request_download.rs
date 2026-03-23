@@ -19,8 +19,6 @@ pub enum Error {
 type Result<T> = std::result::Result<T, Error>;
 
 pub fn request_complete_file(channel: &mut impl MessageChannel) -> Result<()> {
-    channel.send(&PeerMessage::Interested)?;
-
     match channel.receive()? {
         PeerMessage::Unchoke => Ok(()),
         other => unexpected_message_error("unchoke", other),
@@ -57,10 +55,7 @@ mod tests {
 
         request_complete_file(&mut channel).unwrap();
         assert_eq!(
-            vec![
-                ("send", PeerMessage::Interested),
-                ("recv", PeerMessage::Unchoke),
-            ],
+            vec![("recv", PeerMessage::Unchoke),],
             channel.message_sequence
         );
     }

@@ -15,6 +15,7 @@ pub trait PeerStream {
     fn send_handshake(&mut self, handshake: HandshakeMessage) -> io::Result<()>;
     fn receive_handshake(&mut self) -> io::Result<HandshakeMessage>;
     fn receive_message(&mut self) -> io::Result<PeerMessage>;
+    fn send_message(&mut self, msg: PeerMessage) -> io::Result<()>;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -29,7 +30,7 @@ pub enum ProbeState {
     Connecting(ProbeContext),
     Handshaking(ProbeContext),
     WaitingForBitfield(ProbeContext, PeerId),
-    BitfieldReceived(ProbeContext, PeerId),
+    Interested(ProbeContext, PeerId),
     Error,
 }
 
@@ -52,11 +53,11 @@ impl From<io::Error> for ProbeError {
 
 impl ProbeState {
     pub fn is_connected(&self) -> bool {
-        matches!(self, Self::BitfieldReceived(_, _))
+        matches!(self, Self::Interested(_, _))
     }
 
     pub fn is_terminal(&self) -> bool {
-        matches!(self, Self::BitfieldReceived(_, _) | Self::Error)
+        matches!(self, Self::Interested(_, _) | Self::Error)
     }
 
     pub fn update(&self, stream: &mut impl PeerStream) -> ProbeUpdateResult {
@@ -115,7 +116,8 @@ impl ProbeState {
             if !is_bitfield_complete(&bitfield, context.piece_count) {
                 return Err(ProbeError::IncompleteFile);
             }
-            Ok(Self::BitfieldReceived(*context, peer_id))
+            stream.send_message(PeerMessage::Interested)?;
+            Ok(Self::Interested(*context, peer_id))
         } else {
             error!(?msg, "unexpected message received");
             Err(ProbeError::UnexpectedPeerMessage)
@@ -241,18 +243,17 @@ mod tests {
         use super::*;
 
         #[test]
-        fn bitfield_received_successfully() {
+        fn bitfield_received_successfully_sends_interested_message() {
             let (state, context, remote_peer_id) = make_state(16);
             let bitfield = vec![0b11111111, 0b11111111];
 
             let mut stream = TestPeerStream::new();
-            stream.sends_peer_message(PeerMessage::Bitfield(bitfield.clone()));
+            stream.remote_sends_message(PeerMessage::Bitfield(bitfield.clone()));
 
             let next_state = state.update(&mut stream).unwrap();
-            assert_eq!(
-                next_state,
-                ProbeState::BitfieldReceived(context, remote_peer_id)
-            );
+
+            assert_eq!(stream.sent_messages(), vec![PeerMessage::Interested]);
+            assert_eq!(next_state, ProbeState::Interested(context, remote_peer_id));
         }
 
         #[test]
@@ -269,7 +270,7 @@ mod tests {
             let (state, _, _) = make_state(1);
 
             let mut stream = TestPeerStream::new();
-            stream.sends_peer_message(PeerMessage::Unchoke);
+            stream.remote_sends_message(PeerMessage::Unchoke);
             let result = state.update(&mut stream);
 
             assert!(matches!(result, Err(ProbeError::UnexpectedPeerMessage)));
@@ -280,7 +281,7 @@ mod tests {
             let (state, _, _) = make_state(16);
 
             let mut stream = TestPeerStream::new();
-            stream.sends_peer_message(PeerMessage::Bitfield(vec![0b11111111]));
+            stream.remote_sends_message(PeerMessage::Bitfield(vec![0b11111111]));
             let result = state.update(&mut stream);
 
             assert!(matches!(result, Err(ProbeError::BitfieldSizeMismatch)));
@@ -291,7 +292,7 @@ mod tests {
             let (state, _, _) = make_state(8);
 
             let mut stream = TestPeerStream::new();
-            stream.sends_peer_message(PeerMessage::Bitfield(vec![0b11111111, 0b11111111]));
+            stream.remote_sends_message(PeerMessage::Bitfield(vec![0b11111111, 0b11111111]));
             let result = state.update(&mut stream);
 
             assert!(matches!(result, Err(ProbeError::BitfieldSizeMismatch)));
@@ -302,7 +303,7 @@ mod tests {
             let (state, _, _) = make_state(16);
 
             let mut stream = TestPeerStream::new();
-            stream.sends_peer_message(PeerMessage::Bitfield(vec![0b10000000, 0b11111111]));
+            stream.remote_sends_message(PeerMessage::Bitfield(vec![0b10000000, 0b11111111]));
             let result = state.update(&mut stream);
 
             assert!(matches!(result, Err(ProbeError::IncompleteFile)));
@@ -313,7 +314,7 @@ mod tests {
             let (state, _, _) = make_state(15);
 
             let mut stream = TestPeerStream::new();
-            stream.sends_peer_message(PeerMessage::Bitfield(vec![0b11111111, 0b11111100]));
+            stream.remote_sends_message(PeerMessage::Bitfield(vec![0b11111111, 0b11111100]));
             let result = state.update(&mut stream);
 
             assert!(matches!(result, Err(ProbeError::IncompleteFile)));
@@ -324,10 +325,10 @@ mod tests {
             let (state, _, _) = make_state(10);
 
             let mut stream = TestPeerStream::new();
-            stream.sends_peer_message(PeerMessage::Bitfield(vec![0b11111111, 0b11001000]));
+            stream.remote_sends_message(PeerMessage::Bitfield(vec![0b11111111, 0b11001000]));
             let result = state.update(&mut stream);
 
-            assert!(matches!(result, Ok(ProbeState::BitfieldReceived(_, _))));
+            assert!(matches!(result, Ok(ProbeState::Interested(_, _))));
         }
 
         fn make_state(piece_count: usize) -> (ProbeState, ProbeContext, PeerId) {
@@ -346,7 +347,8 @@ mod tests {
         peer_addr: String,
         sent_handshake: Option<HandshakeMessage>,
         remote_handshake: Option<HandshakeMessage>,
-        message_to_send: Option<PeerMessage>,
+        message_from_remote: Option<PeerMessage>,
+        sent_messages: Vec<PeerMessage>,
     }
 
     impl PeerStream for TestPeerStream {
@@ -373,9 +375,14 @@ mod tests {
         }
 
         fn receive_message(&mut self) -> io::Result<PeerMessage> {
-            self.message_to_send
+            self.message_from_remote
                 .take()
                 .ok_or(io::Error::new(io::ErrorKind::Other, "no message to send"))
+        }
+
+        fn send_message(&mut self, msg: PeerMessage) -> io::Result<()> {
+            self.sent_messages.push(msg);
+            Ok(())
         }
     }
 
@@ -385,7 +392,8 @@ mod tests {
                 peer_addr: "127.0.0.1:12345".to_string(),
                 sent_handshake: None,
                 remote_handshake: None,
-                message_to_send: None,
+                message_from_remote: None,
+                sent_messages: vec![],
             }
         }
 
@@ -397,8 +405,12 @@ mod tests {
             self.remote_handshake = Some(handshake);
         }
 
-        fn sends_peer_message(&mut self, msg: PeerMessage) {
-            self.message_to_send = Some(msg);
+        fn remote_sends_message(&mut self, msg: PeerMessage) {
+            self.message_from_remote = Some(msg);
+        }
+
+        fn sent_messages(&self) -> Vec<PeerMessage> {
+            self.sent_messages.clone()
         }
     }
 }

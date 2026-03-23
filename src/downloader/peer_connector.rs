@@ -194,6 +194,10 @@ impl probe_state::PeerStream for mio::net::TcpStream {
     fn receive_message(&mut self) -> io::Result<PeerMessage> {
         PeerMessage::receive(self)
     }
+
+    fn send_message(&mut self, msg: PeerMessage) -> io::Result<()> {
+        msg.send(self)
+    }
 }
 
 struct PeerProbe {
@@ -270,7 +274,7 @@ impl PeerProbe {
 
     fn into_peer_channel(self) -> io::Result<PeerChannel> {
         match self.state {
-            ProbeState::BitfieldReceived(_, remote_id) => {
+            ProbeState::Interested(_, remote_id) => {
                 let std_stream: std::net::TcpStream = self.stream.into();
                 std_stream.set_nonblocking(false)?;
 
@@ -452,6 +456,11 @@ mod tests {
                 handshake.send(&mut stream).unwrap();
                 let bitfield = vec![0b11111111, 0b11111111];
                 PeerMessage::Bitfield(bitfield).send(&mut stream).unwrap();
+                let msg = PeerMessage::receive(&mut stream).unwrap();
+                if let PeerMessage::Interested = msg {
+                    return;
+                }
+                panic!("expected interested message, received: {:?}", msg);
             });
             peer_addr
         }
