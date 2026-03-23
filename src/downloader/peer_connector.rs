@@ -7,7 +7,7 @@ use tracing::{Span, debug, debug_span, error, trace, warn};
 use crate::{
     downloader::{
         PeerChannel,
-        peer_comm::{PeerMessage, handshake_message::HandshakeMessage},
+        peer_comm::{HandshakeMessage, PeerMessage},
         peer_connector::probe_state::{ProbeContext, ProbeError},
     },
     types::{PeerId, Sha1},
@@ -291,7 +291,7 @@ impl PeerProbe {
 
 #[cfg(test)]
 mod tests {
-    use crate::downloader::peer_comm::handshake_message::HandshakeMessage;
+    use crate::downloader::peer_comm::HandshakeMessage;
     use crate::result::Result;
     use crate::types::{PeerId, Sha1};
     use std::{cell::RefCell, collections::HashSet, net::TcpListener};

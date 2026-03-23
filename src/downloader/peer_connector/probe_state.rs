@@ -6,7 +6,7 @@ use std::{
 use tracing::{error, trace, warn};
 
 use crate::{
-    downloader::peer_comm::{PeerMessage, handshake_message::HandshakeMessage},
+    downloader::peer_comm::{HandshakeMessage, PeerMessage},
     types::{PeerId, Sha1},
 };
 
