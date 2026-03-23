@@ -270,11 +270,11 @@ impl PeerProbe {
 
     fn into_peer_channel(self) -> io::Result<PeerChannel> {
         match self.state {
-            ProbeState::BitfieldReceived(_context, remote_id, bitfield) => {
+            ProbeState::BitfieldReceived(_, remote_id) => {
                 let std_stream: std::net::TcpStream = self.stream.into();
                 std_stream.set_nonblocking(false)?;
 
-                PeerChannel::from_stream(std_stream, remote_id, bitfield)
+                PeerChannel::from_stream(std_stream, remote_id)
             }
             _ => Err(std::io::Error::other("probe not connected")),
         }

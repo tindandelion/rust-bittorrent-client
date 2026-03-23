@@ -54,7 +54,7 @@ impl Torrent {
             });
         connector
             .connect(peer_addrs)
-            .map(|stream| request_complete_file(stream, self.info.pieces.len()))
+            .map(|stream| request_complete_file(stream))
             .filter_map(Result::ok)
             .next()
     }
@@ -121,9 +121,9 @@ impl Torrent {
 }
 
 #[instrument(skip_all, err(level = Level::WARN), level = Level::DEBUG)]
-pub fn request_complete_file(mut channel: PeerChannel, num_pieces: usize) -> Result<PeerChannel> {
+pub fn request_complete_file(mut channel: PeerChannel) -> Result<PeerChannel> {
     debug!("Connected, requesting file");
-    downloader::request_complete_file(&mut channel, num_pieces)?;
+    downloader::request_complete_file(&mut channel)?;
     debug!("Ready to download");
     Ok(channel)
 }

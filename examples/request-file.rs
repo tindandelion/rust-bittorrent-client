@@ -23,7 +23,7 @@ fn main() -> Result<()> {
         print!("{}\t\t\t", channel.peer_addr());
 
         let start = Instant::now();
-        let result = request_complete_file(channel, torrent.info.pieces.len());
+        let result = request_complete_file(channel);
         let duration = start.elapsed().as_millis();
         match result {
             Ok(_) => {

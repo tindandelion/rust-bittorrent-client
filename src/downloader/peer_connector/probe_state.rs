@@ -29,7 +29,7 @@ pub enum ProbeState {
     Connecting(ProbeContext),
     Handshaking(ProbeContext),
     WaitingForBitfield(ProbeContext, PeerId),
-    BitfieldReceived(ProbeContext, PeerId, Vec<u8>),
+    BitfieldReceived(ProbeContext, PeerId),
     Error,
 }
 
@@ -52,11 +52,11 @@ impl From<io::Error> for ProbeError {
 
 impl ProbeState {
     pub fn is_connected(&self) -> bool {
-        matches!(self, Self::BitfieldReceived(_, _, _))
+        matches!(self, Self::BitfieldReceived(_, _))
     }
 
     pub fn is_terminal(&self) -> bool {
-        matches!(self, Self::BitfieldReceived(_, _, _) | Self::Error)
+        matches!(self, Self::BitfieldReceived(_, _) | Self::Error)
     }
 
     pub fn update(&self, stream: &mut impl PeerStream) -> ProbeUpdateResult {
@@ -115,7 +115,7 @@ impl ProbeState {
             if !is_bitfield_complete(&bitfield, context.piece_count) {
                 return Err(ProbeError::IncompleteFile);
             }
-            Ok(Self::BitfieldReceived(*context, peer_id, bitfield))
+            Ok(Self::BitfieldReceived(*context, peer_id))
         } else {
             error!(?msg, "unexpected message received");
             Err(ProbeError::UnexpectedPeerMessage)
@@ -251,7 +251,7 @@ mod tests {
             let next_state = state.update(&mut stream).unwrap();
             assert_eq!(
                 next_state,
-                ProbeState::BitfieldReceived(context, remote_peer_id, bitfield)
+                ProbeState::BitfieldReceived(context, remote_peer_id)
             );
         }
 
@@ -327,7 +327,7 @@ mod tests {
             stream.sends_peer_message(PeerMessage::Bitfield(vec![0b11111111, 0b11001000]));
             let result = state.update(&mut stream);
 
-            assert!(matches!(result, Ok(ProbeState::BitfieldReceived(_, _, _))));
+            assert!(matches!(result, Ok(ProbeState::BitfieldReceived(_, _))));
         }
 
         fn make_state(piece_count: usize) -> (ProbeState, ProbeContext, PeerId) {
