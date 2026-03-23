@@ -8,9 +8,9 @@ pub use file_downloader::FileDownloader;
 pub use peer_comm::PeerChannel;
 
 use file_downloader::{Block, DownloadChannel, RequestChannel};
-use peer_comm::{MessageChannel, PeerMessage};
+use peer_comm::PeerMessage;
 
-impl<T: MessageChannel> RequestChannel for T {
+impl RequestChannel for PeerChannel {
     fn request(&mut self, piece_index: u32, offset: u32, length: u32) -> io::Result<()> {
         self.send(&PeerMessage::Request {
             piece_index,
@@ -20,7 +20,7 @@ impl<T: MessageChannel> RequestChannel for T {
     }
 }
 
-impl<T: MessageChannel> DownloadChannel for T {
+impl DownloadChannel for PeerChannel {
     fn receive(&mut self) -> io::Result<Block> {
         let msg = self.receive()?;
         match msg {

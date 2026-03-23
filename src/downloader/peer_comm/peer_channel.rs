@@ -4,7 +4,7 @@ use std::{
     time::Duration,
 };
 
-use crate::{downloader::MessageChannel, types::PeerId};
+use crate::types::PeerId;
 
 use super::PeerMessage;
 
@@ -34,14 +34,12 @@ impl PeerChannel {
     pub fn remote_id(&self) -> PeerId {
         self.remote_id
     }
-}
 
-impl MessageChannel for PeerChannel {
-    fn receive(&mut self) -> io::Result<PeerMessage> {
+    pub fn receive(&mut self) -> io::Result<PeerMessage> {
         PeerMessage::receive(&mut self.stream)
     }
 
-    fn send(&mut self, msg: &PeerMessage) -> io::Result<()> {
+    pub fn send(&mut self, msg: &PeerMessage) -> io::Result<()> {
         msg.send(&mut self.stream)
     }
 }
