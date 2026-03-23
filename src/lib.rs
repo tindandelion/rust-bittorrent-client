@@ -123,7 +123,7 @@ impl Torrent {
 #[instrument(skip_all, err(level = Level::WARN), level = Level::DEBUG)]
 pub fn request_complete_file(mut channel: PeerChannel) -> Result<PeerChannel> {
     debug!("Connected, requesting file");
-    downloader::request_complete_file(&mut channel)?;
+    downloader::request_complete_file()?;
     debug!("Ready to download");
     Ok(channel)
 }

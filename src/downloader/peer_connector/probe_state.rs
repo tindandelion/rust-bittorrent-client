@@ -31,6 +31,7 @@ pub enum ProbeState {
     Handshaking(ProbeContext),
     WaitingForBitfield(usize, PeerId),
     Interested(PeerId),
+    Unchoked(PeerId),
     Error,
 }
 
@@ -53,11 +54,11 @@ impl From<io::Error> for ProbeError {
 
 impl ProbeState {
     pub fn is_connected(&self) -> bool {
-        matches!(self, Self::Interested(_))
+        matches!(self, Self::Unchoked(_))
     }
 
     pub fn is_terminal(&self) -> bool {
-        matches!(self, Self::Interested(_) | Self::Error)
+        matches!(self, Self::Unchoked(_) | Self::Error)
     }
 
     pub fn update(&self, stream: &mut impl PeerStream) -> ProbeUpdateResult {
@@ -67,6 +68,7 @@ impl ProbeState {
             Self::WaitingForBitfield(piece_count, peer_id) => {
                 Self::handle_bitfield(stream, *piece_count, *peer_id)
             }
+            Self::Interested(peer_id) => Self::handle_unchoke(stream, *peer_id),
             _ => Ok(self.clone()),
         }
     }
@@ -118,6 +120,20 @@ impl ProbeState {
             }
             stream.send_message(PeerMessage::Interested)?;
             Ok(Self::Interested(peer_id))
+        } else {
+            error!(?msg, "unexpected message received");
+            Err(ProbeError::UnexpectedPeerMessage)
+        }
+    }
+
+    fn handle_unchoke(
+        stream: &mut impl PeerStream,
+        peer_id: PeerId,
+    ) -> Result<ProbeState, ProbeError> {
+        trace!("receiving unchoke message");
+        let msg = stream.receive_message()?;
+        if let PeerMessage::Unchoke = msg {
+            Ok(Self::Unchoked(peer_id))
         } else {
             error!(?msg, "unexpected message received");
             Err(ProbeError::UnexpectedPeerMessage)
@@ -334,6 +350,38 @@ mod tests {
         fn make_state(piece_count: usize) -> (ProbeState, PeerId) {
             let peer_id = PeerId::random();
             let state = ProbeState::WaitingForBitfield(piece_count, peer_id);
+            (state, peer_id)
+        }
+    }
+
+    mod interested {
+        use super::*;
+
+        #[test]
+        fn receive_unchoke_message_successfully() {
+            let (state, remote_peer_id) = make_state();
+
+            let mut stream = TestPeerStream::new();
+            stream.remote_sends_message(PeerMessage::Unchoke);
+
+            let next_state = state.update(&mut stream).unwrap();
+            assert_eq!(next_state, ProbeState::Unchoked(remote_peer_id));
+        }
+
+        #[test]
+        fn error_when_unexpected_message_received() {
+            let (state, _) = make_state();
+
+            let mut stream = TestPeerStream::new();
+            stream.remote_sends_message(PeerMessage::Interested);
+
+            let result = state.update(&mut stream);
+            assert!(matches!(result, Err(ProbeError::UnexpectedPeerMessage)));
+        }
+
+        fn make_state() -> (ProbeState, PeerId) {
+            let peer_id = PeerId::random();
+            let state = ProbeState::Interested(peer_id);
             (state, peer_id)
         }
     }

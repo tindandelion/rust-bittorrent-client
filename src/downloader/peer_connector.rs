@@ -25,7 +25,7 @@ pub struct PeerConnector<'a> {
 }
 
 impl<'a> PeerConnector<'a> {
-    const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
+    const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 
     pub fn new(info_hash: Sha1, peer_id: PeerId, piece_count: usize) -> Self {
         Self {
@@ -274,13 +274,13 @@ impl PeerProbe {
 
     fn into_peer_channel(self) -> io::Result<PeerChannel> {
         match self.state {
-            ProbeState::Interested(remote_id) => {
+            ProbeState::Unchoked(remote_id) => {
                 let std_stream: std::net::TcpStream = self.stream.into();
                 std_stream.set_nonblocking(false)?;
 
                 PeerChannel::from_stream(std_stream, remote_id)
             }
-            _ => Err(std::io::Error::other("probe not connected")),
+            _ => Err(std::io::Error::other("peer did not unchoke")),
         }
     }
 
