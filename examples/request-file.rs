@@ -32,7 +32,7 @@ fn setup_tracing() -> Result<()> {
     let log_filename = "request-file.log";
 
     tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::DEBUG)
+        .with_max_level(tracing::Level::TRACE)
         .with_writer(std::fs::File::create(&log_filename)?)
         .init();
 
