@@ -457,10 +457,10 @@ mod tests {
                 let bitfield = vec![0b11111111, 0b11111111];
                 PeerMessage::Bitfield(bitfield).send(&mut stream).unwrap();
                 let msg = PeerMessage::receive(&mut stream).unwrap();
-                if let PeerMessage::Interested = msg {
-                    return;
+                if msg != PeerMessage::Interested {
+                    panic!("expected interested message, received: {:?}", msg);
                 }
-                panic!("expected interested message, received: {:?}", msg);
+                PeerMessage::Unchoke.send(&mut stream).unwrap();
             });
             peer_addr
         }

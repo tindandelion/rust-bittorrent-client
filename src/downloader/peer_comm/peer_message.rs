@@ -27,6 +27,7 @@ impl PeerMessage {
         let (id, payload) = Self::read_message_payload(src, msg_len)?;
         let received = match id {
             1 => Self::Unchoke,
+            2 => Self::Interested,
             5 => Self::Bitfield(payload),
             7 => {
                 let piece_index = u32::from_be_bytes(payload[0..4].try_into().unwrap());
@@ -54,6 +55,10 @@ impl PeerMessage {
             }
             Self::Interested => {
                 let msg = vec![0, 0, 0, 1, 2];
+                dst.write_all(&msg)
+            }
+            Self::Unchoke => {
+                let msg = vec![0, 0, 0, 1, 1];
                 dst.write_all(&msg)
             }
             Self::Request {
@@ -122,6 +127,17 @@ mod tests {
                 1, 2, 3, 4, // Bitfield payload
             ]
         );
+    }
+
+    #[test]
+    fn receive_interested_message() {
+        let buffer = vec![
+            0, 0, 0, 1, // Message length
+            2, // Message id
+        ];
+
+        let message = PeerMessage::receive(&mut buffer.as_slice()).unwrap();
+        assert_eq!(PeerMessage::Interested, message);
     }
 
     #[test]
