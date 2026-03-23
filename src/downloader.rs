@@ -1,13 +1,11 @@
 mod file_downloader;
 pub mod peer_comm;
 pub mod peer_connector;
-pub mod request_download;
 
 use std::io;
 
 pub use file_downloader::FileDownloader;
 pub use peer_comm::PeerChannel;
-pub use request_download::request_complete_file;
 
 use file_downloader::{Block, DownloadChannel, RequestChannel};
 use peer_comm::{MessageChannel, PeerMessage};

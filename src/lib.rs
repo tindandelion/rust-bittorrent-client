@@ -6,7 +6,7 @@ mod tracker;
 pub mod types;
 mod util;
 
-use tracing::{Level, debug, error, info, instrument};
+use tracing::{error, info};
 
 use crate::{
     downloader::{PeerChannel, peer_connector::PeerConnector},
@@ -52,11 +52,7 @@ impl Torrent {
                     })
                     .inspect_err(|e| error!(%e, "Failed to send AppEvent to the UI thread"));
             });
-        connector
-            .connect(peer_addrs)
-            .map(|stream| request_complete_file(stream))
-            .filter_map(Result::ok)
-            .next()
+        connector.connect(peer_addrs).next()
     }
 
     pub fn download(self, event_sender: &Sender<AppEvent>) -> Result<()> {
@@ -118,12 +114,4 @@ impl Torrent {
         event_sender.send(AppEvent::Completed)?;
         result
     }
-}
-
-#[instrument(skip_all, err(level = Level::WARN), level = Level::DEBUG)]
-pub fn request_complete_file(mut channel: PeerChannel) -> Result<PeerChannel> {
-    debug!("Connected, requesting file");
-    downloader::request_complete_file()?;
-    debug!("Ready to download");
-    Ok(channel)
 }
