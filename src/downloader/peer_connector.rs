@@ -184,7 +184,7 @@ impl<'a> Iterator for PeerPoller<'a> {
 
 struct PeerProbe {
     token: Token,
-    stream: MioPeerStream,
+    stream: mio::net::TcpStream,
     state: ProbeState,
     addr: SocketAddr,
     span: Span,
@@ -195,7 +195,7 @@ impl PeerProbe {
         let span = debug_span!("connect_to_peer", addr = %addr);
         let stream = span.in_scope(|| {
             debug!("initiating connection");
-            mio::net::TcpStream::connect(addr).map(MioPeerStream::new)
+            mio::net::TcpStream::connect(addr)
         })?;
         Ok(Self {
             token,
@@ -208,7 +208,7 @@ impl PeerProbe {
 
     fn register(&mut self, poll: &mut Poll) -> io::Result<()> {
         poll.registry().register(
-            &mut self.stream.inner,
+            &mut self.stream,
             self.token,
             mio::Interest::WRITABLE | mio::Interest::READABLE,
         )?;
@@ -220,7 +220,7 @@ impl PeerProbe {
         trace!(?event, "received event");
 
         if event.is_error() {
-            match self.stream.inner.take_error() {
+            match self.stream.take_error() {
                 Ok(Some(err)) => debug!(?err, "I/O error"),
                 Ok(None) => {}
                 Err(err) => debug!(?err, "failed to take I/O error"),
@@ -229,8 +229,9 @@ impl PeerProbe {
             return;
         }
 
+        let mut peer_stream = MioPeerStream::new(&mut self.stream);
         loop {
-            match self.state.update(&mut self.stream) {
+            match self.state.update(&mut peer_stream) {
                 Ok(next_state) => {
                     self.state = next_state;
                     if self.state.is_terminal() {
@@ -257,7 +258,7 @@ impl PeerProbe {
     fn into_peer_channel(self) -> io::Result<PeerChannel> {
         match self.state {
             ProbeState::Unchoked(remote_id) => {
-                let std_stream: std::net::TcpStream = self.stream.inner.into();
+                let std_stream: std::net::TcpStream = self.stream.into();
                 std_stream.set_nonblocking(false)?;
 
                 PeerChannel::from_stream(std_stream, remote_id)
@@ -267,7 +268,7 @@ impl PeerProbe {
     }
 
     fn unregister(&mut self, poll: &mut Poll) -> io::Result<()> {
-        poll.registry().deregister(&mut self.stream.inner)
+        poll.registry().deregister(&mut self.stream)
     }
 }
 

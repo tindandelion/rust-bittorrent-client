@@ -5,13 +5,13 @@ use crate::downloader::{
     peer_connector::{message_buffer::MessageBuffer, probe_state::PeerStream},
 };
 
-pub struct MioPeerStream {
-    pub inner: mio::net::TcpStream,
+pub struct MioPeerStream<'a> {
+    pub inner: &'a mio::net::TcpStream,
     buffer: MessageBuffer,
 }
 
-impl MioPeerStream {
-    pub fn new(stream: mio::net::TcpStream) -> Self {
+impl<'a> MioPeerStream<'a> {
+    pub fn new(stream: &'a mio::net::TcpStream) -> Self {
         Self {
             inner: stream,
             buffer: MessageBuffer::new(),
@@ -19,7 +19,7 @@ impl MioPeerStream {
     }
 }
 
-impl PeerStream for MioPeerStream {
+impl<'a> PeerStream for MioPeerStream<'a> {
     fn peer_addr(&self) -> io::Result<SocketAddr> {
         self.inner.peer_addr()
     }
