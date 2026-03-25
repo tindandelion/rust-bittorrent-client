@@ -10,7 +10,7 @@ pub struct MessageBuffer {
 }
 
 impl MessageBuffer {
-    const BUFFER_SIZE: usize = 10;
+    const BUFFER_SIZE: usize = 64 * 1024; // 64KB buffer
 
     pub fn new() -> Self {
         Self {
@@ -30,6 +30,12 @@ impl MessageBuffer {
         loop {
             let res = src.read(&mut buffer);
             match res {
+                Ok(0) => {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        "Received 0  bytes from source",
+                    ));
+                }
                 Ok(n) => {
                     trace!(num_bytes = n, "received bytes");
                     self.buffer.extend_from_slice(&buffer[..n]);
@@ -62,5 +68,19 @@ impl MessageBuffer {
         }
 
         None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reading_from_empty_buffer() {
+        let mut buffer = MessageBuffer::new();
+        let mut src: &[u8] = &[];
+        let err = buffer.read(&mut src).expect_err("expected error");
+
+        assert_eq!(err.kind(), io::ErrorKind::InvalidData);
     }
 }
