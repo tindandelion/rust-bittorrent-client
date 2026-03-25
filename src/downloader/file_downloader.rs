@@ -8,7 +8,6 @@ use crate::types::Sha1;
 use file_info::FileInfo;
 use piece_composer::{Piece, PieceComposer};
 use request_emitter::RequestEmitter;
-use tracing::debug;
 
 #[derive(Debug, Clone)]
 pub struct Block {
@@ -137,14 +136,8 @@ impl<'a> DownloadTracker<'a> {
     fn piece_downloaded(&mut self, piece: &Piece) {
         self.downloaded_pieces += 1;
         self.downloaded_bytes += piece.data.len();
-        let duration = self.start_timestamp.take().unwrap().elapsed();
 
         (self.progress_callback)(self.downloaded_bytes, self.file_info.file_length);
-        debug!(
-            piece_index = piece.index,
-            duration_ms = duration.as_millis(),
-            "Downloaded piece",
-        );
     }
 }
 

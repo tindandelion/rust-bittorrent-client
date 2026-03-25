@@ -1,3 +1,5 @@
+mod message_buffer;
+mod mio_peer_stream;
 mod probe_state;
 use std::{collections::HashMap, io, net::SocketAddr, time::Duration};
 
@@ -7,8 +9,10 @@ use tracing::{Span, debug, debug_span, error, trace, warn};
 use crate::{
     downloader::{
         PeerChannel,
-        peer_comm::{HandshakeMessage, PeerMessage},
-        peer_connector::probe_state::{ProbeContext, ProbeError},
+        peer_connector::{
+            mio_peer_stream::MioPeerStream,
+            probe_state::{ProbeContext, ProbeError},
+        },
     },
     types::{PeerId, Sha1},
 };
@@ -178,31 +182,9 @@ impl<'a> Iterator for PeerPoller<'a> {
     }
 }
 
-impl probe_state::PeerStream for mio::net::TcpStream {
-    fn peer_addr(&self) -> io::Result<SocketAddr> {
-        self.peer_addr()
-    }
-
-    fn send_handshake(&mut self, handshake: HandshakeMessage) -> io::Result<()> {
-        handshake.send(self)
-    }
-
-    fn receive_handshake(&mut self) -> io::Result<HandshakeMessage> {
-        HandshakeMessage::receive(self)
-    }
-
-    fn receive_message(&mut self) -> io::Result<PeerMessage> {
-        PeerMessage::receive(self)
-    }
-
-    fn send_message(&mut self, msg: PeerMessage) -> io::Result<()> {
-        msg.send(self)
-    }
-}
-
 struct PeerProbe {
     token: Token,
-    stream: mio::net::TcpStream,
+    stream: MioPeerStream,
     state: ProbeState,
     addr: SocketAddr,
     span: Span,
@@ -213,7 +195,7 @@ impl PeerProbe {
         let span = debug_span!("connect_to_peer", addr = %addr);
         let stream = span.in_scope(|| {
             debug!("initiating connection");
-            mio::net::TcpStream::connect(addr)
+            mio::net::TcpStream::connect(addr).map(MioPeerStream::new)
         })?;
         Ok(Self {
             token,
@@ -226,7 +208,7 @@ impl PeerProbe {
 
     fn register(&mut self, poll: &mut Poll) -> io::Result<()> {
         poll.registry().register(
-            &mut self.stream,
+            &mut self.stream.inner,
             self.token,
             mio::Interest::WRITABLE | mio::Interest::READABLE,
         )?;
@@ -238,7 +220,7 @@ impl PeerProbe {
         trace!(?event, "received event");
 
         if event.is_error() {
-            match self.stream.take_error() {
+            match self.stream.inner.take_error() {
                 Ok(Some(err)) => debug!(?err, "I/O error"),
                 Ok(None) => {}
                 Err(err) => debug!(?err, "failed to take I/O error"),
@@ -275,7 +257,7 @@ impl PeerProbe {
     fn into_peer_channel(self) -> io::Result<PeerChannel> {
         match self.state {
             ProbeState::Unchoked(remote_id) => {
-                let std_stream: std::net::TcpStream = self.stream.into();
+                let std_stream: std::net::TcpStream = self.stream.inner.into();
                 std_stream.set_nonblocking(false)?;
 
                 PeerChannel::from_stream(std_stream, remote_id)
@@ -285,13 +267,13 @@ impl PeerProbe {
     }
 
     fn unregister(&mut self, poll: &mut Poll) -> io::Result<()> {
-        poll.registry().deregister(&mut self.stream)
+        poll.registry().deregister(&mut self.stream.inner)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::downloader::peer_comm::HandshakeMessage;
+    use crate::downloader::peer_comm::{HandshakeMessage, PeerMessage};
     use crate::result::Result;
     use crate::types::{PeerId, Sha1};
     use std::{cell::RefCell, collections::HashSet, net::TcpListener};

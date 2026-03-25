@@ -22,16 +22,35 @@ pub enum PeerMessage {
 }
 
 impl PeerMessage {
+    const MESSAGE_LENGTH_SIZE: usize = 4;
     const MAX_MESSAGE_LENGTH: usize = 128 * 1024; // 128KB
+
+    pub fn from_bytes(bytes: &[u8]) -> Self {
+        let id = bytes[0];
+        let payload = &bytes[1..];
+        match id {
+            1 => Self::Unchoke,
+            2 => Self::Interested,
+            5 => Self::Bitfield(payload.to_vec()),
+            7 => {
+                let piece_index = u32::from_be_bytes(payload[0..4].try_into().unwrap());
+                let offset = u32::from_be_bytes(payload[4..8].try_into().unwrap());
+                let block = payload[8..].to_vec();
+                Self::Piece {
+                    piece_index,
+                    offset,
+                    block,
+                }
+            }
+            _ => Self::Unknown {
+                id,
+                payload: payload.to_vec(),
+            },
+        }
+    }
 
     pub fn receive(src: &mut impl io::Read) -> io::Result<Self> {
         let msg_len = Self::read_message_length(src)?;
-        if msg_len > Self::MAX_MESSAGE_LENGTH {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                format!("Message length is too long: {}", msg_len),
-            ));
-        }
         let (id, payload) = Self::read_message_payload(src, msg_len)?;
         let received = match id {
             1 => Self::Unchoke,
@@ -87,14 +106,22 @@ impl PeerMessage {
         }
     }
 
-    fn read_message_length(src: &mut impl io::Read) -> io::Result<usize> {
-        let mut buffer = [0_u8; 4];
+    pub fn read_message_length(src: &mut impl io::Read) -> io::Result<usize> {
+        let mut buffer = [0_u8; Self::MESSAGE_LENGTH_SIZE];
         let mut msg_len = 0;
         while msg_len == 0 {
             src.read_exact(&mut buffer)?;
-            msg_len = u32::from_be_bytes(buffer)
+            msg_len = u32::from_be_bytes(buffer) as usize;
         }
-        Ok(msg_len as usize)
+
+        if msg_len > Self::MAX_MESSAGE_LENGTH {
+            Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("Message length is too big: {}", msg_len),
+            ))
+        } else {
+            Ok(msg_len)
+        }
     }
 
     fn read_message_payload(src: &mut impl io::Read, msg_len: usize) -> io::Result<(u8, Vec<u8>)> {
