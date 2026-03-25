@@ -33,7 +33,6 @@ impl MessageBuffer {
                     ));
                 }
                 Ok(n) => {
-                    println!("***  read {} bytes", n);
                     self.buffer.extend_from_slice(&buffer[..n]);
                     if let Some(message) = self.process_buffered_data()? {
                         return Ok(message);
