@@ -229,7 +229,7 @@ impl PeerProbe {
             return;
         }
 
-        let mut peer_stream = MioPeerStream::new(&mut self.stream);
+        let mut peer_stream = MioPeerStream::new(&self.stream);
         loop {
             match self.state.update(&mut peer_stream) {
                 Ok(next_state) => {

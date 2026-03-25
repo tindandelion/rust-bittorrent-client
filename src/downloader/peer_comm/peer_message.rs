@@ -61,7 +61,7 @@ impl PeerMessage {
                 let mut msg = vec![];
                 msg.extend_from_slice(&(bitfield.len() as u32 + 1).to_be_bytes());
                 msg.push(5);
-                msg.extend_from_slice(&bitfield);
+                msg.extend_from_slice(bitfield);
                 dst.write_all(&msg)
             }
             Self::Interested => {
