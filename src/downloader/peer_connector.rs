@@ -438,7 +438,7 @@ mod tests {
                 let handshake = HandshakeMessage::new(incoming_info_hash, peer_id);
                 handshake.send(&mut stream).unwrap();
                 let bitfield = vec![0b11111111, 0b11111111];
-                PeerMessage::Bitfield(bitfield).send(&mut stream).unwrap();
+                send_bitfield_in_portions(&mut stream, bitfield).unwrap();
                 let msg = PeerMessage::receive(&mut stream).unwrap();
                 if msg != PeerMessage::Interested {
                     panic!("expected interested message, received: {:?}", msg);
@@ -447,5 +447,17 @@ mod tests {
             });
             peer_addr
         }
+    }
+
+    fn send_bitfield_in_portions(stream: &mut impl io::Write, bitfield: Vec<u8>) -> io::Result<()> {
+        let msg = PeerMessage::Bitfield(bitfield);
+        let mut buffer = vec![];
+        msg.send(&mut buffer)?;
+
+        let msg_half = buffer.len() / 2;
+        stream.write_all(&buffer[..msg_half])?;
+        std::thread::sleep(Duration::from_millis(100));
+        stream.write_all(&buffer[msg_half..])?;
+        Ok(())
     }
 }

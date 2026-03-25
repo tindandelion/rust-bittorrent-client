@@ -133,6 +133,7 @@ impl ProbeState {
         trace!("receiving unchoke message");
         let msg = stream.receive_message()?;
         if let PeerMessage::Unchoke = msg {
+            trace!("unchoked, ready to download");
             Ok(Self::Unchoked(peer_id))
         } else {
             error!(?msg, "unexpected message received");
