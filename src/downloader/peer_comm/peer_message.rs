@@ -51,24 +51,8 @@ impl PeerMessage {
 
     pub fn receive(src: &mut impl io::Read) -> io::Result<Self> {
         let msg_len = Self::read_message_length(src)?;
-        let (id, payload) = Self::read_message_payload(src, msg_len)?;
-        let received = match id {
-            1 => Self::Unchoke,
-            2 => Self::Interested,
-            5 => Self::Bitfield(payload),
-            7 => {
-                let piece_index = u32::from_be_bytes(payload[0..4].try_into().unwrap());
-                let offset = u32::from_be_bytes(payload[4..8].try_into().unwrap());
-                let block = payload[8..].to_vec();
-                Self::Piece {
-                    piece_index,
-                    offset,
-                    block,
-                }
-            }
-            _ => Self::Unknown { id, payload },
-        };
-        Ok(received)
+        let payload = Self::read_message_payload(src, msg_len)?;
+        Ok(Self::from_bytes(&payload))
     }
 
     pub fn send(&self, dst: &mut impl io::Write) -> io::Result<()> {
@@ -124,12 +108,10 @@ impl PeerMessage {
         }
     }
 
-    fn read_message_payload(src: &mut impl io::Read, msg_len: usize) -> io::Result<(u8, Vec<u8>)> {
-        let mut id_buffer = [0_u8; 1];
-        let mut payload_buffer = vec![0_u8; msg_len - 1];
-        src.read_exact(&mut id_buffer)?;
+    fn read_message_payload(src: &mut impl io::Read, msg_len: usize) -> io::Result<Vec<u8>> {
+        let mut payload_buffer = vec![0_u8; msg_len];
         src.read_exact(&mut payload_buffer)?;
-        Ok((id_buffer[0], payload_buffer))
+        Ok(payload_buffer)
     }
 }
 
