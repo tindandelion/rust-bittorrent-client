@@ -221,7 +221,7 @@ impl PeerProbe {
 
         if event.is_error() {
             match self.stream.take_error() {
-                Ok(Some(err)) => debug!(?err, "I/O error"),
+                Ok(Some(err)) => debug!(?err, "probe error: I/O error"),
                 Ok(None) => {}
                 Err(err) => debug!(?err, "failed to take I/O error"),
             }
@@ -242,12 +242,12 @@ impl PeerProbe {
                     break;
                 }
                 Err(ProbeError::IO(err)) => {
-                    debug!(?err, "I/O error");
+                    debug!(?err, "probe error: I/O error");
                     self.state = ProbeState::Error;
                     break;
                 }
                 Err(err) => {
-                    warn!(?err, "Probing error");
+                    warn!(?err, "probe error");
                     self.state = ProbeState::Error;
                     break;
                 }

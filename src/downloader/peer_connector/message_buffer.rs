@@ -1,7 +1,5 @@
 use std::io;
 
-use tracing::trace;
-
 use crate::downloader::peer_comm::PeerMessage;
 
 pub struct MessageBuffer {
@@ -20,9 +18,7 @@ impl MessageBuffer {
     }
 
     pub fn read(&mut self, src: &mut impl io::Read) -> io::Result<PeerMessage> {
-        let buffered_message = self.process_buffered_data();
-        if let Some(message) = buffered_message {
-            trace!(?message, "returning previously buffered message");
+        if let Some(message) = self.process_buffered_data() {
             return Ok(message);
         }
 
@@ -37,11 +33,8 @@ impl MessageBuffer {
                     ));
                 }
                 Ok(n) => {
-                    trace!(num_bytes = n, "received bytes");
                     self.buffer.extend_from_slice(&buffer[..n]);
-                    let buffered_message = self.process_buffered_data();
-                    if let Some(message) = buffered_message {
-                        trace!(?message, "returning received message");
+                    if let Some(message) = self.process_buffered_data() {
                         return Ok(message);
                     }
                 }
@@ -79,6 +72,15 @@ mod tests {
     fn reading_from_empty_buffer() {
         let mut buffer = MessageBuffer::new();
         let mut src: &[u8] = &[];
+        let err = buffer.read(&mut src).expect_err("expected error");
+
+        assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+    }
+
+    #[test]
+    fn reading_from_small_buffer() {
+        let mut buffer = MessageBuffer::new();
+        let mut src: &[u8] = &[0, 0];
         let err = buffer.read(&mut src).expect_err("expected error");
 
         assert_eq!(err.kind(), io::ErrorKind::InvalidData);
