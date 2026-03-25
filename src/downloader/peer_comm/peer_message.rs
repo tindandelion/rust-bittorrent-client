@@ -23,7 +23,7 @@ pub enum PeerMessage {
 
 impl PeerMessage {
     const MESSAGE_LENGTH_SIZE: usize = 4;
-    const MAX_MESSAGE_LENGTH: usize = 128 * 1024; // 128KB
+    pub const MAX_MESSAGE_LENGTH: usize = 128 * 1024; // 128KB
 
     pub fn from_bytes(bytes: &[u8]) -> Self {
         let id = bytes[0];
