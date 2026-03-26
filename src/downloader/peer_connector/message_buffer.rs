@@ -17,6 +17,10 @@ impl MessageBuffer {
         }
     }
 
+    pub fn len(&self) -> usize {
+        self.buffer.len()
+    }
+
     pub fn read(&mut self, src: &mut impl io::Read) -> io::Result<PeerMessage> {
         if let Some(message) = self.process_buffered_data()? {
             return Ok(message);

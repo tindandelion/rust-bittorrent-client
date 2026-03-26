@@ -15,6 +15,8 @@ pub struct HandshakeMessage {
 }
 
 impl HandshakeMessage {
+    pub const SIZE: usize = size_of::<Self>();
+
     pub fn new(info_hash: Sha1, peer_id: PeerId) -> Self {
         Self {
             pstrlen: PROTOCOL_ID.len() as u8,

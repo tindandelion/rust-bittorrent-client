@@ -1,4 +1,10 @@
-use std::{io, net::SocketAddr};
+use io::Read;
+use std::{
+    io::{self, ErrorKind},
+    net::SocketAddr,
+};
+
+use tracing::{Level, instrument, trace};
 
 use crate::downloader::{
     peer_comm::{HandshakeMessage, PeerMessage},
@@ -28,12 +34,35 @@ impl PeerStream for MioPeerStream {
         handshake.send(&mut self.inner)
     }
 
+    #[instrument(skip(self), err, level = Level::TRACE)]
     fn receive_handshake(&mut self) -> io::Result<HandshakeMessage> {
-        HandshakeMessage::receive(&mut self.inner)
+        let mut buffer = [0; HandshakeMessage::SIZE];
+        let bytes_read = self.inner.read(&mut buffer)?;
+
+        if bytes_read != HandshakeMessage::SIZE {
+            return Err(io::Error::new(
+                io::ErrorKind::UnexpectedEof,
+                format!("did not receive the whole handshake message, got {bytes_read} bytes"),
+            ));
+        }
+
+        HandshakeMessage::receive(&mut &buffer[..])
     }
 
+    #[instrument(skip(self), err, level = Level::TRACE)]
     fn receive_message(&mut self) -> io::Result<PeerMessage> {
-        self.buffer.read(&mut self.inner)
+        trace!(buffer_len = self.buffer.len(), "receiving peer message");
+        self.buffer
+            .read(&mut self.inner)
+            .inspect(|msg| trace!(?msg, "received peer message"))
+            .inspect_err(|err| {
+                if err.kind() == ErrorKind::WouldBlock {
+                    trace!(
+                        buffer_len = self.buffer.len(),
+                        "did not receive the whole message, will retry"
+                    );
+                }
+            })
     }
 
     fn send_message(&mut self, msg: PeerMessage) -> io::Result<()> {
