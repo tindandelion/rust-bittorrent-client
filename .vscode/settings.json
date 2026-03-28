@@ -5,7 +5,8 @@
     "Bencoding",
     "bitfield",
     "ratatui",
-    "reqwest"
+    "reqwest",
+    "Unchoked"
   ],
   "spellchecker.ignoreWordsList": ["BitTorrent", "blog"]
 }
