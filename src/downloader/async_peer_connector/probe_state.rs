@@ -63,38 +63,11 @@ impl ProbeState {
 
     fn handle_connect(stream: &mut impl PeerStream, context: &ProbeContext) -> ProbeUpdateResult {
         match stream.peer_addr() {
-            Ok(_) => {
-                trace!("sending handshake message");
-                let handshake = HandshakeMessage::new(context.info_hash, context.peer_id);
-                stream
-                    .send_handshake(handshake)
-                    .inspect_err(|err| error!(?err, "failed to send handshake message"))?;
-                Ok(Self::Handshaking(*context))
-            }
+            Ok(_) => Ok(Self::Handshaking(*context)),
             Err(err) if err.kind() == io::ErrorKind::NotConnected => Ok(Self::Connecting(*context)),
             Err(err) => Err(err.into()),
         }
     }
-}
-
-fn is_bitfield_complete(bitfield: &[u8], piece_count: usize) -> bool {
-    for byte in &bitfield[..bitfield.len() - 1] {
-        if *byte != 255 {
-            return false;
-        }
-    }
-
-    let mut pieces_in_last_byte = piece_count % 8;
-    if pieces_in_last_byte == 0 {
-        pieces_in_last_byte = 8;
-    }
-    let last_byte_mask = (128u8 as i8 >> (pieces_in_last_byte - 1)) as u8;
-    let last_byte = bitfield[bitfield.len() - 1];
-    if last_byte & last_byte_mask != last_byte_mask {
-        return false;
-    }
-
-    true
 }
 
 #[cfg(test)]
@@ -113,9 +86,7 @@ mod tests {
             let mut stream = TestPeerStream::new();
             let next_state = state.update(&mut stream).unwrap();
 
-            let expected_handshake = HandshakeMessage::new(context.info_hash, context.peer_id);
             assert_eq!(next_state, ProbeState::Handshaking(context));
-            assert_eq!(stream.sent_handshake(), expected_handshake);
         }
 
         #[test]
