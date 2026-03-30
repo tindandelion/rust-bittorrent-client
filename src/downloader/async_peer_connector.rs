@@ -152,13 +152,10 @@ impl<'a> PeerPoller<'a> {
     fn update_probe_states(&mut self, events: &Events) {
         for event in events.iter() {
             let token = event.token();
-            let probes = self.probes.keys().cloned().collect::<Vec<_>>();
-            let probe = self.probes.get_mut(&token).unwrap_or_else(|| {
-                panic!(
-                    "Unexpected token in received event: {token:?}, probes: {:?}",
-                    probes
-                )
-            });
+            let probe = self
+                .probes
+                .get_mut(&token)
+                .unwrap_or_else(|| panic!("Unexpected token in received event: {token:?}"));
             probe.handle_event(event);
         }
     }
@@ -233,76 +230,65 @@ mod tests {
         assert_eq!(connected_addresses, responsive_addresses);
     }
 
-    // #[test]
-    // fn error_connect_refused() {
-    //     let peer_addresses = vec!["127.0.0.1:12345".parse().unwrap()];
+    #[test]
+    fn error_connect_refused() {
+        let peer_addresses = vec!["127.0.0.1:12345".parse().unwrap()];
 
-    //     let connector = make_connector();
-    //     let connected_peers = connector.connect(peer_addresses).collect::<Vec<_>>();
+        let connector = make_connector();
+        let connected_peers = connector.connect(peer_addresses).collect::<Vec<_>>();
 
-    //     assert!(connected_peers.is_empty());
-    // }
+        assert!(connected_peers.is_empty());
+    }
 
-    // #[test]
-    // fn error_connect_timeout() {
-    //     let peer_addresses = vec!["192.0.2.1:6881".parse().unwrap()];
+    #[test]
+    fn error_connect_timeout() {
+        let peer_addresses = vec!["192.0.2.1:6881".parse().unwrap()];
 
-    //     let connector = make_connector();
-    //     let connected_peers = connector.connect(peer_addresses).collect::<Vec<_>>();
+        let connector = make_connector();
+        let connected_peers = connector.connect(peer_addresses).collect::<Vec<_>>();
 
-    //     assert!(connected_peers.is_empty());
-    // }
+        assert!(connected_peers.is_empty());
+    }
 
-    // #[test]
-    // fn error_handshake_hangup() {
-    //     let remote_peer = TestRemotePeer::new().hangup_handshake();
-    //     let peer_addr = remote_peer.start();
+    #[test]
+    fn all_peers_are_unresponsive() {
+        let peer_addresses = vec![
+            "127.0.0.1:12345".parse().unwrap(), // refuse to connect
+            "192.0.2.1:6881".parse().unwrap(),  // timeout to connect
+        ];
 
-    //     let connector = make_connector();
-    //     let connected_peers = connector.connect(vec![peer_addr]).collect::<Vec<_>>();
+        let connector = make_connector().with_timeout(Duration::from_secs(1));
+        let connected_peers = connector.connect(peer_addresses).collect::<Vec<_>>();
 
-    //     assert!(connected_peers.is_empty());
-    // }
+        assert!(connected_peers.is_empty());
+    }
 
-    // #[test]
-    // fn all_peers_are_unresponsive() {
-    //     let peer_addresses = vec![
-    //         "127.0.0.1:12345".parse().unwrap(), // refuse to connect
-    //         "192.0.2.1:6881".parse().unwrap(),  // timeout to connect
-    //     ];
+    #[test]
+    fn invoke_progress_callback_for_each_peer() -> Result<()> {
+        let remote_peer = TestRemotePeer::new();
+        let peer_addresses = vec![
+            "127.0.0.1:12345".parse()?, // refuse to connect
+            "192.0.2.1:6881".parse()?,  // timeout to connect
+            remote_peer.start(),        // responsive peer
+        ];
+        let progress = RefCell::new(HashSet::<SocketAddr>::new());
+        let progress_callback = |addr: SocketAddr, _: usize| {
+            let mut curr = progress.borrow_mut();
+            curr.insert(addr);
+        };
 
-    //     let connector = make_connector().with_timeout(Duration::from_secs(1));
-    //     let connected_peers = connector.connect(peer_addresses).collect::<Vec<_>>();
+        let connector = make_connector().with_progress_callback(progress_callback);
 
-    //     assert!(connected_peers.is_empty());
-    // }
+        let iterator = connector.connect(peer_addresses.clone());
+        let _ = iterator.collect::<Vec<_>>();
 
-    // #[test]
-    // fn invoke_progress_callback_for_each_peer() -> Result<()> {
-    //     let remote_peer = TestRemotePeer::new();
-    //     let peer_addresses = vec![
-    //         "127.0.0.1:12345".parse()?, // refuse to connect
-    //         "192.0.2.1:6881".parse()?,  // timeout to connect
-    //         remote_peer.start(),        // responsive peer
-    //     ];
-    //     let progress = RefCell::new(HashSet::<SocketAddr>::new());
-    //     let progress_callback = |addr: SocketAddr, _: usize| {
-    //         let mut curr = progress.borrow_mut();
-    //         curr.insert(addr);
-    //     };
+        assert_eq!(
+            HashSet::from([peer_addresses[0], peer_addresses[2]]),
+            *progress.borrow()
+        );
 
-    //     let connector = make_connector().with_progress_callback(progress_callback);
-
-    //     let iterator = connector.connect(peer_addresses.clone());
-    //     let _ = iterator.collect::<Vec<_>>();
-
-    //     assert_eq!(
-    //         HashSet::from([peer_addresses[0], peer_addresses[2]]),
-    //         *progress.borrow()
-    //     );
-
-    //     Ok(())
-    // }
+        Ok(())
+    }
 
     fn make_connector<'a>() -> PeerConnector<'a> {
         PeerConnector::new(Sha1::random(), PeerId::random(), PIECE_COUNT)
@@ -343,22 +329,22 @@ mod tests {
 
             std::thread::spawn(move || {
                 let (mut stream, _) = listener.accept().unwrap();
-                if hangup_handshake {
-                    return;
-                }
+                // if hangup_handshake {
+                //     return;
+                // }
 
-                let incoming_handshake = HandshakeMessage::receive(&mut stream).unwrap();
-                let incoming_info_hash = incoming_handshake.info_hash;
+                // let incoming_handshake = HandshakeMessage::receive(&mut stream).unwrap();
+                // let incoming_info_hash = incoming_handshake.info_hash;
 
-                let handshake = HandshakeMessage::new(incoming_info_hash, peer_id);
-                handshake.send(&mut stream).unwrap();
-                let bitfield = vec![0b11111111, 0b11111111];
-                send_bitfield_in_portions(&mut stream, bitfield).unwrap();
-                let msg = PeerMessage::receive(&mut stream).unwrap();
-                if msg != PeerMessage::Interested {
-                    panic!("expected interested message, received: {:?}", msg);
-                }
-                PeerMessage::Unchoke.send(&mut stream).unwrap();
+                // let handshake = HandshakeMessage::new(incoming_info_hash, peer_id);
+                // handshake.send(&mut stream).unwrap();
+                // let bitfield = vec![0b11111111, 0b11111111];
+                // send_bitfield_in_portions(&mut stream, bitfield).unwrap();
+                // let msg = PeerMessage::receive(&mut stream).unwrap();
+                // if msg != PeerMessage::Interested {
+                //     panic!("expected interested message, received: {:?}", msg);
+                // }
+                // PeerMessage::Unchoke.send(&mut stream).unwrap();
             });
             peer_addr
         }

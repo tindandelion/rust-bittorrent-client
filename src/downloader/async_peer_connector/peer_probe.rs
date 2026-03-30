@@ -32,7 +32,7 @@ impl PeerProbe {
     }
 
     pub fn is_connected(&self) -> bool {
-        matches!(self.state, ProbeState::WaitingForBitfield(_, _))
+        matches!(self.state, ProbeState::Handshaking(_))
     }
 
     pub fn register(&mut self) -> io::Result<Token> {
@@ -91,6 +91,9 @@ impl TryFrom<PeerProbe> for std::net::TcpStream {
     type Error = io::Error;
 
     fn try_from(value: PeerProbe) -> Result<Self, Self::Error> {
+        if !value.is_connected() {
+            return Err(io::Error::new(io::ErrorKind::Other, "peer not connected"));
+        }
         let std_stream: std::net::TcpStream = value.stream.inner.into();
         std_stream.set_nonblocking(false)?;
         Ok(std_stream)
