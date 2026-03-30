@@ -20,18 +20,14 @@ impl Runtime {
         }
     }
 
-    pub fn next_token(&self) -> Token {
-        let id = self.next_id.get();
-        self.next_id.set(id + 1);
-        Token(id)
-    }
-
     fn register_stream(
         &self,
         stream: &mut mio::net::TcpStream,
         interests: mio::Interest,
     ) -> io::Result<Token> {
-        let token = self.next_token();
+        let next_id = self.next_id.get();
+        self.next_id.set(next_id + 1);
+        let token = Token(next_id);
         self.poll
             .borrow()
             .registry()
