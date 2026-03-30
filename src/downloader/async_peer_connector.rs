@@ -2,6 +2,7 @@ mod message_buffer;
 mod mio_peer_stream;
 mod peer_probe;
 mod probe_state;
+mod runtime;
 use std::{collections::HashMap, io, net::SocketAddr, time::Duration};
 
 use mio::{Events, Poll, Token};
@@ -80,8 +81,8 @@ impl<'a> PeerPoller<'a> {
         let mut probes: HashMap<Token, PeerProbe> = HashMap::new();
         let mut poll = Poll::new()?;
 
-        for (index, addr) in peer_addrs.into_iter().enumerate() {
-            let token = Token(index);
+        for addr in peer_addrs.into_iter() {
+            let token = runtime::runtime().next_token();
             let context = ProbeContext {
                 peer_id: connector.peer_id,
                 info_hash: connector.info_hash,
@@ -177,6 +178,14 @@ impl<'a> Iterator for PeerPoller<'a> {
         self.wait_for_connected_channel()
             .inspect_err(|err| error!(%err, "error while processing I/O events"))
             .expect("error while processing I/O events")
+    }
+}
+
+impl<'a> Drop for PeerPoller<'a> {
+    fn drop(&mut self) {
+        for (_, probe) in self.probes.iter_mut() {
+            probe.unregister(&mut self.poll).unwrap();
+        }
     }
 }
 

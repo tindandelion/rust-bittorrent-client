@@ -40,8 +40,7 @@ impl PeerProbe {
             &mut self.stream.inner,
             self.token,
             mio::Interest::WRITABLE | mio::Interest::READABLE,
-        )?;
-        Ok(())
+        )
     }
 
     pub fn handle_event(&mut self, event: &Event) {
