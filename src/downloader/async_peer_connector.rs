@@ -5,7 +5,7 @@ mod probe_state;
 mod runtime;
 use std::{collections::HashMap, io, net::SocketAddr, time::Duration};
 
-use mio::{Events, Poll, Token};
+use mio::{Events, Token};
 use tracing::error;
 
 use crate::{
@@ -69,7 +69,6 @@ impl<'a> PeerConnector<'a> {
 
 struct PeerPoller<'a> {
     probes: HashMap<Token, PeerProbe>,
-    poll: Poll,
     connector: PeerConnector<'a>,
 }
 
@@ -79,25 +78,19 @@ impl<'a> PeerPoller<'a> {
         connector: PeerConnector<'a>,
     ) -> io::Result<Self> {
         let mut probes: HashMap<Token, PeerProbe> = HashMap::new();
-        let mut poll = Poll::new()?;
 
         for addr in peer_addrs.into_iter() {
-            let token = runtime::runtime().next_token();
             let context = ProbeContext {
                 peer_id: connector.peer_id,
                 info_hash: connector.info_hash,
                 piece_count: connector.piece_count,
             };
-            let mut probe = PeerProbe::connect(token, addr, context)?;
-            probe.register(&mut poll)?;
+            let mut probe = PeerProbe::connect(addr, context)?;
+            let token = probe.register()?;
             probes.insert(token, probe);
         }
 
-        Ok(Self {
-            probes,
-            poll,
-            connector,
-        })
+        Ok(Self { probes, connector })
     }
 
     fn wait_for_connected_channel(&mut self) -> io::Result<Option<PeerChannel>> {
@@ -107,7 +100,8 @@ impl<'a> PeerPoller<'a> {
                 return Ok(Some(channel));
             }
 
-            self.poll.poll(&mut events, Some(self.connector.timeout))?;
+            runtime::poll(&mut events, Some(self.connector.timeout))?;
+            println!("events: {:?}", events);
             if events.is_empty() {
                 return Ok(None);
             }
@@ -156,16 +150,19 @@ impl<'a> PeerPoller<'a> {
     fn update_probe_states(&mut self, events: &Events) {
         for event in events.iter() {
             let token = event.token();
-            let probe = self
-                .probes
-                .get_mut(&token)
-                .unwrap_or_else(|| panic!("Unexpected token in received event: {token:?}"));
+            let probes = self.probes.keys().cloned().collect::<Vec<_>>();
+            let probe = self.probes.get_mut(&token).unwrap_or_else(|| {
+                panic!(
+                    "Unexpected token in received event: {token:?}, probes: {:?}",
+                    probes
+                )
+            });
             probe.handle_event(event);
         }
     }
 
     fn unregister_probe(&mut self, probe: &mut PeerProbe) -> io::Result<()> {
-        probe.unregister(&mut self.poll)?;
+        probe.unregister()?;
         self.connector.report_progress(probe.addr);
         Ok(())
     }
@@ -184,7 +181,7 @@ impl<'a> Iterator for PeerPoller<'a> {
 impl<'a> Drop for PeerPoller<'a> {
     fn drop(&mut self) {
         for (_, probe) in self.probes.iter_mut() {
-            probe.unregister(&mut self.poll).unwrap();
+            probe.unregister().unwrap();
         }
     }
 }
@@ -210,6 +207,29 @@ mod tests {
 
         assert_eq!(channel.peer_addr(), peer_addr);
         assert_eq!(channel.remote_id(), remote_peer.peer_id());
+    }
+
+    #[test]
+    fn iterate_over_responsive_peers() {
+        let first_peer = TestRemotePeer::new();
+        let second_peer = TestRemotePeer::new();
+        let mut responsive_addresses = vec![first_peer.start(), second_peer.start()];
+        let peer_addresses = vec![
+            "127.0.0.1:12345".parse().unwrap(), // refuse to connect
+            "192.0.2.1:6881".parse().unwrap(),  // timeout to connect
+            responsive_addresses[0],            // responsive peer
+            responsive_addresses[1],            // responsive peer
+        ];
+
+        let connector = make_connector().with_timeout(Duration::from_secs(1));
+        let mut connected_addresses = connector
+            .connect(peer_addresses)
+            .map(|stream| stream.peer_addr())
+            .collect::<Vec<_>>();
+
+        connected_addresses.sort();
+        responsive_addresses.sort();
+        assert_eq!(connected_addresses, responsive_addresses);
     }
 
     #[test]
@@ -241,29 +261,6 @@ mod tests {
         let connected_peers = connector.connect(vec![peer_addr]).collect::<Vec<_>>();
 
         assert!(connected_peers.is_empty());
-    }
-
-    #[test]
-    fn iterate_over_responsive_peers() {
-        let first_peer = TestRemotePeer::new();
-        let second_peer = TestRemotePeer::new();
-        let mut responsive_addresses = vec![first_peer.start(), second_peer.start()];
-        let peer_addresses = vec![
-            "127.0.0.1:12345".parse().unwrap(), // refuse to connect
-            "192.0.2.1:6881".parse().unwrap(),  // timeout to connect
-            responsive_addresses[0],            // responsive peer
-            responsive_addresses[1],            // responsive peer
-        ];
-
-        let connector = make_connector().with_timeout(Duration::from_secs(1));
-        let mut connected_addresses = connector
-            .connect(peer_addresses)
-            .map(|stream| stream.peer_addr())
-            .collect::<Vec<_>>();
-
-        connected_addresses.sort();
-        responsive_addresses.sort();
-        assert_eq!(connected_addresses, responsive_addresses);
     }
 
     #[test]

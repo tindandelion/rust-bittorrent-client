@@ -1,6 +1,6 @@
 use std::{io, net::SocketAddr};
 
-use mio::{Poll, Token, event::Event};
+use mio::{Token, event::Event};
 use tracing::{Span, debug, debug_span, trace, warn};
 
 use crate::downloader::{
@@ -8,11 +8,11 @@ use crate::downloader::{
     async_peer_connector::{
         mio_peer_stream::MioPeerStream,
         probe_state::{ProbeContext, ProbeError, ProbeState},
+        runtime,
     },
 };
 
 pub struct PeerProbe {
-    token: Token,
     stream: MioPeerStream,
     pub state: ProbeState,
     pub addr: SocketAddr,
@@ -20,14 +20,13 @@ pub struct PeerProbe {
 }
 
 impl PeerProbe {
-    pub fn connect(token: Token, addr: SocketAddr, context: ProbeContext) -> io::Result<Self> {
+    pub fn connect(addr: SocketAddr, context: ProbeContext) -> io::Result<Self> {
         let span = debug_span!("connect_to_peer", addr = %addr);
         let stream = span.in_scope(|| {
             debug!("initiating connection");
             mio::net::TcpStream::connect(addr).map(MioPeerStream::new)
         })?;
         Ok(Self {
-            token,
             stream,
             state: ProbeState::Connecting(context),
             addr,
@@ -35,12 +34,16 @@ impl PeerProbe {
         })
     }
 
-    pub fn register(&mut self, poll: &mut Poll) -> io::Result<()> {
-        poll.registry().register(
+    pub fn register(&mut self) -> io::Result<Token> {
+        let token = runtime::register_stream(
             &mut self.stream.inner,
-            self.token,
             mio::Interest::WRITABLE | mio::Interest::READABLE,
-        )
+        )?;
+        Ok(token)
+    }
+
+    pub fn unregister(&mut self) -> io::Result<()> {
+        runtime::deregister_stream(&mut self.stream.inner)
     }
 
     pub fn handle_event(&mut self, event: &Event) {
@@ -92,9 +95,5 @@ impl PeerProbe {
             }
             _ => Err(std::io::Error::other("peer did not unchoke")),
         }
-    }
-
-    pub fn unregister(&mut self, poll: &mut Poll) -> io::Result<()> {
-        poll.registry().deregister(&mut self.stream.inner)
     }
 }
