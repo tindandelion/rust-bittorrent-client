@@ -53,10 +53,6 @@ impl From<io::Error> for ProbeError {
 }
 
 impl ProbeState {
-    pub fn is_connected(&self) -> bool {
-        matches!(self, Self::Unchoked(_))
-    }
-
     pub fn is_terminal(&self) -> bool {
         matches!(self, Self::Unchoked(_) | Self::Error)
     }

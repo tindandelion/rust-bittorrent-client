@@ -3,13 +3,10 @@ use std::{io, net::SocketAddr};
 use mio::{Token, event::Event};
 use tracing::{Span, debug, debug_span, trace, warn};
 
-use crate::downloader::{
-    PeerChannel,
-    async_peer_connector::{
-        mio_peer_stream::MioPeerStream,
-        probe_state::{ProbeContext, ProbeError, ProbeState},
-        runtime,
-    },
+use crate::downloader::async_peer_connector::{
+    mio_peer_stream::MioPeerStream,
+    probe_state::{ProbeContext, ProbeError, ProbeState},
+    runtime,
 };
 
 pub struct PeerProbe {
@@ -32,6 +29,10 @@ impl PeerProbe {
             addr,
             span,
         })
+    }
+
+    pub fn is_connected(&self) -> bool {
+        matches!(self.state, ProbeState::WaitingForBitfield(_, _))
     }
 
     pub fn register(&mut self) -> io::Result<Token> {
@@ -84,16 +85,14 @@ impl PeerProbe {
             }
         }
     }
+}
 
-    pub fn into_peer_channel(self) -> io::Result<PeerChannel> {
-        match self.state {
-            ProbeState::Unchoked(remote_id) => {
-                let std_stream: std::net::TcpStream = self.stream.inner.into();
-                std_stream.set_nonblocking(false)?;
+impl TryFrom<PeerProbe> for std::net::TcpStream {
+    type Error = io::Error;
 
-                PeerChannel::from_stream(std_stream, remote_id)
-            }
-            _ => Err(std::io::Error::other("peer did not unchoke")),
-        }
+    fn try_from(value: PeerProbe) -> Result<Self, Self::Error> {
+        let std_stream: std::net::TcpStream = value.stream.inner.into();
+        std_stream.set_nonblocking(false)?;
+        Ok(std_stream)
     }
 }
