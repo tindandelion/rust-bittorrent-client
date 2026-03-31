@@ -1,6 +1,5 @@
-mod message_buffer;
 mod peer_probe;
-mod probe_state;
+
 mod runtime;
 use std::{
     collections::HashMap,
@@ -13,7 +12,7 @@ use mio::{Events, Token};
 use tracing::error;
 
 use crate::{
-    downloader::async_peer_connector::{peer_probe::PeerProbe, probe_state::ProbeContext},
+    downloader::async_peer_connector::peer_probe::PeerProbe,
     types::{PeerId, Sha1},
 };
 
@@ -79,12 +78,7 @@ impl<'a> PeerPoller<'a> {
         let mut probes: HashMap<Token, PeerProbe> = HashMap::new();
 
         for addr in peer_addrs.into_iter() {
-            let context = ProbeContext {
-                peer_id: connector.peer_id,
-                info_hash: connector.info_hash,
-                piece_count: connector.piece_count,
-            };
-            let mut probe = PeerProbe::connect(addr, context)?;
+            let mut probe = PeerProbe::connect(addr)?;
             probe.poll();
             probes.insert(probe.id, probe);
         }
@@ -190,7 +184,10 @@ mod tests {
         let peer_addr = remote_peer.start();
 
         let connector = make_connector();
-        let channel = connector.connect(vec![peer_addr]).next().unwrap();
+        let channel = connector
+            .connect(vec![peer_addr])
+            .next()
+            .expect("failed to connect to peer");
 
         assert_eq!(channel.peer_addr().unwrap(), peer_addr);
     }

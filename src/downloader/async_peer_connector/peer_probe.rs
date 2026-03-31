@@ -1,60 +1,54 @@
-use std::{io, net::SocketAddr, task::Poll};
-
-use mio::Token;
-use tracing::{Span, debug, debug_span};
-
-use crate::downloader::async_peer_connector::{
-    probe_state::{ProbeContext, ProbeState},
-    runtime,
+use std::{
+    io,
+    net::SocketAddr,
+    pin::Pin,
+    sync::Arc,
+    task::{Context, Poll, Waker},
 };
 
+use mio::Token;
+use tracing::{Span, debug_span};
+
+use crate::downloader::async_peer_connector::runtime;
+
 pub struct PeerProbe {
-    stream: mio::net::TcpStream,
-    state: ProbeState,
     pub addr: SocketAddr,
     span: Span,
     pub id: Token,
-    fut: futures::ConnectFuture,
+    fut: Pin<Box<dyn Future<Output = io::Result<mio::net::TcpStream>>>>,
     result: Option<io::Result<mio::net::TcpStream>>,
 }
 
 impl PeerProbe {
-    pub fn connect(addr: SocketAddr, context: ProbeContext) -> io::Result<Self> {
+    pub fn connect(addr: SocketAddr) -> io::Result<Self> {
         let span = debug_span!("connect_to_peer", addr = %addr);
-        let stream = span.in_scope(|| {
-            debug!("initiating connection");
-            mio::net::TcpStream::connect(addr)
-        })?;
         let id = runtime::next_id();
         let fut = futures::ConnectFuture::new(id, addr);
 
         Ok(Self {
             id,
-            stream,
-            state: ProbeState::Connecting(context),
             addr,
             span,
-            fut,
+            fut: Box::pin(fut),
             result: None,
         })
     }
 
     pub fn is_connected(&self) -> bool {
-        matches!(self.result, Some(Ok(_))) || matches!(self.state, ProbeState::Handshaking(_))
+        matches!(self.result, Some(Ok(_)))
     }
 
     pub fn is_error(&self) -> bool {
-        matches!(self.result, Some(Err(_))) || matches!(self.state, ProbeState::Error)
-    }
-
-    pub fn unregister(&mut self) -> io::Result<()> {
-        runtime::deregister_stream(&mut self.stream)
+        matches!(self.result, Some(Err(_)))
     }
 
     pub fn poll(&mut self) {
+        let waker = Waker::from(Arc::new(futures::MyWaker));
+        let mut context = Context::from_waker(&waker);
+
         let _guard = self.span.enter();
 
-        match self.fut.poll() {
+        match self.fut.as_mut().poll(&mut context) {
             Poll::Ready(res) => self.result = Some(res),
             Poll::Pending => {}
         }
@@ -68,20 +62,21 @@ impl TryFrom<PeerProbe> for std::net::TcpStream {
         if let Some(Ok(stream)) = probe.result {
             let std_stream: std::net::TcpStream = stream.into();
             std_stream.set_nonblocking(false)?;
-            return Ok(std_stream);
+            Ok(std_stream)
+        } else {
+            Err(io::Error::new(io::ErrorKind::Other, "peer not connected"))
         }
-
-        if !probe.is_connected() {
-            return Err(io::Error::new(io::ErrorKind::Other, "peer not connected"));
-        }
-        let std_stream: std::net::TcpStream = probe.stream.into();
-        std_stream.set_nonblocking(false)?;
-        Ok(std_stream)
     }
 }
 
 mod futures {
-    use std::{io, net::SocketAddr, task::Poll};
+    use std::{
+        io,
+        net::SocketAddr,
+        pin::Pin,
+        sync::Arc,
+        task::{Context, Poll, Wake},
+    };
 
     use mio::Token;
     use tracing::debug;
@@ -103,7 +98,7 @@ mod futures {
             }
         }
 
-        pub fn poll(&mut self) -> Poll<io::Result<mio::net::TcpStream>> {
+        pub fn my_poll(&mut self) -> Poll<io::Result<mio::net::TcpStream>> {
             if self.stream.is_none() {
                 debug!("initiating connection");
 
@@ -134,11 +129,25 @@ mod futures {
         }
     }
 
+    impl Future for ConnectFuture {
+        type Output = io::Result<mio::net::TcpStream>;
+
+        fn poll(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Self::Output> {
+            self.get_mut().my_poll()
+        }
+    }
+
     impl Drop for ConnectFuture {
         fn drop(&mut self) {
             if let Some(mut stream) = self.stream.take() {
                 runtime::deregister_stream(&mut stream).unwrap();
             }
         }
+    }
+
+    pub struct MyWaker;
+
+    impl Wake for MyWaker {
+        fn wake(self: Arc<Self>) {}
     }
 }
