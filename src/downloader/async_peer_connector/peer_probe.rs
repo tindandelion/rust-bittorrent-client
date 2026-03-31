@@ -103,7 +103,7 @@ mod futures {
                 debug!("initiating connection");
 
                 let mut stream = mio::net::TcpStream::connect(self.addr)?;
-                runtime::register_stream(
+                runtime::register_source(
                     &mut stream,
                     self.id,
                     mio::Interest::WRITABLE | mio::Interest::READABLE,
@@ -118,11 +118,11 @@ mod futures {
                     Poll::Pending
                 }
                 Ok(_) => {
-                    runtime::deregister_stream(&mut stream)?;
+                    runtime::deregister_source(&mut stream)?;
                     Poll::Ready(Ok(stream))
                 }
                 Err(err) => {
-                    runtime::deregister_stream(&mut stream)?;
+                    runtime::deregister_source(&mut stream)?;
                     Poll::Ready(Err(err))
                 }
             }
@@ -140,7 +140,7 @@ mod futures {
     impl Drop for ConnectFuture {
         fn drop(&mut self) {
             if let Some(mut stream) = self.stream.take() {
-                runtime::deregister_stream(&mut stream).unwrap();
+                runtime::deregister_source(&mut stream).unwrap();
             }
         }
     }

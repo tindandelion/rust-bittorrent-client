@@ -4,7 +4,7 @@ use std::{
     time::Duration,
 };
 
-use mio::{Poll, Token};
+use mio::{Poll, Token, event::Source};
 
 pub struct Runtime {
     poll: RefCell<Poll>,
@@ -26,9 +26,9 @@ impl Runtime {
         Token(id)
     }
 
-    fn register_stream(
+    fn register_source(
         &self,
-        stream: &mut mio::net::TcpStream,
+        stream: &mut impl Source,
         token: Token,
         interests: mio::Interest,
     ) -> io::Result<()> {
@@ -38,7 +38,7 @@ impl Runtime {
             .register(stream, token, interests)
     }
 
-    fn deregister_stream(&self, stream: &mut mio::net::TcpStream) -> io::Result<()> {
+    fn deregister_source(&self, stream: &mut impl Source) -> io::Result<()> {
         self.poll.borrow().registry().deregister(stream)
     }
 
@@ -55,16 +55,16 @@ pub fn next_id() -> Token {
     RUNTIME.with(|rt| rt.next_id())
 }
 
-pub fn register_stream(
-    stream: &mut mio::net::TcpStream,
+pub fn register_source(
+    stream: &mut impl Source,
     token: Token,
     interests: mio::Interest,
 ) -> io::Result<()> {
-    RUNTIME.with(|rt| rt.register_stream(stream, token, interests))
+    RUNTIME.with(|rt| rt.register_source(stream, token, interests))
 }
 
-pub fn deregister_stream(stream: &mut mio::net::TcpStream) -> io::Result<()> {
-    RUNTIME.with(|rt| rt.deregister_stream(stream))
+pub fn deregister_source(stream: &mut impl Source) -> io::Result<()> {
+    RUNTIME.with(|rt| rt.deregister_source(stream))
 }
 
 pub fn poll(events: &mut mio::Events, timeout: Option<Duration>) -> io::Result<()> {
