@@ -15,15 +15,15 @@ pub struct PeerProbe {
     pub addr: SocketAddr,
     span: Span,
     pub id: Token,
-    fut: Pin<Box<dyn Future<Output = io::Result<mio::net::TcpStream>>>>,
-    result: Option<io::Result<mio::net::TcpStream>>,
+    fut: Pin<Box<dyn Future<Output = io::Result<std::net::TcpStream>>>>,
+    result: Option<io::Result<std::net::TcpStream>>,
 }
 
 impl PeerProbe {
     pub fn connect(addr: SocketAddr) -> io::Result<Self> {
         let span = debug_span!("connect_to_peer", addr = %addr);
         let id = runtime::next_id();
-        let fut = futures::ConnectFuture::new(id, addr);
+        let fut = connect(id, addr);
 
         Ok(Self {
             id,
@@ -43,6 +43,10 @@ impl PeerProbe {
     }
 
     pub fn poll(&mut self) {
+        if self.result.is_some() {
+            return;
+        }
+
         let waker = Waker::from(Arc::new(futures::MyWaker));
         let mut context = Context::from_waker(&waker);
 
@@ -60,13 +64,19 @@ impl TryFrom<PeerProbe> for std::net::TcpStream {
 
     fn try_from(probe: PeerProbe) -> Result<Self, Self::Error> {
         if let Some(Ok(stream)) = probe.result {
-            let std_stream: std::net::TcpStream = stream.into();
-            std_stream.set_nonblocking(false)?;
-            Ok(std_stream)
+            Ok(stream)
         } else {
             Err(io::Error::new(io::ErrorKind::Other, "peer not connected"))
         }
     }
+}
+
+async fn connect(id: Token, addr: SocketAddr) -> io::Result<std::net::TcpStream> {
+    let fut = futures::ConnectFuture::new(id, addr);
+    let stream = fut.await?;
+    let std_stream: std::net::TcpStream = stream.into();
+    std_stream.set_nonblocking(false)?;
+    Ok(std_stream)
 }
 
 mod futures {
