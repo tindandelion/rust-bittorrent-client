@@ -4,16 +4,16 @@ use mio::{Token, event::Event};
 use tracing::{Span, debug, debug_span, trace, warn};
 
 use crate::downloader::async_peer_connector::{
-    mio_peer_stream::MioPeerStream,
     probe_state::{ProbeContext, ProbeError, ProbeState},
     runtime,
 };
 
 pub struct PeerProbe {
-    stream: MioPeerStream,
-    pub state: ProbeState,
+    stream: mio::net::TcpStream,
+    state: ProbeState,
     pub addr: SocketAddr,
     span: Span,
+    id: Token,
 }
 
 impl PeerProbe {
@@ -21,9 +21,11 @@ impl PeerProbe {
         let span = debug_span!("connect_to_peer", addr = %addr);
         let stream = span.in_scope(|| {
             debug!("initiating connection");
-            mio::net::TcpStream::connect(addr).map(MioPeerStream::new)
+            mio::net::TcpStream::connect(addr)
         })?;
+        let id = runtime::next_id();
         Ok(Self {
+            id,
             stream,
             state: ProbeState::Connecting(context),
             addr,
@@ -35,16 +37,21 @@ impl PeerProbe {
         matches!(self.state, ProbeState::Handshaking(_))
     }
 
+    pub fn is_error(&self) -> bool {
+        matches!(self.state, ProbeState::Error)
+    }
+
     pub fn register(&mut self) -> io::Result<Token> {
-        let token = runtime::register_stream(
-            &mut self.stream.inner,
+        runtime::register_stream(
+            &mut self.stream,
+            self.id,
             mio::Interest::WRITABLE | mio::Interest::READABLE,
         )?;
-        Ok(token)
+        Ok(self.id)
     }
 
     pub fn unregister(&mut self) -> io::Result<()> {
-        runtime::deregister_stream(&mut self.stream.inner)
+        runtime::deregister_stream(&mut self.stream)
     }
 
     pub fn handle_event(&mut self, event: &Event) {
@@ -52,7 +59,7 @@ impl PeerProbe {
         trace!(?event, "received event");
 
         if event.is_error() {
-            match self.stream.inner.take_error() {
+            match self.stream.take_error() {
                 Ok(Some(err)) => debug!(?err, "probe error: I/O error"),
                 Ok(None) => {}
                 Err(err) => debug!(?err, "failed to take I/O error"),
@@ -94,7 +101,7 @@ impl TryFrom<PeerProbe> for std::net::TcpStream {
         if !value.is_connected() {
             return Err(io::Error::new(io::ErrorKind::Other, "peer not connected"));
         }
-        let std_stream: std::net::TcpStream = value.stream.inner.into();
+        let std_stream: std::net::TcpStream = value.stream.into();
         std_stream.set_nonblocking(false)?;
         Ok(std_stream)
     }

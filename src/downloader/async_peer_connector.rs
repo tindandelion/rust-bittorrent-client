@@ -1,5 +1,4 @@
 mod message_buffer;
-mod mio_peer_stream;
 mod peer_probe;
 mod probe_state;
 mod runtime;
@@ -17,8 +16,6 @@ use crate::{
     downloader::async_peer_connector::{peer_probe::PeerProbe, probe_state::ProbeContext},
     types::{PeerId, Sha1},
 };
-
-use probe_state::ProbeState;
 
 pub struct PeerConnector<'a> {
     info_hash: Sha1,
@@ -119,7 +116,7 @@ impl<'a> PeerPoller<'a> {
         let errored_tokens: Vec<Token> = self
             .probes
             .iter()
-            .filter(|(_, probe)| matches!(probe.state, ProbeState::Error))
+            .filter(|(_, probe)| probe.is_error())
             .map(|(token, _)| *token)
             .collect();
 

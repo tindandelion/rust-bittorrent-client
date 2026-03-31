@@ -3,19 +3,10 @@ use std::{
     net::SocketAddr,
 };
 
-use tracing::{error, trace, warn};
-
-use crate::{
-    downloader::peer_comm::{HandshakeMessage, PeerMessage},
-    types::{PeerId, Sha1},
-};
+use crate::types::{PeerId, Sha1};
 
 pub trait PeerStream {
     fn peer_addr(&self) -> io::Result<SocketAddr>;
-    fn send_handshake(&mut self, handshake: HandshakeMessage) -> io::Result<()>;
-    fn receive_handshake(&mut self) -> io::Result<HandshakeMessage>;
-    fn receive_message(&mut self) -> io::Result<PeerMessage>;
-    fn send_message(&mut self, msg: PeerMessage) -> io::Result<()>;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -67,6 +58,12 @@ impl ProbeState {
             Err(err) if err.kind() == io::ErrorKind::NotConnected => Ok(Self::Connecting(*context)),
             Err(err) => Err(err.into()),
         }
+    }
+}
+
+impl PeerStream for mio::net::TcpStream {
+    fn peer_addr(&self) -> io::Result<SocketAddr> {
+        self.peer_addr()
     }
 }
 
@@ -122,8 +119,6 @@ mod tests {
 
     struct TestPeerStream {
         peer_addr: String,
-        sent_handshake: Option<HandshakeMessage>,
-        remote_handshake: Option<HandshakeMessage>,
         message_from_remote: Option<PeerMessage>,
         sent_messages: Vec<PeerMessage>,
     }
@@ -138,48 +133,15 @@ mod tests {
                 Ok("127.0.0.1:12345".parse().unwrap())
             }
         }
-
-        fn send_handshake(&mut self, handshake: HandshakeMessage) -> io::Result<()> {
-            self.sent_handshake = Some(handshake);
-            Ok(())
-        }
-
-        fn receive_handshake(&mut self) -> io::Result<HandshakeMessage> {
-            self.remote_handshake.ok_or(io::Error::new(
-                io::ErrorKind::Other,
-                "no remote handshake to send",
-            ))
-        }
-
-        fn receive_message(&mut self) -> io::Result<PeerMessage> {
-            self.message_from_remote
-                .take()
-                .ok_or(io::Error::new(io::ErrorKind::Other, "no message to send"))
-        }
-
-        fn send_message(&mut self, msg: PeerMessage) -> io::Result<()> {
-            self.sent_messages.push(msg);
-            Ok(())
-        }
     }
 
     impl TestPeerStream {
         fn new() -> Self {
             Self {
                 peer_addr: "127.0.0.1:12345".to_string(),
-                sent_handshake: None,
-                remote_handshake: None,
                 message_from_remote: None,
                 sent_messages: vec![],
             }
-        }
-
-        fn sent_handshake(&self) -> HandshakeMessage {
-            self.sent_handshake.unwrap()
-        }
-
-        fn set_remote_handshake(&mut self, handshake: HandshakeMessage) {
-            self.remote_handshake = Some(handshake);
         }
 
         fn remote_sends_message(&mut self, msg: PeerMessage) {

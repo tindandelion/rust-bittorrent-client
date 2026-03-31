@@ -20,19 +20,22 @@ impl Runtime {
         }
     }
 
+    fn next_id(&self) -> Token {
+        let id = self.next_id.get();
+        self.next_id.set(id + 1);
+        Token(id)
+    }
+
     fn register_stream(
         &self,
         stream: &mut mio::net::TcpStream,
+        token: Token,
         interests: mio::Interest,
-    ) -> io::Result<Token> {
-        let next_id = self.next_id.get();
-        self.next_id.set(next_id + 1);
-        let token = Token(next_id);
+    ) -> io::Result<()> {
         self.poll
             .borrow()
             .registry()
-            .register(stream, token, interests)?;
-        Ok(token)
+            .register(stream, token, interests)
     }
 
     fn deregister_stream(&self, stream: &mut mio::net::TcpStream) -> io::Result<()> {
@@ -48,11 +51,16 @@ thread_local! {
     static RUNTIME: Runtime = Runtime::new();
 }
 
+pub fn next_id() -> Token {
+    RUNTIME.with(|rt| rt.next_id())
+}
+
 pub fn register_stream(
     stream: &mut mio::net::TcpStream,
+    token: Token,
     interests: mio::Interest,
-) -> io::Result<Token> {
-    RUNTIME.with(|rt| rt.register_stream(stream, interests))
+) -> io::Result<()> {
+    RUNTIME.with(|rt| rt.register_stream(stream, token, interests))
 }
 
 pub fn deregister_stream(stream: &mut mio::net::TcpStream) -> io::Result<()> {
