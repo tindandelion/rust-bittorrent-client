@@ -99,14 +99,14 @@ impl<'a> PeerPoller<'a> {
             }
 
             self.update_probe_states(&events);
-            self.remove_errored_probes()?;
+            self.remove_errored_probes();
             if self.probes.is_empty() {
                 return Ok(None);
             }
         }
     }
 
-    fn remove_errored_probes(&mut self) -> io::Result<()> {
+    fn remove_errored_probes(&mut self) {
         let errored_tokens: Vec<Token> = self
             .probes
             .iter()
@@ -115,11 +115,8 @@ impl<'a> PeerPoller<'a> {
             .collect();
 
         for token in errored_tokens {
-            if let Some(mut probe) = self.probes.remove(&token) {
-                self.unregister_probe(&mut probe)?;
-            }
+            self.unregister_probe(token);
         }
-        Ok(())
     }
 
     fn get_connected_stream(&mut self) -> io::Result<Option<TcpStream>> {
@@ -130,9 +127,7 @@ impl<'a> PeerPoller<'a> {
             .map(|(token, _)| *token);
 
         if let Some(token) = connected_probe_token {
-            let mut probe = self.probes.remove(&token).unwrap();
-            self.unregister_probe(&mut probe)?;
-
+            let probe = self.unregister_probe(token).unwrap();
             let stream: TcpStream = probe.try_into()?;
             Ok(Some(stream))
         } else {
@@ -151,9 +146,10 @@ impl<'a> PeerPoller<'a> {
         }
     }
 
-    fn unregister_probe(&mut self, probe: &mut PeerProbe) -> io::Result<()> {
-        self.connector.report_progress(probe.addr);
-        Ok(())
+    fn unregister_probe(&mut self, token: Token) -> Option<PeerProbe> {
+        self.probes.remove(&token).inspect(|probe| {
+            self.connector.report_progress(probe.addr);
+        })
     }
 }
 
