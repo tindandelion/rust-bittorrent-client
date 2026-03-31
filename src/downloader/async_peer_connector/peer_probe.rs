@@ -1,10 +1,10 @@
-use std::{io, net::SocketAddr};
+use std::{io, net::SocketAddr, task::Poll};
 
 use mio::Token;
-use tracing::{Span, debug, debug_span, warn};
+use tracing::{Span, debug, debug_span};
 
 use crate::downloader::async_peer_connector::{
-    probe_state::{ProbeContext, ProbeError, ProbeState},
+    probe_state::{ProbeContext, ProbeState},
     runtime,
 };
 
@@ -13,7 +13,9 @@ pub struct PeerProbe {
     state: ProbeState,
     pub addr: SocketAddr,
     span: Span,
-    id: Token,
+    pub id: Token,
+    fut: futures::ConnectFuture,
+    result: Option<io::Result<mio::net::TcpStream>>,
 }
 
 impl PeerProbe {
@@ -24,61 +26,37 @@ impl PeerProbe {
             mio::net::TcpStream::connect(addr)
         })?;
         let id = runtime::next_id();
+        let fut = futures::ConnectFuture::new(id, addr);
+
         Ok(Self {
             id,
             stream,
             state: ProbeState::Connecting(context),
             addr,
             span,
+            fut,
+            result: None,
         })
     }
 
     pub fn is_connected(&self) -> bool {
-        matches!(self.state, ProbeState::Handshaking(_))
+        matches!(self.result, Some(Ok(_))) || matches!(self.state, ProbeState::Handshaking(_))
     }
 
     pub fn is_error(&self) -> bool {
-        matches!(self.state, ProbeState::Error)
-    }
-
-    pub fn register(&mut self) -> io::Result<Token> {
-        runtime::register_stream(
-            &mut self.stream,
-            self.id,
-            mio::Interest::WRITABLE | mio::Interest::READABLE,
-        )?;
-        Ok(self.id)
+        matches!(self.result, Some(Err(_))) || matches!(self.state, ProbeState::Error)
     }
 
     pub fn unregister(&mut self) -> io::Result<()> {
         runtime::deregister_stream(&mut self.stream)
     }
 
-    pub fn handle_event(&mut self) {
+    pub fn poll(&mut self) {
         let _guard = self.span.enter();
 
-        loop {
-            match self.state.update(&mut self.stream) {
-                Ok(next_state) => {
-                    self.state = next_state;
-                    if self.state.is_terminal() {
-                        break;
-                    }
-                }
-                Err(ProbeError::IO(err)) if err.kind() == io::ErrorKind::WouldBlock => {
-                    break;
-                }
-                Err(ProbeError::IO(err)) => {
-                    debug!(?err, "probe error: I/O error");
-                    self.state = ProbeState::Error;
-                    break;
-                }
-                Err(err) => {
-                    warn!(?err, "probe error");
-                    self.state = ProbeState::Error;
-                    break;
-                }
-            }
+        match self.fut.poll() {
+            Poll::Ready(res) => self.result = Some(res),
+            Poll::Pending => {}
         }
     }
 }
@@ -86,12 +64,81 @@ impl PeerProbe {
 impl TryFrom<PeerProbe> for std::net::TcpStream {
     type Error = io::Error;
 
-    fn try_from(value: PeerProbe) -> Result<Self, Self::Error> {
-        if !value.is_connected() {
+    fn try_from(probe: PeerProbe) -> Result<Self, Self::Error> {
+        if let Some(Ok(stream)) = probe.result {
+            let std_stream: std::net::TcpStream = stream.into();
+            std_stream.set_nonblocking(false)?;
+            return Ok(std_stream);
+        }
+
+        if !probe.is_connected() {
             return Err(io::Error::new(io::ErrorKind::Other, "peer not connected"));
         }
-        let std_stream: std::net::TcpStream = value.stream.into();
+        let std_stream: std::net::TcpStream = probe.stream.into();
         std_stream.set_nonblocking(false)?;
         Ok(std_stream)
+    }
+}
+
+mod futures {
+    use std::{io, net::SocketAddr, task::Poll};
+
+    use mio::Token;
+    use tracing::debug;
+
+    use crate::downloader::async_peer_connector::runtime;
+
+    pub struct ConnectFuture {
+        id: Token,
+        addr: SocketAddr,
+        stream: Option<mio::net::TcpStream>,
+    }
+
+    impl ConnectFuture {
+        pub fn new(id: Token, addr: SocketAddr) -> Self {
+            Self {
+                id,
+                addr,
+                stream: None,
+            }
+        }
+
+        pub fn poll(&mut self) -> Poll<io::Result<mio::net::TcpStream>> {
+            if self.stream.is_none() {
+                debug!("initiating connection");
+
+                let mut stream = mio::net::TcpStream::connect(self.addr)?;
+                runtime::register_stream(
+                    &mut stream,
+                    self.id,
+                    mio::Interest::WRITABLE | mio::Interest::READABLE,
+                )?;
+                self.stream = Some(stream);
+            }
+
+            let mut stream = self.stream.take().expect("the stream should be set");
+            match stream.peer_addr() {
+                Err(err) if err.kind() == io::ErrorKind::NotConnected => {
+                    self.stream = Some(stream);
+                    Poll::Pending
+                }
+                Ok(_) => {
+                    runtime::deregister_stream(&mut stream)?;
+                    Poll::Ready(Ok(stream))
+                }
+                Err(err) => {
+                    runtime::deregister_stream(&mut stream)?;
+                    Poll::Ready(Err(err))
+                }
+            }
+        }
+    }
+
+    impl Drop for ConnectFuture {
+        fn drop(&mut self) {
+            if let Some(mut stream) = self.stream.take() {
+                runtime::deregister_stream(&mut stream).unwrap();
+            }
+        }
     }
 }

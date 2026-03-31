@@ -85,8 +85,8 @@ impl<'a> PeerPoller<'a> {
                 piece_count: connector.piece_count,
             };
             let mut probe = PeerProbe::connect(addr, context)?;
-            let token = probe.register()?;
-            probes.insert(token, probe);
+            probe.poll();
+            probes.insert(probe.id, probe);
         }
 
         Ok(Self { probes, connector })
@@ -153,12 +153,11 @@ impl<'a> PeerPoller<'a> {
                 .probes
                 .get_mut(&token)
                 .unwrap_or_else(|| panic!("Unexpected token in received event: {token:?}"));
-            probe.handle_event();
+            probe.poll();
         }
     }
 
     fn unregister_probe(&mut self, probe: &mut PeerProbe) -> io::Result<()> {
-        probe.unregister()?;
         self.connector.report_progress(probe.addr);
         Ok(())
     }
@@ -171,14 +170,6 @@ impl<'a> Iterator for PeerPoller<'a> {
         self.wait_for_connected_stream()
             .inspect_err(|err| error!(%err, "error while processing I/O events"))
             .expect("error while processing I/O events")
-    }
-}
-
-impl<'a> Drop for PeerPoller<'a> {
-    fn drop(&mut self) {
-        for (_, probe) in self.probes.iter_mut() {
-            probe.unregister().unwrap();
-        }
     }
 }
 
