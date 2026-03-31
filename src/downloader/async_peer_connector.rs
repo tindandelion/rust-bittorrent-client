@@ -153,7 +153,7 @@ impl<'a> PeerPoller<'a> {
                 .probes
                 .get_mut(&token)
                 .unwrap_or_else(|| panic!("Unexpected token in received event: {token:?}"));
-            probe.handle_event(event);
+            probe.handle_event();
         }
     }
 

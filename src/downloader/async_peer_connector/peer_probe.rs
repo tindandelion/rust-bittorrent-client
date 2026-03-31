@@ -1,7 +1,7 @@
 use std::{io, net::SocketAddr};
 
-use mio::{Token, event::Event};
-use tracing::{Span, debug, debug_span, trace, warn};
+use mio::Token;
+use tracing::{Span, debug, debug_span, warn};
 
 use crate::downloader::async_peer_connector::{
     probe_state::{ProbeContext, ProbeError, ProbeState},
@@ -54,19 +54,8 @@ impl PeerProbe {
         runtime::deregister_stream(&mut self.stream)
     }
 
-    pub fn handle_event(&mut self, event: &Event) {
+    pub fn handle_event(&mut self) {
         let _guard = self.span.enter();
-        trace!(?event, "received event");
-
-        if event.is_error() {
-            match self.stream.take_error() {
-                Ok(Some(err)) => debug!(?err, "probe error: I/O error"),
-                Ok(None) => {}
-                Err(err) => debug!(?err, "failed to take I/O error"),
-            }
-            self.state = ProbeState::Error;
-            return;
-        }
 
         loop {
             match self.state.update(&mut self.stream) {
