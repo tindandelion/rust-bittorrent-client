@@ -6,7 +6,6 @@ use std::{
     task::{Context, Poll, Waker},
 };
 
-use mio::Token;
 use tracing::{Span, debug_span};
 
 use crate::downloader::async_peer_connector::runtime;
@@ -14,7 +13,7 @@ use crate::downloader::async_peer_connector::runtime;
 pub struct PeerProbe {
     pub addr: SocketAddr,
     span: Span,
-    pub id: Token,
+    pub id: usize,
     fut: Pin<Box<dyn Future<Output = io::Result<std::net::TcpStream>>>>,
     result: Option<io::Result<std::net::TcpStream>>,
 }
@@ -71,7 +70,7 @@ impl TryFrom<PeerProbe> for std::net::TcpStream {
     }
 }
 
-async fn connect(id: Token, addr: SocketAddr) -> io::Result<std::net::TcpStream> {
+async fn connect(id: usize, addr: SocketAddr) -> io::Result<std::net::TcpStream> {
     let fut = futures::ConnectFuture::new(id, addr);
     let stream = fut.await?;
     let std_stream: std::net::TcpStream = stream.into();
@@ -94,13 +93,13 @@ mod futures {
     use crate::downloader::async_peer_connector::runtime;
 
     pub struct ConnectFuture {
-        id: Token,
+        id: usize,
         addr: SocketAddr,
         stream: Option<mio::net::TcpStream>,
     }
 
     impl ConnectFuture {
-        pub fn new(id: Token, addr: SocketAddr) -> Self {
+        pub fn new(id: usize, addr: SocketAddr) -> Self {
             Self {
                 id,
                 addr,

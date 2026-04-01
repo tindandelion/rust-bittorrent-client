@@ -20,10 +20,10 @@ impl Runtime {
         }
     }
 
-    fn next_id(&self) -> Token {
+    fn next_id(&self) -> usize {
         let id = self.next_id.get();
         self.next_id.set(id + 1);
-        Token(id)
+        id
     }
 
     fn register_source(
@@ -51,16 +51,16 @@ thread_local! {
     static RUNTIME: Runtime = Runtime::new();
 }
 
-pub fn next_id() -> Token {
+pub fn next_id() -> usize {
     RUNTIME.with(|rt| rt.next_id())
 }
 
 pub fn register_source(
     stream: &mut impl Source,
-    token: Token,
+    id: usize,
     interests: mio::Interest,
 ) -> io::Result<()> {
-    RUNTIME.with(|rt| rt.register_source(stream, token, interests))
+    RUNTIME.with(|rt| rt.register_source(stream, Token(id), interests))
 }
 
 pub fn deregister_source(stream: &mut impl Source) -> io::Result<()> {

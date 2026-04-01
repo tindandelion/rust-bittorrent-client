@@ -66,7 +66,7 @@ impl<'a> PeerConnector<'a> {
 }
 
 struct PeerPoller<'a> {
-    probes: HashMap<Token, PeerProbe>,
+    probes: HashMap<usize, PeerProbe>,
     connector: PeerConnector<'a>,
 }
 
@@ -75,7 +75,7 @@ impl<'a> PeerPoller<'a> {
         peer_addrs: impl IntoIterator<Item = SocketAddr>,
         connector: PeerConnector<'a>,
     ) -> io::Result<Self> {
-        let mut probes: HashMap<Token, PeerProbe> = HashMap::new();
+        let mut probes: HashMap<usize, PeerProbe> = HashMap::new();
 
         for addr in peer_addrs.into_iter() {
             let mut probe = PeerProbe::connect(addr)?;
@@ -107,26 +107,26 @@ impl<'a> PeerPoller<'a> {
     }
 
     fn remove_errored_probes(&mut self) {
-        let errored_tokens: Vec<Token> = self
+        let errored_ids: Vec<usize> = self
             .probes
             .iter()
             .filter(|(_, probe)| probe.is_error())
-            .map(|(token, _)| *token)
+            .map(|(id, _)| *id)
             .collect();
 
-        for token in errored_tokens {
+        for token in errored_ids {
             self.unregister_probe(token);
         }
     }
 
     fn get_connected_stream(&mut self) -> io::Result<Option<TcpStream>> {
-        let connected_probe_token = self
+        let connected_probe_id = self
             .probes
             .iter()
             .find(|(_, probe)| probe.is_connected())
             .map(|(token, _)| *token);
 
-        if let Some(token) = connected_probe_token {
+        if let Some(token) = connected_probe_id {
             let probe = self.unregister_probe(token).unwrap();
             let stream: TcpStream = probe.try_into()?;
             Ok(Some(stream))
@@ -137,17 +137,17 @@ impl<'a> PeerPoller<'a> {
 
     fn update_probe_states(&mut self, events: &Events) {
         for event in events.iter() {
-            let token = event.token();
+            let Token(id) = event.token();
             let probe = self
                 .probes
-                .get_mut(&token)
-                .unwrap_or_else(|| panic!("Unexpected token in received event: {token:?}"));
+                .get_mut(&id)
+                .unwrap_or_else(|| panic!("Unexpected id in received event: {id}"));
             probe.poll();
         }
     }
 
-    fn unregister_probe(&mut self, token: Token) -> Option<PeerProbe> {
-        self.probes.remove(&token).inspect(|probe| {
+    fn unregister_probe(&mut self, id: usize) -> Option<PeerProbe> {
+        self.probes.remove(&id).inspect(|probe| {
             self.connector.report_progress(probe.addr);
         })
     }
