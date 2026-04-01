@@ -74,7 +74,7 @@ mod futures {
         io,
         net::SocketAddr,
         pin::Pin,
-        task::{Context, Poll},
+        task::{Context, Poll, Waker},
     };
 
     use tracing::debug;
@@ -96,7 +96,7 @@ mod futures {
             }
         }
 
-        pub fn my_poll(&mut self) -> Poll<io::Result<mio::net::TcpStream>> {
+        pub fn my_poll(&mut self, waker: &Waker) -> Poll<io::Result<mio::net::TcpStream>> {
             if self.stream.is_none() {
                 debug!("initiating connection");
 
@@ -106,6 +106,7 @@ mod futures {
                     self.id,
                     mio::Interest::WRITABLE | mio::Interest::READABLE,
                 )?;
+                runtime::set_waker(self.id, waker);
                 self.stream = Some(stream);
             }
 
@@ -113,14 +114,15 @@ mod futures {
             match stream.peer_addr() {
                 Err(err) if err.kind() == io::ErrorKind::NotConnected => {
                     self.stream = Some(stream);
+                    runtime::set_waker(self.id, waker);
                     Poll::Pending
                 }
                 Ok(_) => {
-                    runtime::deregister_source(&mut stream)?;
+                    runtime::deregister_source(self.id, &mut stream)?;
                     Poll::Ready(Ok(stream))
                 }
                 Err(err) => {
-                    runtime::deregister_source(&mut stream)?;
+                    runtime::deregister_source(self.id, &mut stream)?;
                     Poll::Ready(Err(err))
                 }
             }
@@ -130,15 +132,15 @@ mod futures {
     impl Future for ConnectFuture {
         type Output = io::Result<mio::net::TcpStream>;
 
-        fn poll(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Self::Output> {
-            self.get_mut().my_poll()
+        fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+            self.get_mut().my_poll(cx.waker())
         }
     }
 
     impl Drop for ConnectFuture {
         fn drop(&mut self) {
             if let Some(mut stream) = self.stream.take() {
-                runtime::deregister_source(&mut stream).unwrap();
+                runtime::deregister_source(self.id, &mut stream).unwrap();
             }
         }
     }
