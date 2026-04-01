@@ -2,6 +2,7 @@ use std::{
     cell::{Cell, RefCell},
     collections::HashMap,
     io,
+    task::Waker,
     time::Duration,
 };
 
@@ -52,7 +53,14 @@ impl Reactor {
     pub fn poll(&self, timeout: Option<Duration>) -> io::Result<Vec<usize>> {
         let mut events = self.events.borrow_mut();
         self.poll.borrow_mut().poll(&mut events, timeout)?;
-        let ids = events.iter().map(|event| event.token().0).collect();
+        let ids: Vec<usize> = events.iter().map(|event| event.token().0).collect();
+
+        let wakers = self.wakers.borrow();
+        ids.iter()
+            .map(|id| wakers.get(id))
+            .flatten()
+            .for_each(Waker::wake_by_ref);
+
         Ok(ids)
     }
 
