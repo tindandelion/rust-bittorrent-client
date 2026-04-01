@@ -79,10 +79,8 @@ impl<'a> PeerPoller<'a> {
         let mut probes: HashMap<usize, PeerProbe> = HashMap::new();
         let mut ready_queue: Vec<usize> = vec![];
 
-        for addr in peer_addrs.into_iter() {
-            let id = reactor::next_id();
-            let probe = PeerProbe::connect(id, addr)?;
-
+        for (id, addr) in peer_addrs.into_iter().enumerate() {
+            let probe = PeerProbe::connect(addr)?;
             ready_queue.push(id);
             probes.insert(id, probe);
         }

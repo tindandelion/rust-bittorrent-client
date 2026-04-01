@@ -15,9 +15,9 @@ pub struct PeerProbe {
 }
 
 impl PeerProbe {
-    pub fn connect(id: usize, addr: SocketAddr) -> io::Result<Self> {
+    pub fn connect(addr: SocketAddr) -> io::Result<Self> {
         let span = debug_span!("connect_to_peer", addr = %addr);
-        let fut = connect(id, addr);
+        let fut = connect(addr);
 
         Ok(Self {
             addr,
@@ -62,8 +62,8 @@ impl TryFrom<PeerProbe> for std::net::TcpStream {
     }
 }
 
-async fn connect(id: usize, addr: SocketAddr) -> io::Result<std::net::TcpStream> {
-    let stream = futures::ConnectFuture::new(id, addr).await?;
+async fn connect(addr: SocketAddr) -> io::Result<std::net::TcpStream> {
+    let stream = futures::ConnectFuture::new(addr).await?;
     let std_stream: std::net::TcpStream = stream.into();
     std_stream.set_nonblocking(false)?;
     Ok(std_stream)
@@ -88,9 +88,9 @@ mod futures {
     }
 
     impl ConnectFuture {
-        pub fn new(id: usize, addr: SocketAddr) -> Self {
+        pub fn new(addr: SocketAddr) -> Self {
             Self {
-                id,
+                id: reactor::next_id(),
                 addr,
                 stream: None,
             }
