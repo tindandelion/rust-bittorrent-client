@@ -8,7 +8,6 @@ use std::{
     time::Duration,
 };
 
-use mio::{Events, Token};
 use tracing::error;
 
 use crate::{
@@ -80,9 +79,11 @@ impl<'a> PeerPoller<'a> {
         let mut ready_queue: Vec<usize> = vec![];
 
         for addr in peer_addrs.into_iter() {
-            let probe = PeerProbe::connect(addr)?;
-            ready_queue.push(probe.id);
-            probes.insert(probe.id, probe);
+            let id = runtime::next_id();
+            let probe = PeerProbe::connect(id, addr)?;
+
+            ready_queue.push(id);
+            probes.insert(id, probe);
         }
 
         Ok(Self {
@@ -93,7 +94,6 @@ impl<'a> PeerPoller<'a> {
     }
 
     fn wait_for_connected_stream(&mut self) -> io::Result<Option<TcpStream>> {
-        let mut events = mio::Events::with_capacity(1024);
         loop {
             self.poll_ready_probes();
             self.remove_failed_probes();
@@ -105,13 +105,10 @@ impl<'a> PeerPoller<'a> {
                 return Ok(Some(channel));
             }
 
-            runtime::poll(&mut events, Some(self.connector.timeout))?;
-            if events.is_empty() {
+            let ready_ids = runtime::poll(Some(self.connector.timeout))?;
+            self.ready_queue.extend(ready_ids);
+            if self.ready_queue.is_empty() {
                 return Ok(None);
-            }
-            for event in events.iter() {
-                let Token(id) = event.token();
-                self.ready_queue.push(id);
             }
         }
     }

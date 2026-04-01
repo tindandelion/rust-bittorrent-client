@@ -4,18 +4,21 @@ use std::{
     time::Duration,
 };
 
-use mio::{Poll, Token, event::Source};
+use mio::{Events, Poll, Token, event::Source};
 
 pub struct Runtime {
     poll: RefCell<Poll>,
+    events: RefCell<Events>,
     next_id: Cell<usize>,
 }
 
 impl Runtime {
     pub fn new() -> Self {
         let poll = Poll::new().expect("Failed to create poll");
+        let events = Events::with_capacity(1024);
         Self {
             poll: RefCell::new(poll),
+            events: RefCell::new(events),
             next_id: Cell::new(0),
         }
     }
@@ -42,8 +45,11 @@ impl Runtime {
         self.poll.borrow().registry().deregister(stream)
     }
 
-    pub fn poll(&self, events: &mut mio::Events, timeout: Option<Duration>) -> io::Result<()> {
-        self.poll.borrow_mut().poll(events, timeout)
+    pub fn poll(&self, timeout: Option<Duration>) -> io::Result<Vec<usize>> {
+        let mut events = self.events.borrow_mut();
+        self.poll.borrow_mut().poll(&mut events, timeout)?;
+        let ids = events.iter().map(|event| event.token().0).collect();
+        Ok(ids)
     }
 }
 
@@ -67,6 +73,6 @@ pub fn deregister_source(stream: &mut impl Source) -> io::Result<()> {
     RUNTIME.with(|rt| rt.deregister_source(stream))
 }
 
-pub fn poll(events: &mut mio::Events, timeout: Option<Duration>) -> io::Result<()> {
-    RUNTIME.with(|rt| rt.poll(events, timeout))
+pub fn poll(timeout: Option<Duration>) -> io::Result<Vec<usize>> {
+    RUNTIME.with(|rt| rt.poll(timeout))
 }

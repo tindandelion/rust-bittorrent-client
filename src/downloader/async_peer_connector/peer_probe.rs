@@ -8,24 +8,19 @@ use std::{
 
 use tracing::{Span, debug_span};
 
-use crate::downloader::async_peer_connector::runtime;
-
 pub struct PeerProbe {
     pub addr: SocketAddr,
     span: Span,
-    pub id: usize,
     fut: Pin<Box<dyn Future<Output = io::Result<std::net::TcpStream>>>>,
     result: Option<io::Result<std::net::TcpStream>>,
 }
 
 impl PeerProbe {
-    pub fn connect(addr: SocketAddr) -> io::Result<Self> {
+    pub fn connect(id: usize, addr: SocketAddr) -> io::Result<Self> {
         let span = debug_span!("connect_to_peer", addr = %addr);
-        let id = runtime::next_id();
         let fut = connect(id, addr);
 
         Ok(Self {
-            id,
             addr,
             span,
             fut: Box::pin(fut),
@@ -87,7 +82,6 @@ mod futures {
         task::{Context, Poll, Wake},
     };
 
-    use mio::Token;
     use tracing::debug;
 
     use crate::downloader::async_peer_connector::runtime;
