@@ -66,6 +66,7 @@ impl<'a> PeerConnector<'a> {
 }
 
 struct PeerPoller<'a> {
+    ready_queue: Vec<usize>,
     probes: HashMap<usize, PeerProbe>,
     connector: PeerConnector<'a>,
 }
@@ -76,19 +77,30 @@ impl<'a> PeerPoller<'a> {
         connector: PeerConnector<'a>,
     ) -> io::Result<Self> {
         let mut probes: HashMap<usize, PeerProbe> = HashMap::new();
+        let mut ready_queue: Vec<usize> = vec![];
 
         for addr in peer_addrs.into_iter() {
-            let mut probe = PeerProbe::connect(addr)?;
-            probe.poll();
+            let probe = PeerProbe::connect(addr)?;
+            ready_queue.push(probe.id);
             probes.insert(probe.id, probe);
         }
 
-        Ok(Self { probes, connector })
+        Ok(Self {
+            probes,
+            connector,
+            ready_queue,
+        })
     }
 
     fn wait_for_connected_stream(&mut self) -> io::Result<Option<TcpStream>> {
         let mut events = mio::Events::with_capacity(1024);
         loop {
+            self.poll_ready_probes();
+            self.remove_failed_probes();
+            if self.probes.is_empty() {
+                return Ok(None);
+            }
+
             if let Some(channel) = self.get_connected_stream()? {
                 return Ok(Some(channel));
             }
@@ -97,25 +109,10 @@ impl<'a> PeerPoller<'a> {
             if events.is_empty() {
                 return Ok(None);
             }
-
-            self.update_probe_states(&events);
-            self.remove_errored_probes();
-            if self.probes.is_empty() {
-                return Ok(None);
+            for event in events.iter() {
+                let Token(id) = event.token();
+                self.ready_queue.push(id);
             }
-        }
-    }
-
-    fn remove_errored_probes(&mut self) {
-        let errored_ids: Vec<usize> = self
-            .probes
-            .iter()
-            .filter(|(_, probe)| probe.is_error())
-            .map(|(id, _)| *id)
-            .collect();
-
-        for token in errored_ids {
-            self.unregister_probe(token);
         }
     }
 
@@ -135,14 +132,26 @@ impl<'a> PeerPoller<'a> {
         }
     }
 
-    fn update_probe_states(&mut self, events: &Events) {
-        for event in events.iter() {
-            let Token(id) = event.token();
+    fn poll_ready_probes(&mut self) {
+        while let Some(id) = self.ready_queue.pop() {
             let probe = self
                 .probes
                 .get_mut(&id)
                 .unwrap_or_else(|| panic!("Unexpected id in received event: {id}"));
             probe.poll();
+        }
+    }
+
+    fn remove_failed_probes(&mut self) {
+        let errored_ids: Vec<usize> = self
+            .probes
+            .iter()
+            .filter(|(_, probe)| probe.is_error())
+            .map(|(id, _)| *id)
+            .collect();
+
+        for token in errored_ids {
+            self.unregister_probe(token);
         }
     }
 
