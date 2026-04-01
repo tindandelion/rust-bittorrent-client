@@ -3,12 +3,12 @@ use std::{
     task::Wake,
 };
 
-pub struct MyWaker {
+pub struct TaskWaker {
     task_id: usize,
     ready_queue: Arc<Mutex<Vec<usize>>>,
 }
 
-impl MyWaker {
+impl TaskWaker {
     pub fn new(task_id: usize, ready_queue: Arc<Mutex<Vec<usize>>>) -> Self {
         Self {
             task_id,
@@ -17,9 +17,8 @@ impl MyWaker {
     }
 }
 
-impl Wake for MyWaker {
+impl Wake for TaskWaker {
     fn wake(self: Arc<Self>) {
-        println!("Waking task {}", self.task_id);
         self.ready_queue.lock().unwrap().push(self.task_id);
     }
 }

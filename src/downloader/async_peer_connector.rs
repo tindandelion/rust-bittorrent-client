@@ -1,5 +1,5 @@
 use crate::{
-    downloader::async_peer_connector::{peer_probe::PeerProbe, waker::MyWaker},
+    downloader::async_peer_connector::{peer_probe::PeerProbe, waker::TaskWaker},
     types::{PeerId, Sha1},
 };
 use std::{
@@ -12,6 +12,7 @@ use std::{
 };
 use tracing::error;
 
+mod futures;
 mod peer_probe;
 mod reactor;
 mod waker;
@@ -129,7 +130,7 @@ impl<'a> PeerPoller<'a> {
     fn poll_ready_probes(&mut self) {
         let mut ready_queue = self.ready_queue.lock().unwrap();
         while let Some(id) = ready_queue.pop() {
-            let waker = Waker::from(Arc::new(MyWaker::new(id, self.ready_queue.clone())));
+            let waker = Waker::from(Arc::new(TaskWaker::new(id, self.ready_queue.clone())));
             let probe = self
                 .probes
                 .get_mut(&id)

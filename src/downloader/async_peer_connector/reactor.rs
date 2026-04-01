@@ -78,8 +78,8 @@ pub fn next_id() -> usize {
 }
 
 pub fn register_source(
-    stream: &mut impl Source,
     id: usize,
+    stream: &mut impl Source,
     interests: mio::Interest,
 ) -> io::Result<()> {
     REACTOR.with(|rt| rt.register_source(stream, Token(id), interests))

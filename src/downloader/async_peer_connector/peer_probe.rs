@@ -7,6 +7,8 @@ use std::{
 
 use tracing::{Span, debug_span};
 
+use super::futures::ConnectFuture;
+
 pub struct PeerProbe {
     pub addr: SocketAddr,
     span: Span,
@@ -36,6 +38,7 @@ impl PeerProbe {
     }
 
     pub fn poll(&mut self, waker: &Waker) {
+        // TODO: Why do we need this check?
         if self.result.is_some() {
             return;
         }
@@ -63,85 +66,8 @@ impl TryFrom<PeerProbe> for std::net::TcpStream {
 }
 
 async fn connect(addr: SocketAddr) -> io::Result<std::net::TcpStream> {
-    let stream = futures::ConnectFuture::new(addr).await?;
+    let stream = ConnectFuture::new(addr).await?;
     let std_stream: std::net::TcpStream = stream.into();
     std_stream.set_nonblocking(false)?;
     Ok(std_stream)
-}
-
-mod futures {
-    use std::{
-        io,
-        net::SocketAddr,
-        pin::Pin,
-        task::{Context, Poll, Waker},
-    };
-
-    use tracing::debug;
-
-    use crate::downloader::async_peer_connector::reactor;
-
-    pub struct ConnectFuture {
-        id: usize,
-        addr: SocketAddr,
-        stream: Option<mio::net::TcpStream>,
-    }
-
-    impl ConnectFuture {
-        pub fn new(addr: SocketAddr) -> Self {
-            Self {
-                id: reactor::next_id(),
-                addr,
-                stream: None,
-            }
-        }
-
-        pub fn my_poll(&mut self, waker: &Waker) -> Poll<io::Result<mio::net::TcpStream>> {
-            if self.stream.is_none() {
-                debug!("initiating connection");
-
-                let mut stream = mio::net::TcpStream::connect(self.addr)?;
-                reactor::register_source(
-                    &mut stream,
-                    self.id,
-                    mio::Interest::WRITABLE | mio::Interest::READABLE,
-                )?;
-                reactor::set_waker(self.id, waker);
-                self.stream = Some(stream);
-            }
-
-            let mut stream = self.stream.take().expect("the stream should be set");
-            match stream.peer_addr() {
-                Err(err) if err.kind() == io::ErrorKind::NotConnected => {
-                    self.stream = Some(stream);
-                    reactor::set_waker(self.id, waker);
-                    Poll::Pending
-                }
-                Ok(_) => {
-                    reactor::deregister_source(self.id, &mut stream)?;
-                    Poll::Ready(Ok(stream))
-                }
-                Err(err) => {
-                    reactor::deregister_source(self.id, &mut stream)?;
-                    Poll::Ready(Err(err))
-                }
-            }
-        }
-    }
-
-    impl Future for ConnectFuture {
-        type Output = io::Result<mio::net::TcpStream>;
-
-        fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-            self.get_mut().my_poll(cx.waker())
-        }
-    }
-
-    impl Drop for ConnectFuture {
-        fn drop(&mut self) {
-            if let Some(mut stream) = self.stream.take() {
-                reactor::deregister_source(self.id, &mut stream).unwrap();
-            }
-        }
-    }
 }
