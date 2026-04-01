@@ -79,7 +79,7 @@ mod futures {
 
     use tracing::debug;
 
-    use crate::downloader::async_peer_connector::runtime;
+    use crate::downloader::async_peer_connector::reactor;
 
     pub struct ConnectFuture {
         id: usize,
@@ -101,12 +101,12 @@ mod futures {
                 debug!("initiating connection");
 
                 let mut stream = mio::net::TcpStream::connect(self.addr)?;
-                runtime::register_source(
+                reactor::register_source(
                     &mut stream,
                     self.id,
                     mio::Interest::WRITABLE | mio::Interest::READABLE,
                 )?;
-                runtime::set_waker(self.id, waker);
+                reactor::set_waker(self.id, waker);
                 self.stream = Some(stream);
             }
 
@@ -114,15 +114,15 @@ mod futures {
             match stream.peer_addr() {
                 Err(err) if err.kind() == io::ErrorKind::NotConnected => {
                     self.stream = Some(stream);
-                    runtime::set_waker(self.id, waker);
+                    reactor::set_waker(self.id, waker);
                     Poll::Pending
                 }
                 Ok(_) => {
-                    runtime::deregister_source(self.id, &mut stream)?;
+                    reactor::deregister_source(self.id, &mut stream)?;
                     Poll::Ready(Ok(stream))
                 }
                 Err(err) => {
-                    runtime::deregister_source(self.id, &mut stream)?;
+                    reactor::deregister_source(self.id, &mut stream)?;
                     Poll::Ready(Err(err))
                 }
             }
@@ -140,7 +140,7 @@ mod futures {
     impl Drop for ConnectFuture {
         fn drop(&mut self) {
             if let Some(mut stream) = self.stream.take() {
-                runtime::deregister_source(self.id, &mut stream).unwrap();
+                reactor::deregister_source(self.id, &mut stream).unwrap();
             }
         }
     }

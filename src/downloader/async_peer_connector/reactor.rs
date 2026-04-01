@@ -7,14 +7,14 @@ use std::{
 
 use mio::{Events, Poll, Token, event::Source};
 
-pub struct Runtime {
+pub struct Reactor {
     poll: RefCell<Poll>,
     events: RefCell<Events>,
     wakers: RefCell<HashMap<usize, std::task::Waker>>,
     next_id: Cell<usize>,
 }
 
-impl Runtime {
+impl Reactor {
     pub fn new() -> Self {
         let poll = Poll::new().expect("Failed to create poll");
         let events = Events::with_capacity(1024);
@@ -62,11 +62,11 @@ impl Runtime {
 }
 
 thread_local! {
-    static RUNTIME: Runtime = Runtime::new();
+    static REACTOR: Reactor = Reactor::new();
 }
 
 pub fn next_id() -> usize {
-    RUNTIME.with(|rt| rt.next_id())
+    REACTOR.with(|rt| rt.next_id())
 }
 
 pub fn register_source(
@@ -74,17 +74,17 @@ pub fn register_source(
     id: usize,
     interests: mio::Interest,
 ) -> io::Result<()> {
-    RUNTIME.with(|rt| rt.register_source(stream, Token(id), interests))
+    REACTOR.with(|rt| rt.register_source(stream, Token(id), interests))
 }
 
 pub fn deregister_source(id: usize, stream: &mut impl Source) -> io::Result<()> {
-    RUNTIME.with(|rt| rt.deregister_source(id, stream))
+    REACTOR.with(|rt| rt.deregister_source(id, stream))
 }
 
 pub fn poll(timeout: Option<Duration>) -> io::Result<Vec<usize>> {
-    RUNTIME.with(|rt| rt.poll(timeout))
+    REACTOR.with(|rt| rt.poll(timeout))
 }
 
 pub(crate) fn set_waker(id: usize, waker: &std::task::Waker) {
-    RUNTIME.with(|rt| rt.set_waker(id, waker.clone()))
+    REACTOR.with(|rt| rt.set_waker(id, waker.clone()))
 }

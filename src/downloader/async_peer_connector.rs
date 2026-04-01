@@ -13,7 +13,7 @@ use std::{
 use tracing::error;
 
 mod peer_probe;
-mod runtime;
+mod reactor;
 mod waker;
 
 pub struct PeerConnector<'a> {
@@ -80,7 +80,7 @@ impl<'a> PeerPoller<'a> {
         let mut ready_queue: Vec<usize> = vec![];
 
         for addr in peer_addrs.into_iter() {
-            let id = runtime::next_id();
+            let id = reactor::next_id();
             let probe = PeerProbe::connect(id, addr)?;
 
             ready_queue.push(id);
@@ -106,7 +106,7 @@ impl<'a> PeerPoller<'a> {
                 return Ok(Some(channel));
             }
 
-            let ready_ids = runtime::poll(Some(self.connector.timeout))?;
+            let ready_ids = reactor::poll(Some(self.connector.timeout))?;
             self.ready_queue.extend(ready_ids);
             if self.ready_queue.is_empty() {
                 return Ok(None);
