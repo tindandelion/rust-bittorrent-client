@@ -50,7 +50,7 @@ impl Reactor {
         self.poll.borrow().registry().deregister(stream)
     }
 
-    pub fn poll(&self, timeout: Option<Duration>) -> io::Result<Vec<usize>> {
+    pub fn poll(&self, timeout: Option<Duration>) -> io::Result<bool> {
         let mut events = self.events.borrow_mut();
         self.poll.borrow_mut().poll(&mut events, timeout)?;
         let ids: Vec<usize> = events.iter().map(|event| event.token().0).collect();
@@ -61,7 +61,7 @@ impl Reactor {
             .flatten()
             .for_each(Waker::wake_by_ref);
 
-        Ok(ids)
+        Ok(!events.is_empty())
     }
 
     fn set_waker(&self, id: usize, waker: std::task::Waker) {
@@ -89,7 +89,7 @@ pub fn deregister_source(id: usize, stream: &mut impl Source) -> io::Result<()> 
     REACTOR.with(|rt| rt.deregister_source(id, stream))
 }
 
-pub fn poll(timeout: Option<Duration>) -> io::Result<Vec<usize>> {
+pub fn poll(timeout: Option<Duration>) -> io::Result<bool> {
     REACTOR.with(|rt| rt.poll(timeout))
 }
 

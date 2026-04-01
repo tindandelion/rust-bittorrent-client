@@ -6,7 +6,7 @@ use std::{
     collections::HashMap,
     io,
     net::{SocketAddr, TcpStream},
-    sync::Arc,
+    sync::{Arc, Mutex},
     task::Waker,
     time::Duration,
 };
@@ -66,7 +66,7 @@ impl<'a> PeerConnector<'a> {
 }
 
 struct PeerPoller<'a> {
-    ready_queue: Vec<usize>,
+    ready_queue: Arc<Mutex<Vec<usize>>>,
     probes: HashMap<usize, PeerProbe>,
     connector: PeerConnector<'a>,
 }
@@ -90,7 +90,7 @@ impl<'a> PeerPoller<'a> {
         Ok(Self {
             probes,
             connector,
-            ready_queue,
+            ready_queue: Arc::new(Mutex::new(ready_queue)),
         })
     }
 
@@ -106,9 +106,7 @@ impl<'a> PeerPoller<'a> {
                 return Ok(Some(channel));
             }
 
-            let ready_ids = reactor::poll(Some(self.connector.timeout))?;
-            self.ready_queue.extend(ready_ids);
-            if self.ready_queue.is_empty() {
+            if !reactor::poll(Some(self.connector.timeout))? {
                 return Ok(None);
             }
         }
@@ -131,8 +129,9 @@ impl<'a> PeerPoller<'a> {
     }
 
     fn poll_ready_probes(&mut self) {
-        while let Some(id) = self.ready_queue.pop() {
-            let waker = Waker::from(Arc::new(MyWaker::new(id)));
+        let mut ready_queue = self.ready_queue.lock().unwrap();
+        while let Some(id) = ready_queue.pop() {
+            let waker = Waker::from(Arc::new(MyWaker::new(id, self.ready_queue.clone())));
             let probe = self
                 .probes
                 .get_mut(&id)
