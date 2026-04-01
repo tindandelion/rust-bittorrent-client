@@ -2,7 +2,6 @@ use std::{
     io,
     net::SocketAddr,
     pin::Pin,
-    sync::Arc,
     task::{Context, Poll, Waker},
 };
 
@@ -36,13 +35,11 @@ impl PeerProbe {
         matches!(self.result, Some(Err(_)))
     }
 
-    pub fn poll(&mut self) {
+    pub fn poll(&mut self, waker: &Waker) {
         if self.result.is_some() {
             return;
         }
-
-        let waker = Waker::from(Arc::new(futures::MyWaker));
-        let mut context = Context::from_waker(&waker);
+        let mut context = Context::from_waker(waker);
 
         let _guard = self.span.enter();
 
@@ -66,8 +63,7 @@ impl TryFrom<PeerProbe> for std::net::TcpStream {
 }
 
 async fn connect(id: usize, addr: SocketAddr) -> io::Result<std::net::TcpStream> {
-    let fut = futures::ConnectFuture::new(id, addr);
-    let stream = fut.await?;
+    let stream = futures::ConnectFuture::new(id, addr).await?;
     let std_stream: std::net::TcpStream = stream.into();
     std_stream.set_nonblocking(false)?;
     Ok(std_stream)
@@ -78,8 +74,7 @@ mod futures {
         io,
         net::SocketAddr,
         pin::Pin,
-        sync::Arc,
-        task::{Context, Poll, Wake},
+        task::{Context, Poll},
     };
 
     use tracing::debug;
@@ -146,11 +141,5 @@ mod futures {
                 runtime::deregister_source(&mut stream).unwrap();
             }
         }
-    }
-
-    pub struct MyWaker;
-
-    impl Wake for MyWaker {
-        fn wake(self: Arc<Self>) {}
     }
 }

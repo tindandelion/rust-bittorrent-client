@@ -1,19 +1,20 @@
-mod peer_probe;
-
-mod runtime;
+use crate::{
+    downloader::async_peer_connector::{peer_probe::PeerProbe, waker::MyWaker},
+    types::{PeerId, Sha1},
+};
 use std::{
     collections::HashMap,
     io,
     net::{SocketAddr, TcpStream},
+    sync::Arc,
+    task::Waker,
     time::Duration,
 };
-
 use tracing::error;
 
-use crate::{
-    downloader::async_peer_connector::peer_probe::PeerProbe,
-    types::{PeerId, Sha1},
-};
+mod peer_probe;
+mod runtime;
+mod waker;
 
 pub struct PeerConnector<'a> {
     info_hash: Sha1,
@@ -131,11 +132,12 @@ impl<'a> PeerPoller<'a> {
 
     fn poll_ready_probes(&mut self) {
         while let Some(id) = self.ready_queue.pop() {
+            let waker = Waker::from(Arc::new(MyWaker::new(id)));
             let probe = self
                 .probes
                 .get_mut(&id)
                 .unwrap_or_else(|| panic!("Unexpected id in received event: {id}"));
-            probe.poll();
+            probe.poll(&waker);
         }
     }
 
