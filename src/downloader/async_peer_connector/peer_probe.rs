@@ -70,8 +70,8 @@ async fn connect_to_peer(
 ) -> io::Result<std::net::TcpStream> {
     let mut stream = init_connection(addr).await?;
 
-    // handshake.send(&mut stream)?;
-    // read_handshake(&mut stream).await?;
+    handshake.send(&mut stream)?;
+    read_handshake(&mut stream).await?;
 
     let std_stream: std::net::TcpStream = stream.into();
     std_stream.set_nonblocking(false)?;
@@ -83,6 +83,7 @@ async fn init_connection(addr: SocketAddr) -> io::Result<TcpStream> {
     ConnectFuture::new(addr).await
 }
 
+#[instrument(skip(stream), err, ret)]
 async fn read_handshake(stream: &mut TcpStream) -> io::Result<HandshakeMessage> {
     let mut buffer = [0; HandshakeMessage::SIZE];
     ReadExactFuture::new(stream, &mut buffer).await?;

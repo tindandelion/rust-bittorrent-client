@@ -123,7 +123,11 @@ impl<'a, 'b> Future for ReadExactFuture<'a, 'b> {
                 } else {
                     Poll::Ready(Err(io::Error::new(
                         io::ErrorKind::UnexpectedEof,
-                        "Not enough data read",
+                        format!(
+                            "Not enough data has been received: expected {}, received {}",
+                            buf.len(),
+                            n
+                        ),
                     )))
                 }
             }
