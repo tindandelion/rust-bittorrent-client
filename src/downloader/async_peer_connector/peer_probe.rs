@@ -6,7 +6,7 @@ use std::{
 };
 
 use mio::net::TcpStream;
-use tracing::{Span, debug_span};
+use tracing::instrument;
 
 use crate::downloader::{
     async_peer_connector::futures::ReadExactFuture, peer_comm::HandshakeMessage,
@@ -16,21 +16,16 @@ use super::futures::ConnectFuture;
 
 pub struct PeerProbe {
     pub addr: SocketAddr,
-    span: Span,
     fut: Pin<Box<dyn Future<Output = io::Result<std::net::TcpStream>>>>,
     result: Option<io::Result<std::net::TcpStream>>,
 }
 
 impl PeerProbe {
     pub fn connect(addr: SocketAddr, handshake: HandshakeMessage) -> io::Result<Self> {
-        let span = debug_span!("connect_to_peer", addr = %addr);
-        let fut = connect(addr, handshake);
-
         Ok(Self {
             addr,
-            span,
-            fut: Box::pin(fut),
             result: None,
+            fut: Box::pin(connect_to_peer(addr, handshake)),
         })
     }
 
@@ -48,8 +43,6 @@ impl PeerProbe {
             return;
         }
         let mut context = Context::from_waker(waker);
-
-        let _guard = self.span.enter();
 
         match self.fut.as_mut().poll(&mut context) {
             Poll::Ready(res) => self.result = Some(res),
@@ -70,8 +63,12 @@ impl TryFrom<PeerProbe> for std::net::TcpStream {
     }
 }
 
-async fn connect(addr: SocketAddr, handshake: HandshakeMessage) -> io::Result<std::net::TcpStream> {
-    let mut stream = ConnectFuture::new(addr).await?;
+#[instrument(skip(handshake))]
+async fn connect_to_peer(
+    addr: SocketAddr,
+    handshake: HandshakeMessage,
+) -> io::Result<std::net::TcpStream> {
+    let mut stream = init_connection(addr).await?;
 
     handshake.send(&mut stream)?;
     read_handshake(&mut stream).await?;
@@ -79,6 +76,11 @@ async fn connect(addr: SocketAddr, handshake: HandshakeMessage) -> io::Result<st
     let std_stream: std::net::TcpStream = stream.into();
     std_stream.set_nonblocking(false)?;
     Ok(std_stream)
+}
+
+#[instrument(skip(addr), err, ret)]
+async fn init_connection(addr: SocketAddr) -> io::Result<TcpStream> {
+    ConnectFuture::new(addr).await
 }
 
 async fn read_handshake(stream: &mut TcpStream) -> io::Result<HandshakeMessage> {

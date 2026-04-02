@@ -1,3 +1,5 @@
+use tracing::error;
+
 use super::reactor;
 use std::io::Read;
 use std::task::Waker;
@@ -7,7 +9,6 @@ use std::{
     pin::Pin,
     task::{Context, Poll},
 };
-use tracing::debug;
 
 pub struct ConnectFuture {
     id: usize,
@@ -30,8 +31,6 @@ impl Future for ConnectFuture {
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         if self.stream.is_none() {
-            debug!("initiating connection");
-
             let mut stream = mio::net::TcpStream::connect(self.addr)?;
             reactor::register_source(self.id, &mut stream, mio::Interest::WRITABLE)?;
             reactor::set_waker(self.id, cx.waker());
@@ -50,6 +49,7 @@ impl Future for ConnectFuture {
                 Poll::Ready(Ok(stream))
             }
             Err(err) => {
+                error!(?err, "failed to connect to peer");
                 reactor::deregister_source(self.id, &mut stream)?;
                 Poll::Ready(Err(err))
             }

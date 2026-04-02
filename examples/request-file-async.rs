@@ -4,6 +4,7 @@ use bt_client::Torrent;
 use bt_client::downloader::async_peer_connector::PeerConnector;
 use bt_client::result::Result;
 use bt_client::types::PeerId;
+use tracing_subscriber::EnvFilter;
 
 fn main() -> Result<()> {
     setup_tracing()?;
@@ -31,10 +32,12 @@ fn main() -> Result<()> {
 }
 
 fn setup_tracing() -> Result<()> {
-    let log_filename = "request-file.log";
+    let log_filename = "request-file-async.log";
 
     tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::TRACE)
+        .with_env_filter(
+            EnvFilter::from_default_env().add_directive("bt_client=trace".parse().unwrap()),
+        )
         .with_writer(std::fs::File::create(&log_filename)?)
         .init();
 
