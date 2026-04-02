@@ -70,8 +70,8 @@ async fn connect_to_peer(
 ) -> io::Result<std::net::TcpStream> {
     let mut stream = init_connection(addr).await?;
 
-    handshake.send(&mut stream)?;
-    read_handshake(&mut stream).await?;
+    // handshake.send(&mut stream)?;
+    // read_handshake(&mut stream).await?;
 
     let std_stream: std::net::TcpStream = stream.into();
     std_stream.set_nonblocking(false)?;

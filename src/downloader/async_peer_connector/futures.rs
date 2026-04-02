@@ -49,9 +49,9 @@ impl Future for ConnectFuture {
                 Poll::Ready(Ok(stream))
             }
             Err(err) => {
-                error!(?err, "failed to connect to peer");
                 reactor::deregister_source(self.id, &mut stream)?;
-                Poll::Ready(Err(err))
+                let error = stream.take_error().unwrap_or(None).unwrap_or(err);
+                Poll::Ready(Err(error))
             }
         }
     }
