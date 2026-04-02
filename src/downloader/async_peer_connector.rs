@@ -1,5 +1,8 @@
 use crate::{
-    downloader::async_peer_connector::{peer_probe::PeerProbe, waker::TaskWaker},
+    downloader::{
+        async_peer_connector::{peer_probe::PeerProbe, waker::TaskWaker},
+        peer_comm::HandshakeMessage,
+    },
     types::{PeerId, Sha1},
 };
 use std::{
@@ -81,7 +84,8 @@ impl<'a> PeerPoller<'a> {
         let mut ready_queue: Vec<usize> = vec![];
 
         for (id, addr) in peer_addrs.into_iter().enumerate() {
-            let probe = PeerProbe::connect(addr)?;
+            let handshake = HandshakeMessage::new(connector.info_hash, connector.peer_id);
+            let probe = PeerProbe::connect(addr, handshake)?;
             ready_queue.push(id);
             probes.insert(id, probe);
         }
@@ -277,6 +281,17 @@ mod tests {
         Ok(())
     }
 
+    #[test]
+    fn error_handshake_hangup() {
+        let remote_peer = TestRemotePeer::new().hangup_handshake();
+        let peer_addr = remote_peer.start();
+
+        let connector = make_connector();
+        let connected_peers = connector.connect(vec![peer_addr]).collect::<Vec<_>>();
+
+        assert!(connected_peers.is_empty());
+    }
+
     fn make_connector<'a>() -> PeerConnector<'a> {
         PeerConnector::new(Sha1::random(), PeerId::random(), PIECE_COUNT)
             .with_timeout(Duration::from_secs(1))
@@ -316,15 +331,15 @@ mod tests {
 
             std::thread::spawn(move || {
                 let (mut stream, _) = listener.accept().unwrap();
-                // if hangup_handshake {
-                //     return;
-                // }
+                if hangup_handshake {
+                    return;
+                }
 
-                // let incoming_handshake = HandshakeMessage::receive(&mut stream).unwrap();
-                // let incoming_info_hash = incoming_handshake.info_hash;
+                let incoming_handshake = HandshakeMessage::receive(&mut stream).unwrap();
+                let incoming_info_hash = incoming_handshake.info_hash;
 
-                // let handshake = HandshakeMessage::new(incoming_info_hash, peer_id);
-                // handshake.send(&mut stream).unwrap();
+                let handshake = HandshakeMessage::new(incoming_info_hash, peer_id);
+                handshake.send(&mut stream).unwrap();
                 // let bitfield = vec![0b11111111, 0b11111111];
                 // send_bitfield_in_portions(&mut stream, bitfield).unwrap();
                 // let msg = PeerMessage::receive(&mut stream).unwrap();
