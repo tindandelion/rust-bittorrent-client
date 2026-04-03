@@ -1,5 +1,3 @@
-use tracing::error;
-
 use super::reactor;
 use std::io::Read;
 use std::task::Waker;
