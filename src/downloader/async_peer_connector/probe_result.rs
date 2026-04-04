@@ -1,6 +1,8 @@
 use std::io;
 
+#[derive(Debug)]
 pub enum ProbeError {
+    InfoHashMismatch,
     IO(io::Error),
 }
 
@@ -10,4 +12,4 @@ impl From<io::Error> for ProbeError {
     }
 }
 
-pub type ProbeResult = std::result::Result<std::net::TcpStream, ProbeError>;
+pub type ProbeResult<T> = std::result::Result<T, ProbeError>;

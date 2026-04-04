@@ -1,6 +1,6 @@
 use std::{
     io,
-    net::SocketAddr,
+    net::{SocketAddr, TcpStream},
     pin::Pin,
     task::{Context, Poll, Waker},
 };
@@ -9,14 +9,14 @@ use super::probe_result::ProbeResult;
 
 pub struct PeerProbe {
     pub addr: SocketAddr,
-    fut: Pin<Box<dyn Future<Output = ProbeResult>>>,
-    result: Option<ProbeResult>,
+    fut: Pin<Box<dyn Future<Output = ProbeResult<TcpStream>>>>,
+    result: Option<ProbeResult<TcpStream>>,
 }
 
 impl PeerProbe {
     pub fn new(
         addr: SocketAddr,
-        fut: impl Future<Output = ProbeResult> + 'static,
+        fut: impl Future<Output = ProbeResult<TcpStream>> + 'static,
     ) -> io::Result<Self> {
         let boxed = Box::new(fut);
         Ok(Self {
