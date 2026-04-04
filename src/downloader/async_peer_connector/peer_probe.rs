@@ -60,6 +60,7 @@ impl TryFrom<PeerProbe> for std::net::TcpStream {
     }
 }
 
+// TODO: Check the received handshake info_hash
 #[instrument(skip(handshake))]
 async fn connect_to_peer(
     addr: SocketAddr,

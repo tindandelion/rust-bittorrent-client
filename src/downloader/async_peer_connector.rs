@@ -199,6 +199,37 @@ mod tests {
     }
 
     #[test]
+    fn error_connect_refused() {
+        let peer_addresses = vec!["127.0.0.1:12345".parse().unwrap()];
+
+        let connector = make_connector();
+        let connected_peers = connector.connect(peer_addresses).collect::<Vec<_>>();
+
+        assert!(connected_peers.is_empty());
+    }
+
+    #[test]
+    fn error_connect_timeout() {
+        let peer_addresses = vec!["192.0.2.1:6881".parse().unwrap()];
+
+        let connector = make_connector();
+        let connected_peers = connector.connect(peer_addresses).collect::<Vec<_>>();
+
+        assert!(connected_peers.is_empty());
+    }
+
+    #[test]
+    fn error_handshake_hangup() {
+        let remote_peer = TestRemotePeer::new().hangup_handshake();
+        let peer_addr = remote_peer.start();
+
+        let connector = make_connector();
+        let connected_peers = connector.connect(vec![peer_addr]).collect::<Vec<_>>();
+
+        assert!(connected_peers.is_empty());
+    }
+
+    #[test]
     fn iterate_over_responsive_peers() {
         let first_peer = TestRemotePeer::new();
         let second_peer = TestRemotePeer::new();
@@ -219,26 +250,6 @@ mod tests {
         connected_addresses.sort();
         responsive_addresses.sort();
         assert_eq!(connected_addresses, responsive_addresses);
-    }
-
-    #[test]
-    fn error_connect_refused() {
-        let peer_addresses = vec!["127.0.0.1:12345".parse().unwrap()];
-
-        let connector = make_connector();
-        let connected_peers = connector.connect(peer_addresses).collect::<Vec<_>>();
-
-        assert!(connected_peers.is_empty());
-    }
-
-    #[test]
-    fn error_connect_timeout() {
-        let peer_addresses = vec!["192.0.2.1:6881".parse().unwrap()];
-
-        let connector = make_connector();
-        let connected_peers = connector.connect(peer_addresses).collect::<Vec<_>>();
-
-        assert!(connected_peers.is_empty());
     }
 
     #[test]
@@ -279,17 +290,6 @@ mod tests {
         );
 
         Ok(())
-    }
-
-    #[test]
-    fn error_handshake_hangup() {
-        let remote_peer = TestRemotePeer::new().hangup_handshake();
-        let peer_addr = remote_peer.start();
-
-        let connector = make_connector();
-        let connected_peers = connector.connect(vec![peer_addr]).collect::<Vec<_>>();
-
-        assert!(connected_peers.is_empty());
     }
 
     fn make_connector<'a>() -> PeerConnector<'a> {
