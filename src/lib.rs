@@ -1,3 +1,4 @@
+mod async_tcp;
 pub mod downloader;
 pub mod ratatui_ui;
 pub mod result;
@@ -5,7 +6,6 @@ pub mod torrent;
 mod tracker;
 pub mod types;
 mod util;
-
 use tracing::{error, info};
 
 use crate::{

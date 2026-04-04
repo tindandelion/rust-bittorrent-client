@@ -7,10 +7,8 @@ use std::{
 
 use tracing::instrument;
 
-use crate::downloader::{
-    async_tcp::AsyncTcpStream,
-    peer_comm::{HandshakeMessage, PeerMessage},
-};
+use crate::async_tcp::AsyncTcpStream;
+use crate::downloader::peer_comm::{HandshakeMessage, PeerMessage};
 
 pub struct PeerProbe {
     pub addr: SocketAddr,

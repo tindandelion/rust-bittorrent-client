@@ -1,9 +1,8 @@
 use std::{io, net::SocketAddr, time::Duration};
 
-use super::peer_comm::AsyncReadExact;
-
-mod futures;
+mod connect_future;
 mod reactor;
+mod read_exact_future;
 
 pub fn poll_reactor(timeout: Option<Duration>) -> io::Result<bool> {
     reactor::poll(timeout)
@@ -16,8 +15,12 @@ pub struct AsyncTcpStream {
 
 impl AsyncTcpStream {
     pub async fn connect(addr: SocketAddr) -> io::Result<Self> {
-        let stream = futures::ConnectFuture::new(addr).await?;
+        let stream = connect_future::ConnectFuture::new(addr).await?;
         Ok(Self { inner: stream })
+    }
+
+    pub fn read_exact(&mut self, buf: &mut [u8]) -> impl Future<Output = io::Result<()>> {
+        read_exact_future::ReadExactFuture::new(&mut self.inner, buf)
     }
 }
 
@@ -28,12 +31,6 @@ impl io::Write for AsyncTcpStream {
 
     fn flush(&mut self) -> io::Result<()> {
         self.inner.flush()
-    }
-}
-
-impl AsyncReadExact for AsyncTcpStream {
-    fn read_exact(&mut self, buf: &mut [u8]) -> impl Future<Output = io::Result<()>> {
-        futures::ReadExactFuture::new(&mut self.inner, buf)
     }
 }
 

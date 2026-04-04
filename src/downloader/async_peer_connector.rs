@@ -1,7 +1,7 @@
 use crate::{
+    async_tcp,
     downloader::{
         async_peer_connector::{peer_probe::PeerProbe, waker::TaskWaker},
-        async_tcp,
         peer_comm::HandshakeMessage,
     },
     types::{PeerId, Sha1},

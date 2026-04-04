@@ -1,5 +1,4 @@
 pub mod async_peer_connector;
-mod async_tcp;
 mod file_downloader;
 pub mod peer_comm;
 pub mod peer_connector;
