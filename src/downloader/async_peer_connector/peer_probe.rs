@@ -8,7 +8,7 @@ use std::{
 use tracing::instrument;
 
 use crate::downloader::{
-    async_peer_connector::futures::AsyncTcpStream,
+    async_tcp::AsyncTcpStream,
     peer_comm::{HandshakeMessage, PeerMessage},
 };
 

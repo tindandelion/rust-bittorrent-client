@@ -1,6 +1,7 @@
 use crate::{
     downloader::{
         async_peer_connector::{peer_probe::PeerProbe, waker::TaskWaker},
+        async_tcp,
         peer_comm::HandshakeMessage,
     },
     types::{PeerId, Sha1},
@@ -15,9 +16,8 @@ use std::{
 };
 use tracing::error;
 
-mod futures;
 mod peer_probe;
-mod reactor;
+
 mod waker;
 
 pub struct PeerConnector<'a> {
@@ -109,7 +109,7 @@ impl<'a> PeerPoller<'a> {
                 return Ok(Some(channel));
             }
 
-            if !reactor::poll(Some(self.connector.timeout))? {
+            if !async_tcp::poll_reactor(Some(self.connector.timeout))? {
                 return Ok(None);
             }
         }

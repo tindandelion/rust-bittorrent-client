@@ -1,7 +1,5 @@
-use crate::downloader::peer_comm::AsyncReadExact;
-
 use super::reactor;
-use std::io::{Read, Write};
+use std::io::Read;
 use std::task::Waker;
 use std::{
     io,
@@ -10,58 +8,7 @@ use std::{
     task::{Context, Poll},
 };
 
-#[derive(Debug)]
-pub struct AsyncTcpStream {
-    inner: mio::net::TcpStream,
-}
-
-impl AsyncTcpStream {
-    pub async fn connect(addr: SocketAddr) -> io::Result<Self> {
-        let stream = ConnectFuture::new(addr).await?;
-        Ok(Self { inner: stream })
-    }
-}
-
-impl Write for AsyncTcpStream {
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        self.inner.write(buf)
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        self.inner.flush()
-    }
-}
-
-impl AsyncReadExact for AsyncTcpStream {
-    fn read_exact(&mut self, buf: &mut [u8]) -> impl Future<Output = io::Result<()>> {
-        ReadExactFuture::new(&mut self.inner, buf)
-    }
-}
-
-impl TryFrom<AsyncTcpStream> for std::net::TcpStream {
-    type Error = io::Error;
-
-    fn try_from(stream: AsyncTcpStream) -> Result<Self, Self::Error> {
-        let std_stream = std::net::TcpStream::from(stream.inner);
-        std_stream.set_nonblocking(false)?;
-        Ok(std_stream)
-    }
-}
-
-impl std::fmt::Display for AsyncTcpStream {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "AsyncTcpStream(peer_addr: {})",
-            self.inner
-                .peer_addr()
-                .map(|addr| addr.to_string())
-                .unwrap_or("<unknown>".to_string())
-        )
-    }
-}
-
-struct ConnectFuture {
+pub struct ConnectFuture {
     id: usize,
     addr: SocketAddr,
     stream: Option<mio::net::TcpStream>,
@@ -116,7 +63,7 @@ impl Drop for ConnectFuture {
     }
 }
 
-struct ReadExactFuture<'a, 'b> {
+pub struct ReadExactFuture<'a, 'b> {
     id: Option<usize>,
     stream: &'a mut mio::net::TcpStream,
     buffer: &'b mut [u8],
