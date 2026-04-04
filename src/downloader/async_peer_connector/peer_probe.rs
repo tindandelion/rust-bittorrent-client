@@ -69,26 +69,28 @@ async fn connect_to_peer(
 ) -> io::Result<std::net::TcpStream> {
     let mut stream = init_connection(addr).await?;
 
-    handshake.send(&mut stream)?;
-    read_handshake(&mut stream).await?;
-
+    exchange_handshake(&mut stream, handshake).await?;
     read_bitfield(&mut stream).await?;
-    request_unchoke(&mut stream).await?;
+    request_interest(&mut stream).await?;
 
     Ok(stream.try_into()?)
 }
 
-#[instrument(skip(addr), err, ret)]
+#[instrument(skip(addr), err, ret(Display))]
 async fn init_connection(addr: SocketAddr) -> io::Result<AsyncTcpStream> {
     AsyncTcpStream::connect(addr).await
 }
 
-#[instrument(skip(stream), err, ret)]
-async fn read_handshake(stream: &mut AsyncTcpStream) -> io::Result<HandshakeMessage> {
+#[instrument(skip(stream, my_handshake), err)]
+async fn exchange_handshake(
+    stream: &mut AsyncTcpStream,
+    my_handshake: HandshakeMessage,
+) -> io::Result<HandshakeMessage> {
+    my_handshake.send(stream)?;
     HandshakeMessage::receive_async(stream).await
 }
 
-#[instrument(skip(stream), err, ret)]
+#[instrument(skip(stream), err)]
 async fn read_bitfield(stream: &mut AsyncTcpStream) -> io::Result<()> {
     let msg = PeerMessage::receive_async(stream).await?;
     if let PeerMessage::Bitfield(_) = msg {
@@ -102,7 +104,7 @@ async fn read_bitfield(stream: &mut AsyncTcpStream) -> io::Result<()> {
 }
 
 #[instrument(skip(stream), err, ret)]
-async fn request_unchoke(stream: &mut AsyncTcpStream) -> io::Result<()> {
+async fn request_interest(stream: &mut AsyncTcpStream) -> io::Result<()> {
     PeerMessage::Interested.send(stream)?;
 
     let msg = PeerMessage::receive_async(stream).await?;

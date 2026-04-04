@@ -48,6 +48,19 @@ impl TryFrom<AsyncTcpStream> for std::net::TcpStream {
     }
 }
 
+impl std::fmt::Display for AsyncTcpStream {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "AsyncTcpStream(peer_addr: {})",
+            self.inner
+                .peer_addr()
+                .map(|addr| addr.to_string())
+                .unwrap_or("<unknown>".to_string())
+        )
+    }
+}
+
 struct ConnectFuture {
     id: usize,
     addr: SocketAddr,

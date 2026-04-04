@@ -17,6 +17,17 @@ pub struct HandshakeMessage {
     pub peer_id: PeerId,
 }
 
+impl std::fmt::Display for HandshakeMessage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "HandshakeMessage(info_hash: {}, peer_id: {})",
+            self.info_hash.to_string(),
+            self.peer_id.to_string()
+        )
+    }
+}
+
 impl HandshakeMessage {
     pub const SIZE: usize = size_of::<Self>();
 
