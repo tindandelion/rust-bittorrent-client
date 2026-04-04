@@ -13,6 +13,7 @@ where
     id: Option<usize>,
     stream: &'a mut R,
     buffer: &'b mut [u8],
+    bytes_read: usize,
 }
 
 impl<'a, 'b, R> ReadExactFuture<'a, 'b, R>
@@ -24,6 +25,7 @@ where
             id: None,
             stream,
             buffer,
+            bytes_read: 0,
         }
     }
 
@@ -58,27 +60,35 @@ where
         }
 
         let id = self.id.expect("the id should be set");
-        let mut buf = vec![0; self.buffer.len()];
+        let bytes_to_read = self.buffer.len() - self.bytes_read;
+        let mut buf = vec![0; bytes_to_read];
 
         match self.stream.read(&mut buf) {
             Err(err) if err.kind() == io::ErrorKind::WouldBlock => {
                 reactor::set_waker(id, cx.waker());
                 Poll::Pending
             }
-            Ok(n) => {
+            Ok(0) => {
                 self.deregister()?;
-                if n == buf.len() {
-                    self.buffer.copy_from_slice(&buf);
+                Poll::Ready(Err(io::Error::new(
+                    io::ErrorKind::UnexpectedEof,
+                    "Received zero bytes from stream",
+                )))
+            }
+            Ok(n) => {
+                let start_index = self.bytes_read;
+                let end_index = start_index + n;
+                let slice_to_fill = &mut self.buffer[start_index..end_index];
+
+                slice_to_fill.copy_from_slice(&buf[..n]);
+                self.bytes_read = end_index;
+
+                if self.bytes_read == self.buffer.len() {
+                    self.deregister()?;
                     Poll::Ready(Ok(()))
                 } else {
-                    Poll::Ready(Err(io::Error::new(
-                        io::ErrorKind::UnexpectedEof,
-                        format!(
-                            "Not enough data has been received: expected {}, received {}",
-                            buf.len(),
-                            n
-                        ),
-                    )))
+                    reactor::set_waker(id, cx.waker());
+                    Poll::Pending
                 }
             }
             Err(err) => {
@@ -95,5 +105,128 @@ where
 {
     fn drop(&mut self) {
         self.deregister().unwrap();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_read_from_empty_stream() {
+        let mut stream = Buffer::single_chunk(vec![]);
+        let mut buffer: Vec<u8> = vec![0; 2];
+        let future = ReadExactFuture::new(&mut stream, &mut buffer);
+
+        let err = poll_future(future).unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::UnexpectedEof);
+    }
+
+    #[test]
+    fn test_read_exact_amount_in_single_poll() {
+        let mut stream = Buffer::single_chunk(vec![42, 43, 44]);
+        let mut buffer: Vec<u8> = vec![0; 2];
+        let future = ReadExactFuture::new(&mut stream, &mut buffer);
+
+        poll_future(future).unwrap();
+        assert_eq!(buffer, vec![42, 43]);
+    }
+
+    #[test]
+    fn test_read_exact_amount_in_multiple_polls() {
+        let mut stream = Buffer::multiple_chunks(vec![vec![42, 43], vec![44]]);
+        let mut buffer: Vec<u8> = vec![0; 3];
+        let future = ReadExactFuture::new(&mut stream, &mut buffer);
+
+        poll_future(future).unwrap();
+        assert_eq!(buffer, vec![42, 43, 44]);
+    }
+
+    #[test]
+    fn test_read_exact_amount_leaves_remaining_data_in_stream() {
+        let mut stream = Buffer::multiple_chunks(vec![vec![42, 43], vec![44, 45]]);
+        let mut buffer: Vec<u8> = vec![0; 3];
+        let future = ReadExactFuture::new(&mut stream, &mut buffer);
+
+        poll_future(future).unwrap();
+        assert_eq!(buffer, vec![42, 43, 44]);
+        assert_eq!(stream.0, vec![vec![45]]);
+    }
+
+    fn poll_future(future: ReadExactFuture<'_, '_, Buffer>) -> io::Result<()> {
+        let waker = Waker::noop();
+        let mut context = Context::from_waker(&waker);
+        let mut pinned = Box::pin(future);
+        let mut iter = 0;
+        while iter < 10 {
+            iter += 1;
+            match pinned.as_mut().poll(&mut context) {
+                Poll::Pending => {
+                    continue;
+                }
+                Poll::Ready(res) => return res,
+            }
+        }
+        Err(io::Error::new(
+            io::ErrorKind::TimedOut,
+            "Max poll limit reached",
+        ))
+    }
+
+    struct Buffer(Vec<Vec<u8>>);
+
+    impl Buffer {
+        fn single_chunk(data: Vec<u8>) -> Self {
+            Self(vec![data])
+        }
+
+        fn multiple_chunks(data: Vec<Vec<u8>>) -> Buffer {
+            Self(data)
+        }
+    }
+
+    impl mio::event::Source for Buffer {
+        fn register(
+            &mut self,
+            _registry: &mio::Registry,
+            _token: mio::Token,
+            _interests: mio::Interest,
+        ) -> io::Result<()> {
+            Ok(())
+        }
+
+        fn reregister(
+            &mut self,
+            _registry: &mio::Registry,
+            _token: mio::Token,
+            _interests: mio::Interest,
+        ) -> io::Result<()> {
+            Ok(())
+        }
+
+        fn deregister(&mut self, _registry: &mio::Registry) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    impl io::Read for Buffer {
+        fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+            if self.0.is_empty() {
+                return Ok(0);
+            }
+
+            let current_chunk = self.0.first_mut().unwrap();
+            let bytes_to_read = std::cmp::min(buf.len(), current_chunk.len());
+
+            let output = &mut buf[..bytes_to_read];
+            output.copy_from_slice(&current_chunk[..bytes_to_read]);
+            current_chunk.drain(..bytes_to_read);
+
+            if current_chunk.is_empty() {
+                self.0.remove(0);
+            }
+
+            Ok(bytes_to_read)
+        }
     }
 }
