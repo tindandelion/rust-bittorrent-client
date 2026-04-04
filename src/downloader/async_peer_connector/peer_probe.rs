@@ -88,11 +88,11 @@ async fn exchange_handshake(
     HandshakeMessage::receive_async(stream).await
 }
 
-#[instrument(skip(stream), err)]
-async fn read_bitfield(stream: &mut AsyncTcpStream) -> io::Result<()> {
+#[instrument(skip(stream), err, ret)]
+async fn read_bitfield(stream: &mut AsyncTcpStream) -> io::Result<Vec<u8>> {
     let msg = PeerMessage::receive_async(stream).await?;
-    if let PeerMessage::Bitfield(_) = msg {
-        Ok(())
+    if let PeerMessage::Bitfield(bf) = msg {
+        Ok(bf)
     } else {
         Err(io::Error::new(
             io::ErrorKind::Other,
