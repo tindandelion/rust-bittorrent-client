@@ -5,13 +5,12 @@ use tracing::instrument;
 use crate::async_tcp::AsyncTcpStream;
 use crate::downloader::peer_comm::{self, HandshakeMessage, PeerMessage};
 
+use super::probe_result::ProbeResult;
+
 // TODO: Check the received handshake info_hash
 // TODO: Check for complete bitfield
 #[instrument(skip(handshake))]
-pub async fn connect_to_peer(
-    addr: SocketAddr,
-    handshake: HandshakeMessage,
-) -> io::Result<std::net::TcpStream> {
+pub async fn connect_to_peer(addr: SocketAddr, handshake: HandshakeMessage) -> ProbeResult {
     let mut stream = init_connection(addr).await?;
 
     exchange_handshake(&mut stream, handshake).await?;

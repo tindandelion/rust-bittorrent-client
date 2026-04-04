@@ -18,6 +18,7 @@ use tracing::error;
 
 mod connect_to_peer;
 mod peer_probe;
+mod probe_result;
 mod waker;
 
 pub struct PeerConnector<'a> {

@@ -5,7 +5,7 @@ use std::{
     task::{Context, Poll, Waker},
 };
 
-type ProbeResult = io::Result<std::net::TcpStream>;
+use super::probe_result::ProbeResult;
 
 pub struct PeerProbe {
     pub addr: SocketAddr,
