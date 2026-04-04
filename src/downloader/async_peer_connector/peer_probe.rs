@@ -5,14 +5,11 @@ use std::{
     task::{Context, Poll, Waker},
 };
 
-use mio::net::TcpStream;
 use tracing::instrument;
 
 use crate::downloader::{
-    async_peer_connector::futures::ReadExactFuture, peer_comm::HandshakeMessage,
+    async_peer_connector::futures::AsyncTcpStream, peer_comm::HandshakeMessage,
 };
-
-use super::futures::ConnectFuture;
 
 pub struct PeerProbe {
     pub addr: SocketAddr,
@@ -73,19 +70,17 @@ async fn connect_to_peer(
     handshake.send(&mut stream)?;
     read_handshake(&mut stream).await?;
 
-    let std_stream: std::net::TcpStream = stream.into();
-    std_stream.set_nonblocking(false)?;
-    Ok(std_stream)
+    Ok(stream.try_into()?)
 }
 
 #[instrument(skip(addr), err, ret)]
-async fn init_connection(addr: SocketAddr) -> io::Result<TcpStream> {
-    ConnectFuture::new(addr).await
+async fn init_connection(addr: SocketAddr) -> io::Result<AsyncTcpStream> {
+    AsyncTcpStream::connect(addr).await
 }
 
 #[instrument(skip(stream), err, ret)]
-async fn read_handshake(stream: &mut TcpStream) -> io::Result<HandshakeMessage> {
+async fn read_handshake(stream: &mut AsyncTcpStream) -> io::Result<HandshakeMessage> {
     let mut buffer = [0; HandshakeMessage::SIZE];
-    ReadExactFuture::new(stream, &mut buffer).await?;
+    stream.read_exact(&mut buffer).await?;
     HandshakeMessage::receive(&mut &buffer[..])
 }
