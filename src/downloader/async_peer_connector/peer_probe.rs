@@ -5,23 +5,24 @@ use std::{
     task::{Context, Poll, Waker},
 };
 
-use tracing::instrument;
-
-use crate::async_tcp::AsyncTcpStream;
-use crate::downloader::peer_comm::{HandshakeMessage, PeerMessage};
+type ProbeResult = io::Result<std::net::TcpStream>;
 
 pub struct PeerProbe {
     pub addr: SocketAddr,
-    fut: Pin<Box<dyn Future<Output = io::Result<std::net::TcpStream>>>>,
-    result: Option<io::Result<std::net::TcpStream>>,
+    fut: Pin<Box<dyn Future<Output = ProbeResult>>>,
+    result: Option<ProbeResult>,
 }
 
 impl PeerProbe {
-    pub fn connect(addr: SocketAddr, handshake: HandshakeMessage) -> io::Result<Self> {
+    pub fn new(
+        addr: SocketAddr,
+        fut: impl Future<Output = ProbeResult> + 'static,
+    ) -> io::Result<Self> {
+        let boxed = Box::new(fut);
         Ok(Self {
             addr,
             result: None,
-            fut: Box::pin(connect_to_peer(addr, handshake)),
+            fut: Box::into_pin(boxed),
         })
     }
 
@@ -56,62 +57,5 @@ impl TryFrom<PeerProbe> for std::net::TcpStream {
         } else {
             Err(io::Error::new(io::ErrorKind::Other, "peer not connected"))
         }
-    }
-}
-
-// TODO: Check the received handshake info_hash
-#[instrument(skip(handshake))]
-async fn connect_to_peer(
-    addr: SocketAddr,
-    handshake: HandshakeMessage,
-) -> io::Result<std::net::TcpStream> {
-    let mut stream = init_connection(addr).await?;
-
-    exchange_handshake(&mut stream, handshake).await?;
-    read_bitfield(&mut stream).await?;
-    request_interest(&mut stream).await?;
-
-    Ok(stream.try_into()?)
-}
-
-#[instrument(skip(addr), err, ret(Display))]
-async fn init_connection(addr: SocketAddr) -> io::Result<AsyncTcpStream> {
-    AsyncTcpStream::connect(addr).await
-}
-
-#[instrument(skip(stream, my_handshake), err)]
-async fn exchange_handshake(
-    stream: &mut AsyncTcpStream,
-    my_handshake: HandshakeMessage,
-) -> io::Result<HandshakeMessage> {
-    my_handshake.send(stream)?;
-    HandshakeMessage::receive_async(stream).await
-}
-
-#[instrument(skip(stream), err, ret)]
-async fn read_bitfield(stream: &mut AsyncTcpStream) -> io::Result<Vec<u8>> {
-    let msg = PeerMessage::receive_async(stream).await?;
-    if let PeerMessage::Bitfield(bf) = msg {
-        Ok(bf)
-    } else {
-        Err(io::Error::new(
-            io::ErrorKind::Other,
-            format!("expected bitfield message, got {:?}", msg),
-        ))
-    }
-}
-
-#[instrument(skip(stream), err, ret)]
-async fn request_interest(stream: &mut AsyncTcpStream) -> io::Result<()> {
-    PeerMessage::Interested.send(stream)?;
-
-    let msg = PeerMessage::receive_async(stream).await?;
-    if let PeerMessage::Unchoke = msg {
-        Ok(())
-    } else {
-        Err(io::Error::new(
-            io::ErrorKind::Other,
-            format!("expected unchoke message, got {:?}", msg),
-        ))
     }
 }

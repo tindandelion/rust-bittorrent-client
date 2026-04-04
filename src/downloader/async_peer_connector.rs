@@ -16,8 +16,8 @@ use std::{
 };
 use tracing::error;
 
+mod connect_to_peer;
 mod peer_probe;
-
 mod waker;
 
 pub struct PeerConnector<'a> {
@@ -85,7 +85,7 @@ impl<'a> PeerPoller<'a> {
 
         for (id, addr) in peer_addrs.into_iter().enumerate() {
             let handshake = HandshakeMessage::new(connector.info_hash, connector.peer_id);
-            let probe = PeerProbe::connect(addr, handshake)?;
+            let probe = PeerProbe::new(addr, connect_to_peer::connect_to_peer(addr, handshake))?;
             ready_queue.push(id);
             probes.insert(id, probe);
         }
