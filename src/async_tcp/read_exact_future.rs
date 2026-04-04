@@ -1,5 +1,4 @@
 use super::reactor;
-use std::io::Read;
 use std::task::Waker;
 use std::{
     io,
@@ -7,14 +6,20 @@ use std::{
     task::{Context, Poll},
 };
 
-pub struct ReadExactFuture<'a, 'b> {
+pub struct ReadExactFuture<'a, 'b, R>
+where
+    R: io::Read + mio::event::Source,
+{
     id: Option<usize>,
-    stream: &'a mut mio::net::TcpStream,
+    stream: &'a mut R,
     buffer: &'b mut [u8],
 }
 
-impl<'a, 'b> ReadExactFuture<'a, 'b> {
-    pub fn new(stream: &'a mut mio::net::TcpStream, buffer: &'b mut [u8]) -> Self {
+impl<'a, 'b, R> ReadExactFuture<'a, 'b, R>
+where
+    R: io::Read + mio::event::Source,
+{
+    pub fn new(stream: &'a mut R, buffer: &'b mut [u8]) -> Self {
         Self {
             id: None,
             stream,
@@ -41,7 +46,10 @@ impl<'a, 'b> ReadExactFuture<'a, 'b> {
     }
 }
 
-impl<'a, 'b> Future for ReadExactFuture<'a, 'b> {
+impl<'a, 'b, R> Future for ReadExactFuture<'a, 'b, R>
+where
+    R: io::Read + mio::event::Source,
+{
     type Output = io::Result<()>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
@@ -81,7 +89,10 @@ impl<'a, 'b> Future for ReadExactFuture<'a, 'b> {
     }
 }
 
-impl<'a, 'b> Drop for ReadExactFuture<'a, 'b> {
+impl<'a, 'b, R> Drop for ReadExactFuture<'a, 'b, R>
+where
+    R: io::Read + mio::event::Source,
+{
     fn drop(&mut self) {
         self.deregister().unwrap();
     }
