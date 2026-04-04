@@ -8,7 +8,8 @@ use std::{
 use tracing::instrument;
 
 use crate::downloader::{
-    async_peer_connector::futures::AsyncTcpStream, peer_comm::HandshakeMessage,
+    async_peer_connector::futures::AsyncTcpStream,
+    peer_comm::{HandshakeMessage, PeerMessage},
 };
 
 pub struct PeerProbe {
@@ -71,6 +72,9 @@ async fn connect_to_peer(
     handshake.send(&mut stream)?;
     read_handshake(&mut stream).await?;
 
+    read_bitfield(&mut stream).await?;
+    request_unchoke(&mut stream).await?;
+
     Ok(stream.try_into()?)
 }
 
@@ -82,4 +86,32 @@ async fn init_connection(addr: SocketAddr) -> io::Result<AsyncTcpStream> {
 #[instrument(skip(stream), err, ret)]
 async fn read_handshake(stream: &mut AsyncTcpStream) -> io::Result<HandshakeMessage> {
     HandshakeMessage::receive_async(stream).await
+}
+
+#[instrument(skip(stream), err, ret)]
+async fn read_bitfield(stream: &mut AsyncTcpStream) -> io::Result<()> {
+    let msg = PeerMessage::receive_async(stream).await?;
+    if let PeerMessage::Bitfield(_) = msg {
+        Ok(())
+    } else {
+        Err(io::Error::new(
+            io::ErrorKind::Other,
+            format!("expected bitfield message, got {:?}", msg),
+        ))
+    }
+}
+
+#[instrument(skip(stream), err, ret)]
+async fn request_unchoke(stream: &mut AsyncTcpStream) -> io::Result<()> {
+    PeerMessage::Interested.send(stream)?;
+
+    let msg = PeerMessage::receive_async(stream).await?;
+    if let PeerMessage::Unchoke = msg {
+        Ok(())
+    } else {
+        Err(io::Error::new(
+            io::ErrorKind::Other,
+            format!("expected unchoke message, got {:?}", msg),
+        ))
+    }
 }

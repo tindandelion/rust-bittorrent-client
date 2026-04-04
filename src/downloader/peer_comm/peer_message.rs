@@ -1,5 +1,7 @@
 use std::io;
 
+use crate::downloader::peer_comm::AsyncReadExact;
+
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum PeerMessage {
     Bitfield(Vec<u8>),
@@ -49,12 +51,6 @@ impl PeerMessage {
         }
     }
 
-    pub fn receive(src: &mut impl io::Read) -> io::Result<Self> {
-        let msg_len = Self::read_message_length(src)?;
-        let payload = Self::read_message_payload(src, msg_len)?;
-        Ok(Self::from_bytes(&payload))
-    }
-
     pub fn send(&self, dst: &mut impl io::Write) -> io::Result<()> {
         match self {
             Self::Bitfield(bitfield) => {
@@ -89,6 +85,15 @@ impl PeerMessage {
             )),
         }
     }
+}
+
+// Sync receive implementation
+impl PeerMessage {
+    pub fn receive(src: &mut impl io::Read) -> io::Result<Self> {
+        let msg_len = Self::read_message_length(src)?;
+        let payload = Self::read_message_payload(src, msg_len)?;
+        Ok(Self::from_bytes(&payload))
+    }
 
     pub fn read_message_length(src: &mut impl io::Read) -> io::Result<usize> {
         let mut buffer = [0_u8; Self::MESSAGE_LENGTH_SIZE];
@@ -111,6 +116,42 @@ impl PeerMessage {
     fn read_message_payload(src: &mut impl io::Read, msg_len: usize) -> io::Result<Vec<u8>> {
         let mut payload_buffer = vec![0_u8; msg_len];
         src.read_exact(&mut payload_buffer)?;
+        Ok(payload_buffer)
+    }
+}
+
+// Async receive implementation
+impl PeerMessage {
+    pub async fn receive_async(src: &mut impl AsyncReadExact) -> io::Result<Self> {
+        let msg_len = Self::read_message_length_async(src).await?;
+        let payload = Self::read_message_payload_async(src, msg_len).await?;
+        Ok(Self::from_bytes(&payload))
+    }
+
+    pub async fn read_message_length_async(src: &mut impl AsyncReadExact) -> io::Result<usize> {
+        let mut buffer = [0_u8; Self::MESSAGE_LENGTH_SIZE];
+        let mut msg_len = 0;
+        while msg_len == 0 {
+            src.read_exact(&mut buffer).await?;
+            msg_len = u32::from_be_bytes(buffer) as usize;
+        }
+
+        if msg_len > Self::MAX_MESSAGE_LENGTH {
+            Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("Message length is too big: {}", msg_len),
+            ))
+        } else {
+            Ok(msg_len)
+        }
+    }
+
+    async fn read_message_payload_async(
+        src: &mut impl AsyncReadExact,
+        msg_len: usize,
+    ) -> io::Result<Vec<u8>> {
+        let mut payload_buffer = vec![0_u8; msg_len];
+        src.read_exact(&mut payload_buffer).await?;
         Ok(payload_buffer)
     }
 }
