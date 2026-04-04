@@ -1,3 +1,5 @@
+use crate::downloader::peer_comm::AsyncReadExact;
+
 use super::reactor;
 use std::io::{Read, Write};
 use std::task::Waker;
@@ -18,10 +20,6 @@ impl AsyncTcpStream {
         let stream = ConnectFuture::new(addr).await?;
         Ok(Self { inner: stream })
     }
-
-    pub async fn read_exact(&mut self, buf: &mut [u8]) -> io::Result<()> {
-        ReadExactFuture::new(&mut self.inner, buf).await
-    }
 }
 
 impl Write for AsyncTcpStream {
@@ -31,6 +29,12 @@ impl Write for AsyncTcpStream {
 
     fn flush(&mut self) -> io::Result<()> {
         self.inner.flush()
+    }
+}
+
+impl AsyncReadExact for AsyncTcpStream {
+    fn read_exact(&mut self, buf: &mut [u8]) -> impl Future<Output = io::Result<()>> {
+        ReadExactFuture::new(&mut self.inner, buf)
     }
 }
 

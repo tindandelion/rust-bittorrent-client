@@ -80,7 +80,5 @@ async fn init_connection(addr: SocketAddr) -> io::Result<AsyncTcpStream> {
 
 #[instrument(skip(stream), err, ret)]
 async fn read_handshake(stream: &mut AsyncTcpStream) -> io::Result<HandshakeMessage> {
-    let mut buffer = [0; HandshakeMessage::SIZE];
-    stream.read_exact(&mut buffer).await?;
-    HandshakeMessage::receive(&mut &buffer[..])
+    HandshakeMessage::receive_async(stream).await
 }
