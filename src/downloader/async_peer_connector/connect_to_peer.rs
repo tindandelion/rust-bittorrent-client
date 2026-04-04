@@ -18,7 +18,7 @@ pub async fn connect_to_peer(
     let mut stream = init_connection(addr).await?;
 
     exchange_handshake(&mut stream, handshake).await?;
-    read_bitfield(&mut stream).await?;
+    receive_bitfield(&mut stream).await?;
     request_interest(&mut stream).await?;
 
     Ok(stream.try_into()?)
@@ -46,7 +46,10 @@ where
 }
 
 #[instrument(skip(stream), err, ret)]
-async fn read_bitfield(stream: &mut AsyncTcpStream) -> io::Result<Vec<u8>> {
+async fn receive_bitfield<S>(stream: &mut S) -> io::Result<Vec<u8>>
+where
+    S: peer_comm::AsyncReadExact,
+{
     let msg = PeerMessage::receive_async(stream).await?;
     if let PeerMessage::Bitfield(bf) = msg {
         Ok(bf)
@@ -97,7 +100,7 @@ mod tests {
     }
 
     #[test]
-    fn test_error_when_receied_mismatched_handshakes() {
+    fn test_error_when_received_mismatched_handshakes() {
         let my_handshake = HandshakeMessage::new(Sha1::random(), PeerId::random());
         let their_handshake = HandshakeMessage::new(Sha1::random(), PeerId::random());
 
@@ -109,7 +112,27 @@ mod tests {
         assert!(matches!(err, ProbeError::InfoHashMismatch));
     }
 
+    #[test]
+    fn test_received_bitfield_successfully() {
+        let bitfield = vec![0b11111111, 0b11111111];
+
+        let mut stream = InMemoryStream::new();
+        stream
+            .to_send
+            .push(PeerMessage::Bitfield(bitfield).to_vec());
+
+        poll_future(receive_bitfield(&mut stream)).unwrap();
+    }
+
     impl HandshakeMessage {
+        pub fn to_vec(&self) -> Vec<u8> {
+            let mut vec = Vec::new();
+            self.send(&mut vec).unwrap();
+            vec
+        }
+    }
+
+    impl PeerMessage {
         pub fn to_vec(&self) -> Vec<u8> {
             let mut vec = Vec::new();
             self.send(&mut vec).unwrap();
@@ -151,8 +174,13 @@ mod tests {
                 ));
             }
 
-            let data = self.to_send.remove(0);
-            buf.copy_from_slice(&data);
+            let data = self.to_send.first_mut().unwrap();
+            buf.copy_from_slice(&data[..buf.len()]);
+            data.drain(..buf.len());
+            if data.is_empty() {
+                self.to_send.remove(0);
+            }
+
             Ok(())
         }
     }
