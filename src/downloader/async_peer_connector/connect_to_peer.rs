@@ -6,6 +6,7 @@ use crate::async_tcp::AsyncTcpStream;
 use crate::downloader::peer_comm::{HandshakeMessage, PeerMessage};
 
 // TODO: Check the received handshake info_hash
+// TODO: Check for complete bitfield
 #[instrument(skip(handshake))]
 pub async fn connect_to_peer(
     addr: SocketAddr,
