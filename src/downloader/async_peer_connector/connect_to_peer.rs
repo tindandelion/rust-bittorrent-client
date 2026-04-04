@@ -3,7 +3,7 @@ use std::{io, net::SocketAddr};
 use tracing::instrument;
 
 use crate::async_tcp::AsyncTcpStream;
-use crate::downloader::peer_comm::{HandshakeMessage, PeerMessage};
+use crate::downloader::peer_comm::{self, HandshakeMessage, PeerMessage};
 
 // TODO: Check the received handshake info_hash
 // TODO: Check for complete bitfield
@@ -27,10 +27,13 @@ async fn init_connection(addr: SocketAddr) -> io::Result<AsyncTcpStream> {
 }
 
 #[instrument(skip(stream, my_handshake), err)]
-async fn exchange_handshake(
-    stream: &mut AsyncTcpStream,
+async fn exchange_handshake<S>(
+    stream: &mut S,
     my_handshake: HandshakeMessage,
-) -> io::Result<HandshakeMessage> {
+) -> io::Result<HandshakeMessage>
+where
+    S: io::Write + peer_comm::AsyncReadExact,
+{
     my_handshake.send(stream)?;
     HandshakeMessage::receive_async(stream).await
 }
@@ -60,5 +63,74 @@ async fn request_interest(stream: &mut AsyncTcpStream) -> io::Result<()> {
             io::ErrorKind::Other,
             format!("expected unchoke message, got {:?}", msg),
         ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{
+        async_tcp::test_helpers::poll_future,
+        types::{PeerId, Sha1},
+    };
+
+    use super::*;
+
+    #[test]
+    fn test_successful_handshake() {
+        let mut stream = InMemoryStream::new();
+        let handshake = HandshakeMessage::new(Sha1::random(), PeerId::random());
+
+        stream.to_send.push(handshake.to_vec());
+        poll_future(exchange_handshake(&mut stream, handshake)).unwrap();
+
+        assert_eq!(vec![handshake.to_vec()], stream.received);
+    }
+
+    impl HandshakeMessage {
+        pub fn to_vec(&self) -> Vec<u8> {
+            let mut vec = Vec::new();
+            self.send(&mut vec).unwrap();
+            vec
+        }
+    }
+
+    struct InMemoryStream {
+        received: Vec<Vec<u8>>,
+        to_send: Vec<Vec<u8>>,
+    }
+
+    impl InMemoryStream {
+        pub fn new() -> Self {
+            Self {
+                received: vec![],
+                to_send: vec![],
+            }
+        }
+    }
+
+    impl io::Write for InMemoryStream {
+        fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+            self.received.push(buf.to_vec());
+            Ok(buf.len())
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    impl peer_comm::AsyncReadExact for InMemoryStream {
+        async fn read_exact(&mut self, buf: &mut [u8]) -> io::Result<()> {
+            if self.to_send.is_empty() {
+                return Err(io::Error::new(
+                    io::ErrorKind::UnexpectedEof,
+                    "No data to send",
+                ));
+            }
+
+            let data = self.to_send.remove(0);
+            buf.copy_from_slice(&data);
+            Ok(())
+        }
     }
 }

@@ -56,3 +56,25 @@ impl std::fmt::Display for AsyncTcpStream {
         )
     }
 }
+
+#[cfg(test)]
+pub mod test_helpers {
+    use std::task::{Context, Poll, Waker};
+
+    pub fn poll_future<T>(future: impl Future<Output = T>) -> T {
+        let waker = Waker::noop();
+        let mut context = Context::from_waker(&waker);
+        let mut pinned = Box::pin(future);
+        let mut iter = 0;
+        while iter < 10 {
+            iter += 1;
+            match pinned.as_mut().poll(&mut context) {
+                Poll::Pending => {
+                    continue;
+                }
+                Poll::Ready(res) => return res,
+            }
+        }
+        panic!("Max poll limit reached");
+    }
+}

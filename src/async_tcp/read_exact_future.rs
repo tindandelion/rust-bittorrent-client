@@ -110,6 +110,8 @@ where
 
 #[cfg(test)]
 mod tests {
+    use crate::async_tcp::test_helpers::poll_future;
+
     use super::*;
 
     #[test]
@@ -151,26 +153,6 @@ mod tests {
         poll_future(future).unwrap();
         assert_eq!(buffer, vec![42, 43, 44]);
         assert_eq!(stream.0, vec![vec![45]]);
-    }
-
-    fn poll_future(future: ReadExactFuture<'_, '_, Buffer>) -> io::Result<()> {
-        let waker = Waker::noop();
-        let mut context = Context::from_waker(&waker);
-        let mut pinned = Box::pin(future);
-        let mut iter = 0;
-        while iter < 10 {
-            iter += 1;
-            match pinned.as_mut().poll(&mut context) {
-                Poll::Pending => {
-                    continue;
-                }
-                Poll::Ready(res) => return res,
-            }
-        }
-        Err(io::Error::new(
-            io::ErrorKind::TimedOut,
-            "Max poll limit reached",
-        ))
     }
 
     struct Buffer(Vec<Vec<u8>>);
