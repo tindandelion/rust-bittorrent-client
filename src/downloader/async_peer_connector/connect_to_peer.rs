@@ -24,7 +24,7 @@ pub async fn connect_to_peer(
     Ok(stream.try_into()?)
 }
 
-#[instrument(skip(addr), err, ret(Display))]
+#[instrument(skip(addr), err)]
 async fn init_connection(addr: SocketAddr) -> io::Result<AsyncTcpStream> {
     AsyncTcpStream::connect(addr).await
 }
@@ -45,7 +45,7 @@ where
     Ok(their_handshake.peer_id)
 }
 
-#[instrument(skip(stream), err(Debug), ret)]
+#[instrument(skip(stream), err(Debug))]
 async fn receive_bitfield<S>(stream: &mut S, piece_count: usize) -> ProbeResult<()>
 where
     S: peer_comm::AsyncReadExact,
@@ -85,7 +85,7 @@ fn is_bitfield_complete(bitfield: &[u8], piece_count: usize) -> bool {
     true
 }
 
-#[instrument(skip(stream), err(Debug), ret)]
+#[instrument(skip(stream), err(Debug))]
 async fn request_interest<S>(stream: &mut S) -> ProbeResult<()>
 where
     S: io::Write + peer_comm::AsyncReadExact,
