@@ -20,7 +20,7 @@ fn main() -> Result<()> {
     println!("Connecting to {} peers", addrs.len());
 
     for channel in connector.connect(addrs) {
-        print!("{}\t\t\t", channel.peer_addr().unwrap());
+        print!("{}\t\t\t", channel.peer_addr());
         println!("OK");
         successes += 1;
     }

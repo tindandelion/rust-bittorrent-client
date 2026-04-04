@@ -9,12 +9,14 @@ use crate::{
 use std::{
     collections::HashMap,
     io,
-    net::{SocketAddr, TcpStream},
+    net::SocketAddr,
     sync::{Arc, Mutex},
     task::Waker,
     time::Duration,
 };
 use tracing::error;
+
+use super::PeerChannel;
 
 mod connect_to_peer;
 mod peer_probe;
@@ -60,7 +62,7 @@ impl<'a> PeerConnector<'a> {
     pub fn connect(
         self,
         peer_addrs: impl IntoIterator<Item = SocketAddr>,
-    ) -> impl Iterator<Item = TcpStream> {
+    ) -> impl Iterator<Item = PeerChannel> {
         PeerPoller::new(peer_addrs, self).expect("Failed to create peer iterator")
     }
 
@@ -101,7 +103,7 @@ impl<'a> PeerPoller<'a> {
         })
     }
 
-    fn wait_for_connected_stream(&mut self) -> io::Result<Option<TcpStream>> {
+    fn wait_for_connected_channel(&mut self) -> io::Result<Option<PeerChannel>> {
         loop {
             self.poll_ready_probes();
             self.remove_failed_probes();
@@ -109,7 +111,7 @@ impl<'a> PeerPoller<'a> {
                 return Ok(None);
             }
 
-            if let Some(channel) = self.get_connected_stream()? {
+            if let Some(channel) = self.get_connected_channel()? {
                 return Ok(Some(channel));
             }
 
@@ -119,7 +121,7 @@ impl<'a> PeerPoller<'a> {
         }
     }
 
-    fn get_connected_stream(&mut self) -> io::Result<Option<TcpStream>> {
+    fn get_connected_channel(&mut self) -> io::Result<Option<PeerChannel>> {
         let connected_probe_id = self
             .probes
             .iter()
@@ -128,8 +130,8 @@ impl<'a> PeerPoller<'a> {
 
         if let Some(token) = connected_probe_id {
             let probe = self.unregister_probe(token).unwrap();
-            let stream: TcpStream = probe.try_into()?;
-            Ok(Some(stream))
+            let channel: PeerChannel = probe.try_into()?;
+            Ok(Some(channel))
         } else {
             Ok(None)
         }
@@ -168,10 +170,10 @@ impl<'a> PeerPoller<'a> {
 }
 
 impl<'a> Iterator for PeerPoller<'a> {
-    type Item = TcpStream;
+    type Item = PeerChannel;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.wait_for_connected_stream()
+        self.wait_for_connected_channel()
             .inspect_err(|err| error!(%err, "error while processing I/O events"))
             .expect("error while processing I/O events")
     }
@@ -199,7 +201,8 @@ mod tests {
             .next()
             .expect("failed to connect to peer");
 
-        assert_eq!(channel.peer_addr().unwrap(), peer_addr);
+        assert_eq!(peer_addr, channel.peer_addr());
+        assert_eq!(remote_peer.peer_id(), channel.remote_id());
     }
 
     #[test]
@@ -248,7 +251,7 @@ mod tests {
         let connector = make_connector().with_timeout(Duration::from_secs(1));
         let mut connected_addresses = connector
             .connect(peer_addresses)
-            .map(|stream| stream.peer_addr().unwrap())
+            .map(|stream| stream.peer_addr())
             .collect::<Vec<_>>();
 
         connected_addresses.sort();

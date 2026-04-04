@@ -1,9 +1,9 @@
-use std::net::TcpStream;
 use std::{io, net::SocketAddr};
 
 use tracing::instrument;
 
 use crate::async_tcp::AsyncTcpStream;
+use crate::downloader::PeerChannel;
 use crate::downloader::peer_comm::{self, HandshakeMessage, PeerMessage};
 use crate::types::PeerId;
 
@@ -14,14 +14,16 @@ pub async fn connect_to_peer(
     addr: SocketAddr,
     handshake: HandshakeMessage,
     piece_count: usize,
-) -> ProbeResult<TcpStream> {
+) -> ProbeResult<PeerChannel> {
     let mut stream = init_connection(addr).await?;
 
-    exchange_handshake(&mut stream, handshake).await?;
+    let peer_id = exchange_handshake(&mut stream, handshake).await?;
     receive_bitfield(&mut stream, piece_count).await?;
     request_interest(&mut stream).await?;
 
-    Ok(stream.try_into()?)
+    let std_stream: std::net::TcpStream = stream.try_into()?;
+    let peer_channel = PeerChannel::from_stream(std_stream, peer_id)?;
+    Ok(peer_channel)
 }
 
 #[instrument(skip(addr), err)]
@@ -116,13 +118,15 @@ mod tests {
         #[test]
         fn test_successful_handshake() {
             let info_hash = Sha1::random();
+            let their_peer_id = PeerId::random();
             let my_handshake = HandshakeMessage::new(info_hash, PeerId::random());
-            let their_handshake = HandshakeMessage::new(info_hash, PeerId::random());
+            let their_handshake = HandshakeMessage::new(info_hash, their_peer_id);
 
             let mut stream = InMemoryStream::new();
             stream.to_send.push(their_handshake.to_vec());
 
-            poll_future(exchange_handshake(&mut stream, my_handshake)).unwrap();
+            let peer_id = poll_future(exchange_handshake(&mut stream, my_handshake)).unwrap();
+            assert_eq!(their_peer_id, peer_id);
             assert_eq!(vec![my_handshake.to_vec()], stream.received);
         }
 

@@ -11,7 +11,7 @@ use super::PeerMessage;
 pub struct PeerChannel {
     peer_addr: SocketAddr,
     remote_id: PeerId,
-    stream: TcpStream,
+    pub stream: TcpStream,
 }
 
 impl PeerChannel {

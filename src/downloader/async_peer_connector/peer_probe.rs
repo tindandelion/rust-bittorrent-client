@@ -1,22 +1,24 @@
 use std::{
     io,
-    net::{SocketAddr, TcpStream},
+    net::SocketAddr,
     pin::Pin,
     task::{Context, Poll, Waker},
 };
+
+use crate::downloader::PeerChannel;
 
 use super::probe_result::ProbeResult;
 
 pub struct PeerProbe {
     pub addr: SocketAddr,
-    fut: Pin<Box<dyn Future<Output = ProbeResult<TcpStream>>>>,
-    result: Option<ProbeResult<TcpStream>>,
+    fut: Pin<Box<dyn Future<Output = ProbeResult<PeerChannel>>>>,
+    result: Option<ProbeResult<PeerChannel>>,
 }
 
 impl PeerProbe {
     pub fn new(
         addr: SocketAddr,
-        fut: impl Future<Output = ProbeResult<TcpStream>> + 'static,
+        fut: impl Future<Output = ProbeResult<PeerChannel>> + 'static,
     ) -> io::Result<Self> {
         let boxed = Box::new(fut);
         Ok(Self {
@@ -48,12 +50,12 @@ impl PeerProbe {
     }
 }
 
-impl TryFrom<PeerProbe> for std::net::TcpStream {
+impl TryFrom<PeerProbe> for PeerChannel {
     type Error = io::Error;
 
     fn try_from(probe: PeerProbe) -> Result<Self, Self::Error> {
-        if let Some(Ok(stream)) = probe.result {
-            Ok(stream)
+        if let Some(Ok(channel)) = probe.result {
+            Ok(channel)
         } else {
             Err(io::Error::new(io::ErrorKind::Other, "peer not connected"))
         }
