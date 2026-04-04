@@ -9,16 +9,16 @@ use crate::types::PeerId;
 
 use super::probe_result::{ProbeError, ProbeResult};
 
-// TODO: Check for complete bitfield
 #[instrument(skip(handshake))]
 pub async fn connect_to_peer(
     addr: SocketAddr,
     handshake: HandshakeMessage,
+    piece_count: usize,
 ) -> ProbeResult<TcpStream> {
     let mut stream = init_connection(addr).await?;
 
     exchange_handshake(&mut stream, handshake).await?;
-    receive_bitfield(&mut stream).await?;
+    receive_bitfield(&mut stream, piece_count).await?;
     request_interest(&mut stream).await?;
 
     Ok(stream.try_into()?)
@@ -45,34 +45,58 @@ where
     Ok(their_handshake.peer_id)
 }
 
-#[instrument(skip(stream), err, ret)]
-async fn receive_bitfield<S>(stream: &mut S) -> io::Result<Vec<u8>>
+#[instrument(skip(stream), err(Debug), ret)]
+async fn receive_bitfield<S>(stream: &mut S, piece_count: usize) -> ProbeResult<()>
 where
     S: peer_comm::AsyncReadExact,
 {
     let msg = PeerMessage::receive_async(stream).await?;
     if let PeerMessage::Bitfield(bf) = msg {
-        Ok(bf)
+        let expected_bitfield_size = piece_count.div_ceil(8);
+        if bf.len() != expected_bitfield_size {
+            return Err(ProbeError::BitfieldSizeMismatch);
+        }
+        if !is_bitfield_complete(&bf, piece_count) {
+            return Err(ProbeError::IncompleteFile);
+        }
+        Ok(())
     } else {
-        Err(io::Error::new(
-            io::ErrorKind::Other,
-            format!("expected bitfield message, got {:?}", msg),
-        ))
+        return Err(ProbeError::UnexpectedPeerMessage(msg));
     }
 }
 
-#[instrument(skip(stream), err, ret)]
-async fn request_interest(stream: &mut AsyncTcpStream) -> io::Result<()> {
+fn is_bitfield_complete(bitfield: &[u8], piece_count: usize) -> bool {
+    for byte in &bitfield[..bitfield.len() - 1] {
+        if *byte != 255 {
+            return false;
+        }
+    }
+
+    let mut pieces_in_last_byte = piece_count % 8;
+    if pieces_in_last_byte == 0 {
+        pieces_in_last_byte = 8;
+    }
+    let last_byte_mask = (128u8 as i8 >> (pieces_in_last_byte - 1)) as u8;
+    let last_byte = bitfield[bitfield.len() - 1];
+    if last_byte & last_byte_mask != last_byte_mask {
+        return false;
+    }
+
+    true
+}
+
+#[instrument(skip(stream), err(Debug), ret)]
+async fn request_interest<S>(stream: &mut S) -> ProbeResult<()>
+where
+    S: io::Write + peer_comm::AsyncReadExact,
+{
     PeerMessage::Interested.send(stream)?;
 
-    let msg = PeerMessage::receive_async(stream).await?;
-    if let PeerMessage::Unchoke = msg {
+    let response = PeerMessage::receive_async(stream).await?;
+    if matches!(response, PeerMessage::Unchoke) {
         Ok(())
     } else {
-        Err(io::Error::new(
-            io::ErrorKind::Other,
-            format!("expected unchoke message, got {:?}", msg),
-        ))
+        Err(ProbeError::UnexpectedPeerMessage(response))
     }
 }
 
@@ -86,42 +110,150 @@ mod tests {
 
     use super::*;
 
-    #[test]
-    fn test_successful_handshake() {
-        let info_hash = Sha1::random();
-        let my_handshake = HandshakeMessage::new(info_hash, PeerId::random());
-        let their_handshake = HandshakeMessage::new(info_hash, PeerId::random());
+    mod exchange_handshake {
+        use super::*;
 
-        let mut stream = InMemoryStream::new();
-        stream.to_send.push(their_handshake.to_vec());
+        #[test]
+        fn test_successful_handshake() {
+            let info_hash = Sha1::random();
+            let my_handshake = HandshakeMessage::new(info_hash, PeerId::random());
+            let their_handshake = HandshakeMessage::new(info_hash, PeerId::random());
 
-        poll_future(exchange_handshake(&mut stream, my_handshake)).unwrap();
-        assert_eq!(vec![my_handshake.to_vec()], stream.received);
+            let mut stream = InMemoryStream::new();
+            stream.to_send.push(their_handshake.to_vec());
+
+            poll_future(exchange_handshake(&mut stream, my_handshake)).unwrap();
+            assert_eq!(vec![my_handshake.to_vec()], stream.received);
+        }
+
+        #[test]
+        fn test_error_when_received_mismatched_handshakes() {
+            let my_handshake = HandshakeMessage::new(Sha1::random(), PeerId::random());
+            let their_handshake = HandshakeMessage::new(Sha1::random(), PeerId::random());
+
+            let mut stream = InMemoryStream::new();
+            stream.to_send.push(their_handshake.to_vec());
+
+            let err = poll_future(exchange_handshake(&mut stream, my_handshake))
+                .expect_err("Expected an error");
+            assert!(matches!(err, ProbeError::InfoHashMismatch));
+        }
     }
 
-    #[test]
-    fn test_error_when_received_mismatched_handshakes() {
-        let my_handshake = HandshakeMessage::new(Sha1::random(), PeerId::random());
-        let their_handshake = HandshakeMessage::new(Sha1::random(), PeerId::random());
+    mod receive_bitfield {
+        use super::*;
 
-        let mut stream = InMemoryStream::new();
-        stream.to_send.push(their_handshake.to_vec());
+        #[test]
+        fn receive_bitfield_successfully() {
+            let bitfield = vec![0b11111111, 0b11111111];
 
-        let err = poll_future(exchange_handshake(&mut stream, my_handshake))
-            .expect_err("Expected an error");
-        assert!(matches!(err, ProbeError::InfoHashMismatch));
+            let mut stream = InMemoryStream::new();
+            stream
+                .to_send
+                .push(PeerMessage::Bitfield(bitfield).to_vec());
+
+            poll_future(receive_bitfield(&mut stream, 16)).unwrap();
+        }
+
+        #[test]
+        fn error_when_received_unexpected_message() {
+            let mut stream = InMemoryStream::new();
+            stream.to_send.push(PeerMessage::Unchoke.to_vec());
+
+            let err =
+                poll_future(receive_bitfield(&mut stream, 16)).expect_err("Expected an error");
+            assert!(matches!(
+                err,
+                ProbeError::UnexpectedPeerMessage(PeerMessage::Unchoke)
+            ));
+        }
+
+        #[test]
+        fn error_when_bitfield_data_too_short() {
+            let bitfield = vec![0b11111111];
+            let mut stream = InMemoryStream::new();
+            stream
+                .to_send
+                .push(PeerMessage::Bitfield(bitfield).to_vec());
+
+            let err =
+                poll_future(receive_bitfield(&mut stream, 16)).expect_err("Expected an error");
+            assert!(matches!(err, ProbeError::BitfieldSizeMismatch));
+        }
+
+        #[test]
+        fn error_when_bitfield_data_too_long() {
+            let bitfield = vec![0b11111111, 0b11111111];
+            let mut stream = InMemoryStream::new();
+            stream
+                .to_send
+                .push(PeerMessage::Bitfield(bitfield).to_vec());
+
+            let err = poll_future(receive_bitfield(&mut stream, 8)).expect_err("Expected an error");
+            assert!(matches!(err, ProbeError::BitfieldSizeMismatch));
+        }
+
+        #[test]
+        fn error_when_data_is_missing_intermediate_pieces() {
+            let bitfield = vec![0b10000000, 0b11111111];
+            let mut stream = InMemoryStream::new();
+            stream
+                .to_send
+                .push(PeerMessage::Bitfield(bitfield).to_vec());
+
+            let err =
+                poll_future(receive_bitfield(&mut stream, 16)).expect_err("Expected an error");
+            assert!(matches!(err, ProbeError::IncompleteFile));
+        }
+
+        #[test]
+        fn error_when_data_missing_last_piece() {
+            let bitfield = vec![0b11111111, 0b11111100];
+            let mut stream = InMemoryStream::new();
+            stream
+                .to_send
+                .push(PeerMessage::Bitfield(bitfield).to_vec());
+
+            let err =
+                poll_future(receive_bitfield(&mut stream, 15)).expect_err("Expected an error");
+            assert!(matches!(err, ProbeError::IncompleteFile));
+        }
+
+        #[test]
+        fn ignore_redundant_bits_in_last_byte() {
+            let bitfield = vec![0b11111111, 0b11001000];
+            let mut stream = InMemoryStream::new();
+            stream
+                .to_send
+                .push(PeerMessage::Bitfield(bitfield).to_vec());
+
+            poll_future(receive_bitfield(&mut stream, 10)).unwrap();
+        }
     }
 
-    #[test]
-    fn test_received_bitfield_successfully() {
-        let bitfield = vec![0b11111111, 0b11111111];
+    mod request_interest {
+        use super::*;
 
-        let mut stream = InMemoryStream::new();
-        stream
-            .to_send
-            .push(PeerMessage::Bitfield(bitfield).to_vec());
+        #[test]
+        fn request_interest_successfully() {
+            let mut stream = InMemoryStream::new();
+            stream.to_send.push(PeerMessage::Unchoke.to_vec());
 
-        poll_future(receive_bitfield(&mut stream)).unwrap();
+            poll_future(request_interest(&mut stream)).unwrap();
+            assert_eq!(vec![PeerMessage::Interested.to_vec()], stream.received);
+        }
+
+        #[test]
+        fn error_when_received_unexpected_message() {
+            let mut stream = InMemoryStream::new();
+            stream.to_send.push(PeerMessage::Interested.to_vec());
+
+            let err = poll_future(request_interest(&mut stream)).expect_err("Expected an error");
+            assert!(matches!(
+                err,
+                ProbeError::UnexpectedPeerMessage(PeerMessage::Interested)
+            ));
+        }
     }
 
     impl HandshakeMessage {

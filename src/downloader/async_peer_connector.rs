@@ -86,7 +86,10 @@ impl<'a> PeerPoller<'a> {
 
         for (id, addr) in peer_addrs.into_iter().enumerate() {
             let handshake = HandshakeMessage::new(connector.info_hash, connector.peer_id);
-            let probe = PeerProbe::new(addr, connect_to_peer::connect_to_peer(addr, handshake))?;
+            let probe = PeerProbe::new(
+                addr,
+                connect_to_peer::connect_to_peer(addr, handshake, connector.piece_count),
+            )?;
             ready_queue.push(id);
             probes.insert(id, probe);
         }
@@ -342,8 +345,7 @@ mod tests {
                 let handshake = HandshakeMessage::new(incoming_info_hash, peer_id);
                 handshake.send(&mut stream).unwrap();
                 let bitfield = vec![0b11111111, 0b11111111];
-                send_whole_bitfield(&mut stream, bitfield).unwrap();
-                //send_bitfield_in_portions(&mut stream, bitfield).unwrap();
+                send_bitfield_in_chunks(&mut stream, bitfield).unwrap();
                 let msg = PeerMessage::receive(&mut stream).unwrap();
                 if msg != PeerMessage::Interested {
                     panic!("expected interested message, received: {:?}", msg);
@@ -354,7 +356,7 @@ mod tests {
         }
     }
 
-    fn send_bitfield_in_portions(stream: &mut impl io::Write, bitfield: Vec<u8>) -> io::Result<()> {
+    fn send_bitfield_in_chunks(stream: &mut impl io::Write, bitfield: Vec<u8>) -> io::Result<()> {
         let msg = PeerMessage::Bitfield(bitfield);
         let mut buffer = vec![];
         msg.send(&mut buffer)?;
@@ -363,12 +365,6 @@ mod tests {
         stream.write_all(&buffer[..msg_half])?;
         std::thread::sleep(Duration::from_millis(100));
         stream.write_all(&buffer[msg_half..])?;
-        Ok(())
-    }
-
-    fn send_whole_bitfield(stream: &mut impl io::Write, bitfield: Vec<u8>) -> io::Result<()> {
-        let msg = PeerMessage::Bitfield(bitfield);
-        msg.send(stream)?;
         Ok(())
     }
 }
