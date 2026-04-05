@@ -132,16 +132,13 @@ impl<'a> PeerPoller<'a> {
             while let Some(id) = ready_queue.pop() {
                 let waker = Waker::from(Arc::new(TaskWaker::new(id, self.ready_queue.clone())));
                 let mut context = Context::from_waker(&waker);
-
                 let probe = self
                     .pending_probes
                     .get_mut(&id)
-                    .expect(&format!("Unexpected id in received event: {id}"));
-                match probe.future.as_mut().poll(&mut context) {
-                    Poll::Ready(res) => {
-                        ready_probes.push((id, res));
-                    }
-                    Poll::Pending => {}
+                    .unwrap_or_else(|| panic!("Unexpected id in received event: {id}"));
+
+                if let Poll::Ready(res) = probe.future.as_mut().poll(&mut context) {
+                    ready_probes.push((id, res));
                 }
             }
         }

@@ -22,8 +22,7 @@ impl std::fmt::Display for HandshakeMessage {
         write!(
             f,
             "HandshakeMessage(info_hash: {}, peer_id: {})",
-            self.info_hash.to_string(),
-            self.peer_id.to_string()
+            self.info_hash, self.peer_id
         )
     }
 }

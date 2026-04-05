@@ -57,8 +57,7 @@ impl Reactor {
 
         let wakers = self.wakers.borrow();
         ids.iter()
-            .map(|id| wakers.get(id))
-            .flatten()
+            .filter_map(|id| wakers.get(id))
             .for_each(Waker::wake_by_ref);
 
         Ok(!events.is_empty())
