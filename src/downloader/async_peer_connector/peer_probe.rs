@@ -2,7 +2,7 @@ use std::{
     io,
     net::SocketAddr,
     pin::Pin,
-    task::{Context, Poll, Waker},
+    task::{Context, Poll},
 };
 
 use crate::downloader::PeerChannel;
@@ -35,14 +35,8 @@ impl PeerProbe {
         matches!(self.result, Some(Err(_)))
     }
 
-    pub fn poll(&mut self, waker: &Waker) {
-        // TODO: Why do we need this check?
-        if self.result.is_some() {
-            return;
-        }
-        let mut context = Context::from_waker(waker);
-
-        match self.fut.as_mut().poll(&mut context) {
+    pub fn poll(&mut self, cx: &mut Context<'_>) {
+        match self.fut.as_mut().poll(cx) {
             Poll::Ready(res) => self.result = Some(res),
             Poll::Pending => {}
         }

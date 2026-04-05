@@ -11,7 +11,7 @@ use std::{
     io,
     net::SocketAddr,
     sync::{Arc, Mutex},
-    task::Waker,
+    task::{Context, Waker},
     time::Duration,
 };
 use tracing::error;
@@ -141,11 +141,13 @@ impl<'a> PeerPoller<'a> {
         let mut ready_queue = self.ready_queue.lock().unwrap();
         while let Some(id) = ready_queue.pop() {
             let waker = Waker::from(Arc::new(TaskWaker::new(id, self.ready_queue.clone())));
+            let mut context = Context::from_waker(&waker);
+
             let probe = self
                 .probes
                 .get_mut(&id)
                 .unwrap_or_else(|| panic!("Unexpected id in received event: {id}"));
-            probe.poll(&waker);
+            probe.poll(&mut context);
         }
     }
 
