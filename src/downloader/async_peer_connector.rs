@@ -62,7 +62,7 @@ impl<'a> PeerConnector<'a> {
         self,
         peer_addrs: impl IntoIterator<Item = SocketAddr>,
     ) -> impl Iterator<Item = PeerChannel> {
-        PeerPoller::new(peer_addrs, self).expect("Failed to create peer iterator")
+        PeerPoller::new(peer_addrs, self)
     }
 
     fn report_progress(&mut self, addr: SocketAddr) {
@@ -84,10 +84,7 @@ struct PeerPoller<'a> {
 }
 
 impl<'a> PeerPoller<'a> {
-    fn new(
-        peer_addrs: impl IntoIterator<Item = SocketAddr>,
-        connector: PeerConnector<'a>,
-    ) -> io::Result<Self> {
+    fn new(peer_addrs: impl IntoIterator<Item = SocketAddr>, connector: PeerConnector<'a>) -> Self {
         let mut probes: HashMap<usize, PeerProbe> = HashMap::new();
         let mut ready_queue: Vec<usize> = vec![];
 
@@ -102,12 +99,12 @@ impl<'a> PeerPoller<'a> {
             probes.insert(id, probe);
         }
 
-        Ok(Self {
+        Self {
             pending_probes: probes,
             connector,
             ready_queue: Arc::new(Mutex::new(ready_queue)),
             connected_channels: vec![],
-        })
+        }
     }
 
     fn wait_for_connected_channel(&mut self) -> io::Result<Option<PeerChannel>> {
@@ -139,7 +136,7 @@ impl<'a> PeerPoller<'a> {
                 let probe = self
                     .pending_probes
                     .get_mut(&id)
-                    .unwrap_or_else(|| panic!("Unexpected id in received event: {id}"));
+                    .expect(&format!("Unexpected id in received event: {id}"));
                 match probe.future.as_mut().poll(&mut context) {
                     Poll::Ready(res) => {
                         ready_probes.push((id, res));
