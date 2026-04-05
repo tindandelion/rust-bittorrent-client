@@ -1,9 +1,11 @@
 use std::time::Duration;
 
 use bt_client::Torrent;
-use bt_client::downloader::peer_connector::PeerConnector;
 use bt_client::result::Result;
 use bt_client::types::PeerId;
+
+mod peer_connector;
+use peer_connector::PeerConnector;
 
 fn main() -> Result<()> {
     setup_tracing()?;

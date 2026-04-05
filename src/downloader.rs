@@ -1,15 +1,12 @@
+pub use file_downloader::FileDownloader;
+use file_downloader::{Block, DownloadChannel, RequestChannel};
+pub use peer_comm::PeerChannel;
+use peer_comm::PeerMessage;
+use std::io;
+
 pub mod async_peer_connector;
 mod file_downloader;
 pub mod peer_comm;
-pub mod peer_connector;
-
-use std::io;
-
-pub use file_downloader::FileDownloader;
-pub use peer_comm::PeerChannel;
-
-use file_downloader::{Block, DownloadChannel, RequestChannel};
-use peer_comm::PeerMessage;
 
 impl RequestChannel for PeerChannel {
     fn request(&mut self, piece_index: u32, offset: u32, length: u32) -> io::Result<()> {

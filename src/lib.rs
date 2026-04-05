@@ -9,7 +9,7 @@ mod util;
 use tracing::{error, info};
 
 use crate::{
-    downloader::{PeerChannel, peer_connector::PeerConnector},
+    downloader::{PeerChannel, async_peer_connector::PeerConnector},
     ratatui_ui::AppEvent,
     tracker::AnnounceRequest,
     types::PeerId,

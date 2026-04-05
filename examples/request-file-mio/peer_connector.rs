@@ -6,16 +6,13 @@ use std::{collections::HashMap, io, net::SocketAddr, time::Duration};
 use mio::{Events, Poll, Token, event::Event};
 use tracing::{Span, debug, debug_span, error, trace, warn};
 
-use crate::{
-    downloader::{
-        PeerChannel,
-        peer_connector::{
-            mio_peer_stream::MioPeerStream,
-            probe_state::{ProbeContext, ProbeError},
-        },
-    },
+use bt_client::{
+    downloader::{ PeerChannel},
     types::{PeerId, Sha1},
 };
+
+use mio_peer_stream::MioPeerStream;
+use probe_state::{ProbeContext, ProbeError};
 
 use probe_state::ProbeState;
 
