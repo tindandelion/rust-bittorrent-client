@@ -1,27 +1,26 @@
+use super::PeerChannel;
 use crate::{
     async_tcp,
-    downloader::{
-        async_peer_connector::{peer_probe::PeerProbe, waker::TaskWaker},
-        peer_comm::HandshakeMessage,
-    },
+    downloader::peer_comm::HandshakeMessage,
     types::{PeerId, Sha1},
 };
 use std::{
     collections::HashMap,
     io,
     net::SocketAddr,
+    pin::Pin,
     sync::{Arc, Mutex},
-    task::{Context, Waker},
+    task::{Context, Poll, Waker},
     time::Duration,
 };
 use tracing::error;
 
-use super::PeerChannel;
-
 mod connect_to_peer;
-mod peer_probe;
 mod probe_result;
 mod waker;
+
+use probe_result::ProbeResult;
+use waker::TaskWaker;
 
 pub struct PeerConnector<'a> {
     info_hash: Sha1,
@@ -72,9 +71,15 @@ impl<'a> PeerConnector<'a> {
     }
 }
 
+struct PeerProbe {
+    pub addr: SocketAddr,
+    pub future: Pin<Box<dyn Future<Output = ProbeResult<PeerChannel>>>>,
+}
+
 struct PeerPoller<'a> {
     ready_queue: Arc<Mutex<Vec<usize>>>,
-    probes: HashMap<usize, PeerProbe>,
+    pending_probes: HashMap<usize, PeerProbe>,
+    connected_channels: Vec<PeerChannel>,
     connector: PeerConnector<'a>,
 }
 
@@ -88,31 +93,33 @@ impl<'a> PeerPoller<'a> {
 
         for (id, addr) in peer_addrs.into_iter().enumerate() {
             let handshake = HandshakeMessage::new(connector.info_hash, connector.peer_id);
-            let probe = PeerProbe::new(
+            let future = connect_to_peer::connect_to_peer(addr, handshake, connector.piece_count);
+            let probe = PeerProbe {
                 addr,
-                connect_to_peer::connect_to_peer(addr, handshake, connector.piece_count),
-            )?;
+                future: Box::pin(future),
+            };
             ready_queue.push(id);
             probes.insert(id, probe);
         }
 
         Ok(Self {
-            probes,
+            pending_probes: probes,
             connector,
             ready_queue: Arc::new(Mutex::new(ready_queue)),
+            connected_channels: vec![],
         })
     }
 
     fn wait_for_connected_channel(&mut self) -> io::Result<Option<PeerChannel>> {
         loop {
             self.poll_ready_probes();
-            self.remove_failed_probes();
-            if self.probes.is_empty() {
-                return Ok(None);
+
+            if let Some(channel) = self.connected_channels.pop() {
+                return Ok(Some(channel));
             }
 
-            if let Some(channel) = self.get_connected_channel()? {
-                return Ok(Some(channel));
+            if self.pending_probes.is_empty() {
+                return Ok(None);
             }
 
             if !async_tcp::poll_reactor(Some(self.connector.timeout))? {
@@ -121,53 +128,36 @@ impl<'a> PeerPoller<'a> {
         }
     }
 
-    fn get_connected_channel(&mut self) -> io::Result<Option<PeerChannel>> {
-        let connected_probe_id = self
-            .probes
-            .iter()
-            .find(|(_, probe)| probe.is_connected())
-            .map(|(token, _)| *token);
-
-        if let Some(token) = connected_probe_id {
-            let probe = self.unregister_probe(token).unwrap();
-            let channel: PeerChannel = probe.try_into()?;
-            Ok(Some(channel))
-        } else {
-            Ok(None)
-        }
-    }
-
     fn poll_ready_probes(&mut self) {
-        let mut ready_queue = self.ready_queue.lock().unwrap();
-        while let Some(id) = ready_queue.pop() {
-            let waker = Waker::from(Arc::new(TaskWaker::new(id, self.ready_queue.clone())));
-            let mut context = Context::from_waker(&waker);
+        let mut ready_probes: Vec<(usize, ProbeResult<PeerChannel>)> = vec![];
+        {
+            let mut ready_queue = self.ready_queue.lock().unwrap();
+            while let Some(id) = ready_queue.pop() {
+                let waker = Waker::from(Arc::new(TaskWaker::new(id, self.ready_queue.clone())));
+                let mut context = Context::from_waker(&waker);
 
-            let probe = self
-                .probes
-                .get_mut(&id)
-                .unwrap_or_else(|| panic!("Unexpected id in received event: {id}"));
-            probe.poll(&mut context);
+                let probe = self
+                    .pending_probes
+                    .get_mut(&id)
+                    .unwrap_or_else(|| panic!("Unexpected id in received event: {id}"));
+                match probe.future.as_mut().poll(&mut context) {
+                    Poll::Ready(res) => {
+                        ready_probes.push((id, res));
+                    }
+                    Poll::Pending => {}
+                }
+            }
         }
-    }
 
-    fn remove_failed_probes(&mut self) {
-        let errored_ids: Vec<usize> = self
-            .probes
-            .iter()
-            .filter(|(_, probe)| probe.is_error())
-            .map(|(id, _)| *id)
-            .collect();
+        for (id, result) in ready_probes {
+            self.pending_probes.remove(&id).inspect(|probe| {
+                self.connector.report_progress(probe.addr);
+            });
 
-        for token in errored_ids {
-            self.unregister_probe(token);
+            if let Ok(channel) = result {
+                self.connected_channels.push(channel);
+            }
         }
-    }
-
-    fn unregister_probe(&mut self, id: usize) -> Option<PeerProbe> {
-        self.probes.remove(&id).inspect(|probe| {
-            self.connector.report_progress(probe.addr);
-        })
     }
 }
 

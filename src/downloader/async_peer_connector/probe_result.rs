@@ -7,8 +7,8 @@ pub enum ProbeError {
     InfoHashMismatch,
     BitfieldSizeMismatch,
     IncompleteFile,
-    UnexpectedPeerMessage(PeerMessage),
-    IO(io::Error),
+    UnexpectedPeerMessage(#[allow(dead_code)] PeerMessage),
+    IO(#[allow(dead_code)] io::Error),
 }
 
 impl From<io::Error> for ProbeError {
