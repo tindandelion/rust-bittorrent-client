@@ -20,11 +20,10 @@ impl PeerProbe {
         addr: SocketAddr,
         fut: impl Future<Output = ProbeResult<PeerChannel>> + 'static,
     ) -> io::Result<Self> {
-        let boxed = Box::new(fut);
         Ok(Self {
             addr,
             result: None,
-            fut: Box::into_pin(boxed),
+            fut: Box::pin(fut),
         })
     }
 
