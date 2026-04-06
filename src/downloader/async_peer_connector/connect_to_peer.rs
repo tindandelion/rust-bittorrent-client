@@ -9,7 +9,7 @@ use crate::types::{PeerId, Sha1};
 
 use super::probe_result::{ProbeError, ProbeResult};
 
-#[instrument(skip_all, fields(addr=%addr), err(Debug))]
+#[instrument(skip_all, fields(addr=%addr), err)]
 pub async fn connect_to_peer(
     addr: SocketAddr,
     info_hash: Sha1,
@@ -33,7 +33,7 @@ async fn init_connection(addr: SocketAddr) -> io::Result<AsyncTcpStream> {
     AsyncTcpStream::connect(addr).await
 }
 
-#[instrument(skip(stream, my_handshake), err(Debug))]
+#[instrument(skip(stream, my_handshake), err)]
 async fn exchange_handshake<S>(
     stream: &mut S,
     my_handshake: HandshakeMessage,
@@ -49,7 +49,7 @@ where
     Ok(their_handshake.peer_id)
 }
 
-#[instrument(skip(stream), err(Debug))]
+#[instrument(skip(stream), err)]
 async fn receive_bitfield<S>(stream: &mut S, piece_count: usize) -> ProbeResult<()>
 where
     S: peer_comm::AsyncReadExact,
@@ -89,7 +89,7 @@ fn is_bitfield_complete(bitfield: &[u8], piece_count: usize) -> bool {
     true
 }
 
-#[instrument(skip(stream), err(Debug))]
+#[instrument(skip(stream), err)]
 async fn request_interest<S>(stream: &mut S) -> ProbeResult<()>
 where
     S: io::Write + peer_comm::AsyncReadExact,

@@ -17,4 +17,10 @@ impl From<io::Error> for ProbeError {
     }
 }
 
+impl std::fmt::Display for ProbeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+
 pub type ProbeResult<T> = std::result::Result<T, ProbeError>;
