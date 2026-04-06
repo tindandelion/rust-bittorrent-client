@@ -9,7 +9,7 @@ use crate::types::{PeerId, Sha1};
 
 use super::probe_result::{ProbeError, ProbeResult};
 
-#[instrument(err(Debug))]
+#[instrument(skip_all, fields(addr=%addr), err(Debug))]
 pub async fn connect_to_peer(
     addr: SocketAddr,
     info_hash: Sha1,
