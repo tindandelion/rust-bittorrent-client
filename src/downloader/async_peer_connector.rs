@@ -1,7 +1,6 @@
 use super::PeerChannel;
 use crate::{
     async_tcp,
-    downloader::peer_comm::HandshakeMessage,
     types::{PeerId, Sha1},
 };
 use std::{
@@ -89,8 +88,12 @@ impl<'a> PeerPoller<'a> {
         let mut ready_queue: Vec<usize> = vec![];
 
         for (id, addr) in peer_addrs.into_iter().enumerate() {
-            let handshake = HandshakeMessage::new(connector.info_hash, connector.peer_id);
-            let future = connect_to_peer::connect_to_peer(addr, handshake, connector.piece_count);
+            let future = connect_to_peer::connect_to_peer(
+                addr,
+                connector.info_hash,
+                connector.peer_id,
+                connector.piece_count,
+            );
             let probe = PeerProbe {
                 addr,
                 future: Box::pin(future),

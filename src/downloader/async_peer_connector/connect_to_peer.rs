@@ -5,18 +5,20 @@ use tracing::instrument;
 use crate::async_tcp::AsyncTcpStream;
 use crate::downloader::PeerChannel;
 use crate::downloader::peer_comm::{self, HandshakeMessage, PeerMessage};
-use crate::types::PeerId;
+use crate::types::{PeerId, Sha1};
 
 use super::probe_result::{ProbeError, ProbeResult};
 
-#[instrument(skip(handshake))]
+#[instrument(err(Debug))]
 pub async fn connect_to_peer(
     addr: SocketAddr,
-    handshake: HandshakeMessage,
+    info_hash: Sha1,
+    peer_id: PeerId,
     piece_count: usize,
 ) -> ProbeResult<PeerChannel> {
     let mut stream = init_connection(addr).await?;
 
+    let handshake = HandshakeMessage::new(info_hash, peer_id);
     let peer_id = exchange_handshake(&mut stream, handshake).await?;
     receive_bitfield(&mut stream, piece_count).await?;
     request_interest(&mut stream).await?;
