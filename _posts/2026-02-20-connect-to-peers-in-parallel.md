@@ -120,7 +120,7 @@ So I ended up with two different implementations that support that kind of API. 
 
 The second implementation is [`ParPeerConnector`](https://github.com/tindandelion/rust-bittorrent-client/blob/0.1.2/src/downloader/peer_connectors/par_connector.rs), and that's where our non-blocking I/O lives. That struct itself is simply an entry point; the bulk of the logic is spread across a couple of helper data types: `PeerProbe` and `PeerPoller`. 
 
-[`PeerProbe`](https://github.com/tindandelion/rust-bittorrent-client/blob/0.1.2/src/downloader/peer_connectors/par_connector.rs#L60) is a struct that tracks the current [state](https://github.com/tindandelion/rust-bittorrent-client/blob/0.1.2/src/downloader/peer_connectors/par_connector.rs#L60) of connection process for each individual IP address. It starts in `Connecting` state and then updates the state when its [`handle_connect_event()`](https://github.com/tindandelion/rust-bittorrent-client/blob/0.1.2/src/downloader/peer_connectors/par_connector.rs#L60) method is called: 
+[`PeerProbe`](https://github.com/tindandelion/rust-bittorrent-client/blob/0.1.2/src/downloader/peer_connectors/par_connector.rs#L167) is a struct that tracks the current [state](https://github.com/tindandelion/rust-bittorrent-client/blob/0.1.2/src/downloader/peer_connectors/par_connector.rs#L161) of connection process for each individual IP address. It starts in `Connecting` state and then updates the state when its [`handle_connect_event()`](https://github.com/tindandelion/rust-bittorrent-client/blob/0.1.2/src/downloader/peer_connectors/par_connector.rs#L197) method is called: 
 
 * We check if the underlying `TcpStream` is connected by querying its `peer_addr()` method;
 * If `peer_addr` returns `Ok` we consider that stream connected and enter the `Connected` state;
@@ -128,7 +128,7 @@ The second implementation is [`ParPeerConnector`](https://github.com/tindandelio
 
 The polling logic itself resides in the [`PeerPoller`](https://github.com/tindandelion/rust-bittorrent-client/blob/0.1.2/src/downloader/peer_connectors/par_connector.rs#L60) helper struct that implements `Iterator` over `TcpStream`s. `PeerPoller` keeps a list of active probes, one per IP address, and manages that list at every call to `Iterator::next()` in a loop: 
 
-1. We first search for a probe that's aleady in the `Connected` state. If such a probe is found, we remove it from the list of active probes and return its `TcpStream` as the result of `Iterator::next()`; 
+1. We first search for a probe that's already in the `Connected` state. If such a probe is found, we remove it from the list of active probes and return its `TcpStream` as the result of `Iterator::next()`; 
 2. If there are no connected probes at the moment, we poll the event queue by calling mio's [`Poll::poll()`](https://docs.rs/mio/latest/mio/struct.Poll.html#method.poll) method. That puts our thread to sleep until there are events ready to be handled; 
 3. When the `poll()` returns, we receive the list of I/O events that have occurred, and update the state of affected probes. 
 4. Finally, we remove errored probes from the active probe list and repeat from step _1_. 
