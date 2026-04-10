@@ -1,7 +1,7 @@
 ---
 layout: post
 title:  "Reflection: the need for more non-blocking I/O"
-date: 2026-03-24 
+date: 2026-04-10 
 ---
 
 Let's take a step back and reflect on the progress we've made so far. We've been working on this project for a long time, with multiple side quests, so it's good to check where we stand and what to focus on next.
