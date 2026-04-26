@@ -102,3 +102,20 @@ Here, the state machine should go from `Handshaking` to `Unchoked` instantly, pa
 
 #### A BitTorrent message split across several I/O events 
 
+The second scenario we have to account for is the opposite. Sometimes, a single BitTorrent message can be split across several I/O events. In real life, I observed this situation occur quite regularly when we were receiving the `bitfield` message from the peer:  
+
+![Single message spread across multiple I/O events]({{ site.baseurl }}/assets/images/non-blocking-request-file/single-message-many-events.svg)
+
+
+What it means for us is that we have to be ready that when the I/O even occurs, only a part of the BitTorrent message will be available to read. In that case, our code has to read the available data, store it in the intermediate buffer, and then wait for the next I/O event to read the next portion, and do so until the entire BitTorrent message has been received. 
+
+In particular, that means we can't rely on [`Read::read_exact()`][link?] method when we work with TCP streams in non-blocking mode. Its implementation does not handle `EWOULDBLOCK` errors nicely: it just returns the error and loses all partial data it has read from the TCP stream. 
+
+Fortunately, the [BitTorrent message format][link?] allows us to write a custom reading routine that can read the message contents in chunks, accumulating the partially read data in the intermediate buffer: 
+
+* At the start, we expect to receive 4 bytes of data that contains the total message length; 
+* Once we have these 4 bytes, we know the total length of the incoming message, so we can keep accumulating the partial data in the buffer until the entire message is received; 
+* When we've accumulated the needed number of bytes, we can construct the `PeerMessage` value and return it to the caller. 
+
+I have implemented that routine in a [`MessageBuffer`][link?] struct. 
+
