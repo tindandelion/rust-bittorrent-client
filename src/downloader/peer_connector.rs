@@ -217,7 +217,6 @@ impl PeerProbe {
 
     fn handle_event(&mut self, event: &Event) {
         let _guard = self.span.enter();
-        trace!(?event, "received event");
 
         if event.is_error() {
             match self.stream.inner.take_error() {

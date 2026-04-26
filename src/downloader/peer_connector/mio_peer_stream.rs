@@ -58,9 +58,12 @@ impl PeerStream for MioPeerStream {
             .inspect_err(|err| {
                 if err.kind() == ErrorKind::WouldBlock {
                     trace!(
-                        buffer_len = self.buffer.len(),
+                        cur_buffer_len = self.buffer.len(),
                         "did not receive the whole message, will retry"
                     );
+                } else {
+                    trace!(?err, "error receiving peer message, flushing buffer");
+                    self.buffer = MessageBuffer::new();
                 }
             })
     }
