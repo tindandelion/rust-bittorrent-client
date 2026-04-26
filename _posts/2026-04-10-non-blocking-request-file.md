@@ -117,5 +117,10 @@ Fortunately, the [BitTorrent message format][link?] allows us to write a custom 
 * Once we have these 4 bytes, we know the total length of the incoming message, so we can keep accumulating the partial data in the buffer until the entire message is received; 
 * When we've accumulated the needed number of bytes, we can construct the `PeerMessage` value and return it to the caller. 
 
-I have implemented that routine in a [`MessageBuffer`][link?] struct. 
+That routine is now implemented in a [`MessageBuffer`][link?] helper type.
+
+# Trying it out 
+
+![Application UI]({{ site.baseurl }}/assets/images/non-blocking-request-file/main.gif)
+
 
