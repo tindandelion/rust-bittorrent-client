@@ -4,7 +4,7 @@ mod probe_state;
 use std::{collections::HashMap, io, net::SocketAddr, time::Duration};
 
 use mio::{Events, Poll, Token, event::Event};
-use tracing::{Span, debug, debug_span, error, trace, warn};
+use tracing::{Span, debug, debug_span, error, warn};
 
 use crate::{
     downloader::{

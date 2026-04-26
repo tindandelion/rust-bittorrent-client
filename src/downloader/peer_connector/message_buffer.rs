@@ -52,14 +52,14 @@ impl MessageBuffer {
             self.read_message_length()?;
         }
 
-        if let Some(msg_len) = self.msg_length {
-            if self.buffer.len() >= msg_len {
-                self.msg_length = None;
+        if let Some(msg_len) = self.msg_length
+            && self.buffer.len() >= msg_len
+        {
+            self.msg_length = None;
 
-                let unprocessed = self.buffer.split_off(msg_len);
-                let message_buffer = std::mem::replace(&mut self.buffer, unprocessed);
-                return Ok(Some(PeerMessage::from_bytes(&message_buffer)));
-            }
+            let unprocessed = self.buffer.split_off(msg_len);
+            let message_buffer = std::mem::replace(&mut self.buffer, unprocessed);
+            return Ok(Some(PeerMessage::from_bytes(&message_buffer)));
         }
 
         Ok(None)
