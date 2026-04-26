@@ -1,6 +1,6 @@
 ---
 layout: post
-title:  "Non-blocking I/O: request the file from a peer"
+title:  "Non-blocking I/O: Request the file from a peer"
 date: 2026-04-10 
 ---
 
@@ -12,9 +12,9 @@ TBD
 
 # From a linear algorithm to a state machine
 
-When working with non-blocking I/O, we need to change the way we think about our program flow. In blocking mode, the program would look like a linear sequence of instructions. That's no longer true in non-blocking mode. Conversely, we need to consider the algorithm that we implement as a _state machine_: 
+When working with non-blocking I/O, we need to change the way we think about our program flow. In the blocking mode, the program would look like a linear sequence of instructions. That's no longer true in non-blocking mode. Conversely, we need to approach the algorithm that we implement as a _state machine:_ 
 
-* the states in that machine represent the points where we wait for data to be available from the underlying resource; 
+* the machine's states represent the points where we wait for data to be available from the underlying resource; 
 * the bits of business logic are split across different state transitions; 
 * the entire execution is driven by I/O events coming from the resource via the event queue. 
 
@@ -24,7 +24,7 @@ Because I'm not looking for easy ways in this project, let's go down that route 
 
 # Modeling the state machine
 
-Let's one more time take a look at the message exchange we need to do with the peer before we start downloading: 
+Let's one more time take a look at the message exchange we need to do with the peer before we can start downloading file data: 
 
 ![Request file message exchange]({{ site.baseurl }}/assets/images/non-blocking-request-file/request-file-sequence.svg)
 
@@ -50,14 +50,14 @@ The overall structure of our implementation looks like this:
 
 [Picture]
 
-As before, [`PeerPoller`][link?] is responsible for managing the event queue. When the I/O event arrives, it picks the appropriate probe from the list of all probes, and calls its [`PeerProbe::handle_event()`][link?] method. This method does some necessary housekeeping, such as handling error situations, but its main responsibility is to drive the state machine forward with the following logic: 
+As before, [`PeerPoller`](https://github.com/tindandelion/rust-bittorrent-client/blob/0.1.3/src/downloader/peer_connector.rs#L71) is responsible for managing the event queue. When the I/O event arrives, it picks the appropriate probe from the list of all probes, and calls its [`PeerProbe::handle_event()`](https://github.com/tindandelion/rust-bittorrent-client/blob/0.1.3/src/downloader/peer_connector.rs#L218) method. This method does some necessary housekeeping, such as handling error situations, but its main responsibility is to drive the state machine forward with the following logic: 
 
-* It calls [`ProbeState::update()`][link?] that either succeeds with the new state, or returns an error; 
+* It calls [`ProbeState::update()`](https://github.com/tindandelion/rust-bittorrent-client/blob/0.1.3/src/downloader/peer_connector/probe_state.rs#L64) that either succeeds with the new state, or returns an error; 
 * on success, we record the returned value as a new state of the probe; 
 * if it fails with `ErrorKind::WouldBlock` that means we don't have enough data to move to the next state, so we stay at the current state until the new I/O event arrives; 
 * all other error results are considered unexpected errors, and the probe moves to the `ProbeState::Error` state.
 
-Finally, [`ProbeState`][link?] is an enum that represents the current state of the state machine. There are different ways of implementing states of a state machine in code, but I'd say an enum is probably a natural first choice. Its main method [ProbeState::update()][link?] is where we put all the logic of communicating with the peer and corresponding state transitions. State transition logic in general follows the following pattern: 
+Finally, [`ProbeState`](https://github.com/tindandelion/rust-bittorrent-client/blob/0.1.3/src/downloader/peer_connector/probe_state.rs#L29) is an enum that represents the current state of the state machine. There are different ways of implementing states of a state machine in code, but I'd say an enum is probably a natural first choice. Its main method [`ProbeState::update()`](https://github.com/tindandelion/rust-bittorrent-client/blob/0.1.3/src/downloader/peer_connector/probe_state.rs#L64) is where we put all the logic of communicating with the peer and corresponding state transitions. State transition logic in general follows the following pattern: 
 
 * Receive the data from the TCP channel; 
 * Check that data is correct and sensible; 
@@ -70,7 +70,7 @@ And that's probably it! Right?
 
 Unfortunately, the reality turned out to be more complicated. When I finished with the implementation of the state machine above, and looked at how it behaved, strange things started popping up: 
 
-* The [unit tests][link?] for `PeerConnector` became unstable: roughly, they failed in 10% of runs for some obscure reason; 
+* The [unit tests](https://github.com/tindandelion/rust-bittorrent-client/blob/0.1.3/src/downloader/peer_connector.rs#L274) for `PeerConnector` became unstable: roughly, they failed in 10% of runs for some obscure reason; 
 * I started to see the errors from the TCP layer that I hadn't seen before, and I had no explanation for them. 
 
 It took me a few hours of debugging to get down to the root of the issue. 
@@ -109,18 +109,27 @@ The second scenario we have to account for is the opposite. Sometimes, a single 
 
 What it means for us is that we have to be ready that when the I/O even occurs, only a part of the BitTorrent message will be available to read. In that case, our code has to read the available data, store it in the intermediate buffer, and then wait for the next I/O event to read the next portion, and do so until the entire BitTorrent message has been received. 
 
-In particular, that means we can't rely on [`Read::read_exact()`][link?] method when we work with TCP streams in non-blocking mode. Its implementation does not handle `EWOULDBLOCK` errors nicely: it just returns the error and loses all partial data it has read from the TCP stream. 
+In particular, that means we can't rely on [`Read::read_exact()`](https://doc.rust-lang.org/std/io/trait.Read.html#method.read_exact) method when we work with TCP streams in non-blocking mode. Its implementation does not handle `EWOULDBLOCK` errors nicely: it just returns the error and loses all partial data it has read from the TCP stream. 
 
-Fortunately, the [BitTorrent message format][link?] allows us to write a custom reading routine that can read the message contents in chunks, accumulating the partially read data in the intermediate buffer: 
+Fortunately, the [BitTorrent message format][bittorrent-message-format] allows us to write a custom reading routine that can read the message contents in chunks, accumulating the partially read data in the intermediate buffer: 
 
 * At the start, we expect to receive 4 bytes of data that contains the total message length; 
 * Once we have these 4 bytes, we know the total length of the incoming message, so we can keep accumulating the partial data in the buffer until the entire message is received; 
 * When we've accumulated the needed number of bytes, we can construct the `PeerMessage` value and return it to the caller. 
 
-That routine is now implemented in a [`MessageBuffer`][link?] helper type.
+That routine is now implemented in a [`MessageBuffer`](https://github.com/tindandelion/rust-bittorrent-client/blob/0.1.3/src/downloader/peer_connector/message_buffer.rs) helper type.
 
 # Trying it out 
 
+Okay, there's been quite a lot of changes in the code. Let's now try to run our main program and see the effects with our own eyes: 
+
 ![Application UI]({{ site.baseurl }}/assets/images/non-blocking-request-file/main.gif)
 
+Amazing! First of all, it works. Second, even with a naked eye we can see the improvement, when comparing with [the previous iteration results][prev-iteration]: now the file download starts almost instantly. Our efforts of going through the hurdles of programming non-blocking I/O have paid off! 
 
+# Next steps 
+
+TBD
+
+[bittorrent-message-format]: {{site.baseurl}}/{% post_url 2025-07-17-downloading-file-block %}#peer-message-format
+[prev-iteration]: {{site.baseurl}}/{% post_url 2026-02-20-connect-to-peers-in-parallel %}#does-it-work
