@@ -44,20 +44,22 @@ Now it's time to covert this conceptual picture into code.
 
 # Implementing the state machine
 
-In fact, we have implemented the majority of the state machine operation already, back when we [started to handle TCP connect][link?] in non-blocking mode. This code mostly remains unchanged, with a few refinements. The bulk of the changes goes into `ProbeState` enum, where we will put the state transition logic. 
+In fact, we have implemented the majority of the state machine operation already, back when we [started to handle TCP connect][connect-to-peers-in-parallel] in non-blocking mode. This code mostly remains unchanged, with a few refinements. The bulk of the changes goes into `ProbeState` enum, where we will put the state transition logic. 
 
-The overall structure of our implementation looks like this: 
+The overall structure of the implementation looks like this: 
 
-[Picture]
+![PeerConnector structure]({{ site.baseurl }}/assets/images/non-blocking-request-file/peer-connector-structure.svg)
 
 As before, [`PeerPoller`](https://github.com/tindandelion/rust-bittorrent-client/blob/0.1.3/src/downloader/peer_connector.rs#L71) is responsible for managing the event queue. When the I/O event arrives, it picks the appropriate probe from the list of all probes, and calls its [`PeerProbe::handle_event()`](https://github.com/tindandelion/rust-bittorrent-client/blob/0.1.3/src/downloader/peer_connector.rs#L218) method. This method does some necessary housekeeping, such as handling error situations, but its main responsibility is to drive the state machine forward with the following logic: 
 
 * It calls [`ProbeState::update()`](https://github.com/tindandelion/rust-bittorrent-client/blob/0.1.3/src/downloader/peer_connector/probe_state.rs#L64) that either succeeds with the new state, or returns an error; 
 * on success, we record the returned value as a new state of the probe; 
-* if it fails with `ErrorKind::WouldBlock` that means we don't have enough data to move to the next state, so we stay at the current state until the new I/O event arrives; 
+* if the call to `update()` fails with `ErrorKind::WouldBlock` that means we don't have enough data to move to the next state, so we stay in the current state until the new I/O event occurs; 
 * all other error results are considered unexpected errors, and the probe moves to the `ProbeState::Error` state.
 
-Finally, [`ProbeState`](https://github.com/tindandelion/rust-bittorrent-client/blob/0.1.3/src/downloader/peer_connector/probe_state.rs#L29) is an enum that represents the current state of the state machine. There are different ways of implementing states of a state machine in code, but I'd say an enum is probably a natural first choice. Its main method [`ProbeState::update()`](https://github.com/tindandelion/rust-bittorrent-client/blob/0.1.3/src/downloader/peer_connector/probe_state.rs#L64) is where we put all the logic of communicating with the peer and corresponding state transitions. State transition logic in general follows the following pattern: 
+Finally, [`ProbeState`](https://github.com/tindandelion/rust-bittorrent-client/blob/0.1.3/src/downloader/peer_connector/probe_state.rs#L29) is an enum that represents the current state of the state machine. There are different ways of implementing states of a state machine in code, but I'd say an enum is probably a natural first choice. Its main method [`ProbeState::update()`](https://github.com/tindandelion/rust-bittorrent-client/blob/0.1.3/src/downloader/peer_connector/probe_state.rs#L64) is where we put all the logic of communicating with the peer and corresponding state transitions. 
+
+State transition logic in general follows the following pattern: 
 
 * Receive the data from the TCP channel; 
 * Check that data is correct and sensible; 
@@ -68,25 +70,23 @@ And that's probably it! Right?
 
 # Well, it's not that simple
 
-Unfortunately, the reality turned out to be more complicated. When I finished with the implementation of the state machine above, and looked at how it behaved, strange things started popping up: 
+Unfortunately, the reality turned out to be more complicated. When I finished with the implementation of the state machine above, and looked closely at its behaviour, strange things started popping up: 
 
 * The [unit tests](https://github.com/tindandelion/rust-bittorrent-client/blob/0.1.3/src/downloader/peer_connector.rs#L274) for `PeerConnector` became unstable: roughly, they failed in 10% of runs for some obscure reason; 
 * I started to see the errors from the TCP layer that I hadn't seen before, and I had no explanation for them. 
 
-It took me a few hours of debugging to get down to the root of the issue. 
-
-You see, in fact we have not one, but two layers of events. On a higher level, we have the events that drive our state machine: basically, events of the types _"The message from the remote peer has arrived"_. That's the sort of events we talk about when we describe the behavior of the state machine. 
+It took me a few hours of debugging to get down to the root of the issue. You see, in fact we have not one, but two layers of events. On a higher level, we have the events that drive our state machine: basically, events of the types _"The message from the remote peer has arrived"_. That's the sort of events we talk about when we describe the behavior of the state machine. 
 
 On the low level of TCP sockets, we have I/O events, that basically say _"Some data is available to read from the TCP socket"_. The tricky part is that these two types of events don't map one-to-one. In particular, there's 2 distinct situations we need to tackle: 
 
-* An I/O event was fired when multiple messages have arrived; 
+* A single I/O event was fired when several messages have arrived; 
 * An I/O event was fired when only a part of the message has arrived. 
 
 Let's see when these situations occur and how to deal with them. 
 
 #### One I/O event for several BitTorrent messages
 
-I observed that situation only in the local tests, because it is predicated on the condition that data from the remote peer arrives very quickly. However, there's no guarantee that it can't happen "in production". The root cause was that the remote peer was sending us the response handshake and the `bitfield` so quickly, that they only generated one I/O event: 
+I observed this situation only in the local tests, because it is predicated on the condition that the data from the remote peer arrives very quickly. However, there's no guarantee that it can't happen "in production". The root cause was that the remote peer was sending us the response handshake and the `bitfield` so quickly, that they only generated one I/O event: 
 
 ![Receiving several messages with a single I/O event]({{ site.baseurl }}/assets/images/non-blocking-request-file/many-messages-single-event.svg)
 
@@ -102,12 +102,11 @@ Here, the state machine should go from `Handshaking` to `Unchoked` instantly, pa
 
 #### A BitTorrent message split across several I/O events 
 
-The second scenario we have to account for is the opposite. Sometimes, a single BitTorrent message can be split across several I/O events. In real life, I observed this situation occur quite regularly when we were receiving the `bitfield` message from the peer:  
+The second scenario we have to account for is the opposite. Sometimes, a single BitTorrent message can be split across several I/O events. In real life, I observed this situation occur quite regularly when we were expecting the `bitfield` message from the peer:  
 
 ![Single message spread across multiple I/O events]({{ site.baseurl }}/assets/images/non-blocking-request-file/single-message-many-events.svg)
 
-
-What it means for us is that we have to be ready that when the I/O even occurs, only a part of the BitTorrent message will be available to read. In that case, our code has to read the available data, store it in the intermediate buffer, and then wait for the next I/O event to read the next portion, and do so until the entire BitTorrent message has been received. 
+What it means for us is that we have to be ready that, when the I/O even occurs, only a part of the BitTorrent message is available to read. In that case, our code has to read the available data, store it in the intermediate buffer, and then wait for the next I/O event to read the next portion. It should keep doing that until the entire BitTorrent message has been received. 
 
 In particular, that means we can't rely on [`Read::read_exact()`](https://doc.rust-lang.org/std/io/trait.Read.html#method.read_exact) method when we work with TCP streams in non-blocking mode. Its implementation does not handle `EWOULDBLOCK` errors nicely: it just returns the error and loses all partial data it has read from the TCP stream. 
 
@@ -131,5 +130,6 @@ Amazing! First of all, it works. Second, even with a naked eye we can see the im
 
 TBD
 
+[connect-to-peers-in-parallel]: {{site.baseurl}}/{% post_url 2026-02-20-connect-to-peers-in-parallel %}
 [bittorrent-message-format]: {{site.baseurl}}/{% post_url 2025-07-17-downloading-file-block %}#peer-message-format
 [prev-iteration]: {{site.baseurl}}/{% post_url 2026-02-20-connect-to-peers-in-parallel %}#does-it-work
