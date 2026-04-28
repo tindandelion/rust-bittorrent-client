@@ -6,9 +6,6 @@ date: 2026-04-10
 
 TBD: Description
 
-# Lessons learned the hard way
-
-TBD
 
 # From a linear algorithm to a state machine
 
@@ -126,6 +123,22 @@ Okay, there's been quite a lot of changes in the code. Let's now try to run our 
 
 Amazing! First of all, it works. Second, even with a naked eye we can see the improvement, when comparing with [the previous iteration results][prev-iteration]: now the file download starts almost instantly. Our efforts of going through the hurdles of programming non-blocking I/O have paid off! 
 
+# Lessons learned the hard way
+
+[When I just started][non-blocking-io-reasoning] to explore working with non-blocking I/O, I contemplated a simpler solution that would use convenient blocking I/O and multiple threads, to achieve the same goal. Back then, I decided to embark on a non-blocking journey, mostly out of curiosity. Now, once we have a working solution with non-blocking I/O, the time has come to reflect on that decision, and ask the question: **was it worth it?**
+
+Well, to be completely honest, if it were a real-life project with real consequences, my answer would be resounding: 
+
+> No, using non-blocking I/O is not justified in this particular project. 
+
+It's true that non-blocking I/O gives us a useful tool to handle multiple TCP sockets at the same time with the minimal resource overhead. However, it comes with a significant cost from the developer effort: 
+
+* The code to handle socket communication becomes very hairy very fast. Instead of a simple linear sequence of instructions we have to deal with a state machine implementation, which is much more obscure and hard to understand for the developer. Even though the process of transforming the linear algorithm into a state machine is pretty straightforward on paper, the code we had to produce is quite hard to reason about, especially if we had to introduce it to a new developer, or even for ourselves when we come back to this code a few months later; 
+
+* Non-blocking I/O brings about a number of special cases that need to be handled, and it's much more prone to developer errors. The subtle bugs I reasoned about in the [previous section][prev-section] were quite subtle, and frankly, it was a bit of luck that I was able to notice them at all! I wonder how many bugs are still there, those that I haven't yet noticed. 
+
+To summarize, it was a very interesting experience from the perspective of learning to work with non-blocking I/O. However, for a real-world projects, I'd recommend to stick to a much simpler solution with multiple threads. Only if we have 100% confidence that multiple threads cause serious performance problems, should we contemplate switching to non-blocking I/O and suffer the increased costs of development and maintenance efforts. 
+
 # Next steps 
 
 TBD
@@ -133,3 +146,4 @@ TBD
 [connect-to-peers-in-parallel]: {{site.baseurl}}/{% post_url 2026-02-20-connect-to-peers-in-parallel %}
 [bittorrent-message-format]: {{site.baseurl}}/{% post_url 2025-07-17-downloading-file-block %}#peer-message-format
 [prev-iteration]: {{site.baseurl}}/{% post_url 2026-02-20-connect-to-peers-in-parallel %}#does-it-work
+[non-blocking-io-reasoning]: {{site.baseurl}}/{% post_url 2026-02-20-connect-to-peers-in-parallel %}#why-not-multiple-threads
