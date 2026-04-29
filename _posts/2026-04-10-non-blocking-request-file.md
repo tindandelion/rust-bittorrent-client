@@ -1,7 +1,7 @@
 ---
 layout: post
 title:  "Non-blocking I/O: Request the file from a peer"
-date: 2026-04-10 
+date: 2026-04-29 
 ---
 
 I continue the experiments with non-blocking I/O. In this section, I'm going to implement the entire initial message exchange with the remote peer in a non-blocking way. I'm also sharing a few [important considerations][lessons-learned-the-hard-way] I learned the hard way while considering non-blocking I/O in real-world applications. 
