@@ -32,8 +32,9 @@ Unfortunately, there's no way to know ahead of time which peer will unchoke us f
 
 The good part is that we already know the mechanism for working with multiple peers concurrently: non-blocking I/O. The bad part is that it will be trickier to implement than the straightforward blocking I/O approach.
 
-Still, let's buckle up and do it! Next, we’ll model the entire message exchange as a state machine that keeps multiple peers in play until one unchokes.
+Still, let's buckle up and do it! Next, we’ll [model the entire message exchange][next-post] as a state machine that keeps multiple peers in play until one unchokes.
 
 [downloading-file-block]: {{site.baseurl}}/{% post_url 2025-07-17-downloading-file-block %}
 [downloading-whole-piece]: {{site.baseurl}}/{% post_url 2025-07-19-download-the-whole-piece %}
 [connect-to-peers-in-parallel]: {{site.baseurl}}/{% post_url 2026-02-20-connect-to-peers-in-parallel %}
+[next-post]: {{site.baseurl}}/{% post_url 2026-04-10-non-blocking-request-file %}

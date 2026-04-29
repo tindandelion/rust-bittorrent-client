@@ -4,8 +4,9 @@ title:  "Non-blocking I/O: Request the file from a peer"
 date: 2026-04-10 
 ---
 
-TBD: Description
+I continue the experiments with non-blocking I/O. In this section, I'm going to implement the entire initial message exchange with the remote peer in a non-blocking way. I'm also sharing a few [important considerations][lessons-learned-the-hard-way] I've learned the hard way, considering using non-blocking I/O in real-world applications. 
 
+[*Version 0.1.3 on GitHub*][github-0.1.3]{: .no-github-icon}
 
 # From a linear algorithm to a state machine
 
@@ -141,9 +142,19 @@ To summarize, it was a very interesting experience from the perspective of learn
 
 # Next steps 
 
-TBD
+So, with that gloomy conclusion, should I scratch all that code and retreat to using blocking I/O and multiple threads? Not really. Non-blocking I/O has very tempting appeals when it comes to optimizing machine resources, and over time the development community came up with useful techniques and tools to alleviate its inherent difficulties. 
+
+In particular, developers came up with the _asynchronous model_ of programming. Asynchronous programming, when it's also supported by the language syntax and runtime, alleviate a lot of difficulties related to programming non-blocking I/O. In particular, _async/await_ syntax that's quite common in modern programming languages, makes asynchronous code read almost like regular synchronous code, while still being non-blocking. 
+
+Async/await syntax has come come tu Rust as well, since version 1.39. So as the next step in my learning, I'm going to take advantage of that syntax to simplify code, and also explore some inner details of asynchronous programming in modern Rust. Let's go! 
+
+
+
+[*Version 0.1.3 on GitHub*][github-0.1.3]{: .no-github-icon}
 
 [connect-to-peers-in-parallel]: {{site.baseurl}}/{% post_url 2026-02-20-connect-to-peers-in-parallel %}
 [bittorrent-message-format]: {{site.baseurl}}/{% post_url 2025-07-17-downloading-file-block %}#peer-message-format
 [prev-iteration]: {{site.baseurl}}/{% post_url 2026-02-20-connect-to-peers-in-parallel %}#does-it-work
 [non-blocking-io-reasoning]: {{site.baseurl}}/{% post_url 2026-02-20-connect-to-peers-in-parallel %}#why-not-multiple-threads
+[github-0.1.3]: https://github.com/tindandelion/rust-bittorrent-client/tree/0.1.3
+[lessons-learned-the-hard-way]: {{site.baseurl}}/{% post_url 2026-04-10-non-blocking-request-file %}#lessons-learned-the-hard-way
