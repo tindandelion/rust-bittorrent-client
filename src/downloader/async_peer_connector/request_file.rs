@@ -10,7 +10,7 @@ use crate::types::{PeerId, Sha1};
 use super::probe_result::{ProbeError, ProbeResult};
 
 #[instrument(skip_all, fields(addr=%addr), err)]
-pub async fn connect_to_peer(
+pub async fn request_file_from_peer(
     addr: SocketAddr,
     info_hash: Sha1,
     peer_id: PeerId,

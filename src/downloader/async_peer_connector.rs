@@ -14,8 +14,8 @@ use std::{
 };
 use tracing::error;
 
-mod connect_to_peer;
 mod probe_result;
+mod request_file;
 mod waker;
 
 use probe_result::ProbeResult;
@@ -88,7 +88,7 @@ impl<'a> PeerPoller<'a> {
         let mut ready_queue: Vec<usize> = vec![];
 
         for (id, addr) in peer_addrs.into_iter().enumerate() {
-            let future = connect_to_peer::connect_to_peer(
+            let future = request_file::request_file_from_peer(
                 addr,
                 connector.info_hash,
                 connector.peer_id,
