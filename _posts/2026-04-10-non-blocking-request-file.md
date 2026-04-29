@@ -4,7 +4,7 @@ title:  "Non-blocking I/O: Request the file from a peer"
 date: 2026-04-10 
 ---
 
-I continue the experiments with non-blocking I/O. In this section, I'm going to implement the entire initial message exchange with the remote peer in a non-blocking way. I'm also sharing a few [important considerations][lessons-learned-the-hard-way] I've learned the hard way, considering using non-blocking I/O in real-world applications. 
+I continue the experiments with non-blocking I/O. In this section, I'm going to implement the entire initial message exchange with the remote peer in a non-blocking way. I'm also sharing a few [important considerations][lessons-learned-the-hard-way] I learned the hard way while considering non-blocking I/O in real-world applications. 
 
 [*Version 0.1.3 on GitHub*][github-0.1.3]{: .no-github-icon}
 
@@ -22,23 +22,23 @@ Because I'm not looking for easy ways in this project, let's go down that route 
 
 # Modeling the state machine
 
-Let's one more time take a look at the message exchange we need to do with the peer before we can start downloading file data: 
+Let's take one more look at the message exchange we need to complete with the peer before we can start downloading file data: 
 
 ![Request file message exchange]({{ site.baseurl }}/assets/images/non-blocking-request-file/request-file-sequence.svg)
 
-There's a few waiting points here, all related to receiving the data from the remote peer: 
+There are a few waiting points here, all related to receiving data from the remote peer: 
 
 * TCP connection to be established; 
 * the handshake message from the remote peer; 
 * the `bitfield` and `unchoke` messages. 
 
-To be precise, _sending messages_ is also a non-blocking operation. If the application tries to send vast amounts of data over TCP channel, it could receive `EWOULDBLOCK` on a write operation as well, when the TCP channel can't keep up. However, in our case we only send tiny bits of data, so for sake of simplifying the picture, I would like to send operations as if they were blocking. It's the receiving part that's our primary focus. 
+To be precise, _sending messages_ is also a non-blocking operation. If the application tries to send vast amounts of data over a TCP channel, it could receive `EWOULDBLOCK` on a write operation as well, when the channel can't keep up. However, in our case we only send tiny bits of data, so for the sake of simplifying the picture, I would like to treat send operations as if they were blocking. It's the receiving part that's our primary focus. 
 
 With all that said, here's the state diagram that represents the entire message interchange, from connecting to receiving the `unchoke` message: 
 
 ![Probe state diagram]({{ site.baseurl }}/assets/images/non-blocking-request-file/probe-state-diagram.svg)
 
-Now it's time to covert this conceptual picture into code.
+Now it's time to convert this conceptual picture into code.
 
 # Implementing the state machine
 
@@ -57,7 +57,7 @@ As before, [`PeerPoller`](https://github.com/tindandelion/rust-bittorrent-client
 
 Finally, [`ProbeState`](https://github.com/tindandelion/rust-bittorrent-client/blob/0.1.3/src/downloader/peer_connector/probe_state.rs#L29) is an enum that represents the current state of the state machine. There are different ways of implementing states of a state machine in code, but I'd say an enum is probably a natural first choice. Its main method [`ProbeState::update()`](https://github.com/tindandelion/rust-bittorrent-client/blob/0.1.3/src/downloader/peer_connector/probe_state.rs#L64) is where we put all the logic of communicating with the peer and corresponding state transitions. 
 
-State transition logic in general follows the following pattern: 
+In general, state transition logic follows this pattern: 
 
 * Receive the data from the TCP channel; 
 * Check that data is correct and sensible; 
@@ -75,7 +75,7 @@ Unfortunately, the reality turned out to be more complicated. When I finished wi
 
 It took me a few hours of debugging to get down to the root of the issue. You see, in fact we have not one, but two layers of events. On a higher level, we have the events that drive our state machine: basically, events of the types _"The message from the remote peer has arrived"_. That's the sort of events we talk about when we describe the behavior of the state machine. 
 
-On the low level of TCP sockets, we have I/O events, that basically say _"Some data is available to read from the TCP socket"_. The tricky part is that these two types of events don't map one-to-one. In particular, there's 2 distinct situations we need to tackle: 
+On the lower level of TCP sockets, we have I/O events that basically say _"Some data is available to read from the TCP socket"_. The tricky part is that these two types of events don't map one-to-one. In particular, there are two distinct situations we need to tackle: 
 
 * A single I/O event was fired when several messages have arrived; 
 * An I/O event was fired when only a part of the message has arrived. 
@@ -88,7 +88,7 @@ I observed this situation only in the local tests, because it is predicated on t
 
 ![Receiving several messages with a single I/O event]({{ site.baseurl }}/assets/images/non-blocking-request-file/many-messages-single-event.svg)
 
-What happens in this scenario if we only advance our state machine by I/O events? Well, that event makes the state machine transition from `Handshaking` to `WaitingForBitfiield` state as expected, but then it gets stuck there. Even though the bitfield data is already available in TCP socket, we never receive a separate event for it, so the state machine never gets to process that data! It's stuck in the `WaitingForBitfield` state forever. 
+What happens in this scenario if we only advance our state machine by I/O events? Well, that event makes the state machine transition from `Handshaking` to `WaitingForBitfield` as expected, but then it gets stuck there. Even though the bitfield data is already available in the TCP socket, we never receive a separate event for it, so the state machine never gets to process that data. It's stuck in the `WaitingForBitfield` state forever. 
 
 The remedy for this situation is that we need to be proactive when reading data from the TCP socket: as soon as the I/O event has arrived, we should try to advance the state machine as far as possible, unless the read operation results in `EWOULDBLOCK` error. Only when we receive that error code, should we stop and wait for the next I/O event to occur. 
 
@@ -104,9 +104,9 @@ The second scenario we have to account for is the opposite. Sometimes, a single 
 
 ![Single message spread across multiple I/O events]({{ site.baseurl }}/assets/images/non-blocking-request-file/single-message-many-events.svg)
 
-What it means for us is that we have to be ready that, when the I/O even occurs, only a part of the BitTorrent message is available to read. In that case, our code has to read the available data, store it in the intermediate buffer, and then wait for the next I/O event to read the next portion. It should keep doing that until the entire BitTorrent message has been received. 
+What it means for us is that we have to be ready for cases where, when the I/O event occurs, only a part of the BitTorrent message is available to read. In that case, our code has to read the available data, store it in the intermediate buffer, and then wait for the next I/O event to read the next portion. It should keep doing that until the entire BitTorrent message has been received. 
 
-In particular, that means we can't rely on [`Read::read_exact()`](https://doc.rust-lang.org/std/io/trait.Read.html#method.read_exact) method when we work with TCP streams in non-blocking mode. Its implementation does not handle `EWOULDBLOCK` errors nicely: it just returns the error and loses all partial data it has read from the TCP stream. 
+In particular, that means we can't rely on [`Read::read_exact()`](https://doc.rust-lang.org/std/io/trait.Read.html#method.read_exact) method when we work with TCP streams in non-blocking mode. Its implementation does not handle `EWOULDBLOCK` errors in a way that fits this use case: it returns an error, and the partially read bytes are not guaranteed to be usable for continuing message parsing. 
 
 Fortunately, the [BitTorrent message format][bittorrent-message-format] allows us to write a custom reading routine that can read the message contents in chunks, accumulating the partially read data in the intermediate buffer: 
 
@@ -122,7 +122,7 @@ Okay, there's been quite a lot of changes in the code. Let's now try to run our 
 
 ![Application UI]({{ site.baseurl }}/assets/images/non-blocking-request-file/main.gif)
 
-Amazing! First of all, it works. Second, even with a naked eye we can see the improvement, when comparing with [the previous iteration results][prev-iteration]: now the file download starts almost instantly. Our efforts of going through the hurdles of programming non-blocking I/O have paid off! 
+Amazing! First of all, it works. Second, even with the naked eye we can see the improvement when comparing with [the previous iteration results][prev-iteration]: now the file download starts almost instantly. Our efforts to get through the hurdles of programming non-blocking I/O have paid off! 
 
 # Lessons learned the hard way
 
@@ -138,19 +138,18 @@ It's true that non-blocking I/O gives us a useful tool to handle multiple TCP so
 
 * Non-blocking I/O brings about a number of special cases that need to be handled, and it's much more prone to developer errors. The subtle bugs I reasoned about in the [previous section][prev-section] were quite subtle, and frankly, it was a bit of luck that I was able to notice them at all! I wonder how many bugs are still there, those that I haven't yet noticed. 
 
-To summarize, it was a very interesting experience from the perspective of learning to work with non-blocking I/O. However, for a real-world projects, I'd recommend to stick to a much simpler solution with multiple threads. Only if we have 100% confidence that multiple threads cause serious performance problems, should we contemplate switching to non-blocking I/O and suffer the increased costs of development and maintenance efforts. 
+To summarize, it was a very interesting experience from the perspective of learning to work with non-blocking I/O. However, for real-world projects, I'd recommend sticking to a much simpler solution with multiple threads. Only if we have 100% confidence that multiple threads cause serious performance problems should we contemplate switching to non-blocking I/O and accept the increased development and maintenance costs. 
 
 # Next steps 
 
 So, with that gloomy conclusion, should I scratch all that code and retreat to using blocking I/O and multiple threads? Not really. Non-blocking I/O has very tempting appeals when it comes to optimizing machine resources, and over time the development community came up with useful techniques and tools to alleviate its inherent difficulties. 
 
-In particular, developers came up with the _asynchronous model_ of programming. Asynchronous programming, when it's also supported by the language syntax and runtime, alleviate a lot of difficulties related to programming non-blocking I/O. In particular, _async/await_ syntax that's quite common in modern programming languages, makes asynchronous code read almost like regular synchronous code, while still being non-blocking. 
+In particular, developers came up with the _asynchronous model_ of programming. Asynchronous programming, when it's supported by language syntax and an async runtime, alleviates a lot of difficulties related to non-blocking I/O. In particular, _async/await_ syntax, which is quite common in modern programming languages, makes asynchronous code read almost like regular synchronous code while still being non-blocking. 
 
-Async/await syntax has come come tu Rust as well, since version 1.39. So as the next step in my learning, I'm going to take advantage of that syntax to simplify code, and also explore some inner details of asynchronous programming in modern Rust. Let's go! 
-
-
+Async/await syntax came to Rust as well, in version 1.39. So as the next step in my learning, I'm going to take advantage of that syntax to simplify the code and also explore some inner details of asynchronous programming in modern Rust. Let's go!
 
 [*Version 0.1.3 on GitHub*][github-0.1.3]{: .no-github-icon}
+
 
 [connect-to-peers-in-parallel]: {{site.baseurl}}/{% post_url 2026-02-20-connect-to-peers-in-parallel %}
 [bittorrent-message-format]: {{site.baseurl}}/{% post_url 2025-07-17-downloading-file-block %}#peer-message-format
