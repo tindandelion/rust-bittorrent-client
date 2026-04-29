@@ -1,6 +1,6 @@
 use std::io;
 
-use crate::downloader::peer_comm::PeerMessage;
+use bt_client::downloader::peer_comm::PeerMessage;
 
 pub struct MessageBuffer {
     buffer: Vec<u8>,

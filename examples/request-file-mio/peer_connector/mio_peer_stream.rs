@@ -6,10 +6,10 @@ use std::{
 
 use tracing::{Level, instrument, trace};
 
-use crate::downloader::{
-    peer_comm::{HandshakeMessage, PeerMessage},
-    peer_connector::{message_buffer::MessageBuffer, probe_state::PeerStream},
-};
+use bt_client::downloader::peer_comm::{HandshakeMessage, PeerMessage};
+
+use crate::peer_connector::message_buffer::MessageBuffer;
+use crate::peer_connector::probe_state::PeerStream;
 
 pub struct MioPeerStream {
     pub inner: mio::net::TcpStream,

@@ -5,7 +5,7 @@ use std::{
 
 use tracing::{error, trace, warn};
 
-use crate::{
+use bt_client::{
     downloader::peer_comm::{HandshakeMessage, PeerMessage},
     types::{PeerId, Sha1},
 };

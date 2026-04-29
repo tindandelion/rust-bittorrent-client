@@ -1,23 +1,25 @@
-mod message_buffer;
-mod mio_peer_stream;
-mod probe_state;
-use std::{collections::HashMap, io, net::SocketAddr, time::Duration};
-
-use mio::{Events, Poll, Token, event::Event};
-use tracing::{Span, debug, debug_span, error, warn};
-
+use super::PeerChannel;
 use crate::{
-    downloader::{
-        PeerChannel,
-        peer_connector::{
-            mio_peer_stream::MioPeerStream,
-            probe_state::{ProbeContext, ProbeError},
-        },
-    },
+    async_tcp,
     types::{PeerId, Sha1},
 };
+use std::{
+    collections::HashMap,
+    io,
+    net::SocketAddr,
+    pin::Pin,
+    sync::{Arc, Mutex},
+    task::{Context, Poll, Waker},
+    time::Duration,
+};
+use tracing::error;
 
-use probe_state::ProbeState;
+mod connect_to_peer;
+mod probe_result;
+mod waker;
+
+use probe_result::ProbeResult;
+use waker::TaskWaker;
 
 pub struct PeerConnector<'a> {
     info_hash: Sha1,
@@ -59,7 +61,7 @@ impl<'a> PeerConnector<'a> {
         self,
         peer_addrs: impl IntoIterator<Item = SocketAddr>,
     ) -> impl Iterator<Item = PeerChannel> {
-        PeerPoller::new(peer_addrs, self).expect("Failed to create peer iterator")
+        PeerPoller::new(peer_addrs, self)
     }
 
     fn report_progress(&mut self, addr: SocketAddr) {
@@ -68,107 +70,91 @@ impl<'a> PeerConnector<'a> {
     }
 }
 
+struct PeerProbe {
+    pub addr: SocketAddr,
+    pub future: Pin<Box<dyn Future<Output = ProbeResult<PeerChannel>>>>,
+}
+
 struct PeerPoller<'a> {
-    probes: HashMap<Token, PeerProbe>,
-    poll: Poll,
+    ready_queue: Arc<Mutex<Vec<usize>>>,
+    pending_probes: HashMap<usize, PeerProbe>,
+    connected_channels: Vec<PeerChannel>,
     connector: PeerConnector<'a>,
 }
 
 impl<'a> PeerPoller<'a> {
-    fn new(
-        peer_addrs: impl IntoIterator<Item = SocketAddr>,
-        connector: PeerConnector<'a>,
-    ) -> io::Result<Self> {
-        let mut probes: HashMap<Token, PeerProbe> = HashMap::new();
-        let mut poll = Poll::new()?;
+    fn new(peer_addrs: impl IntoIterator<Item = SocketAddr>, connector: PeerConnector<'a>) -> Self {
+        let mut probes: HashMap<usize, PeerProbe> = HashMap::new();
+        let mut ready_queue: Vec<usize> = vec![];
 
-        for (index, addr) in peer_addrs.into_iter().enumerate() {
-            let token = Token(index);
-            let context = ProbeContext {
-                peer_id: connector.peer_id,
-                info_hash: connector.info_hash,
-                piece_count: connector.piece_count,
+        for (id, addr) in peer_addrs.into_iter().enumerate() {
+            let future = connect_to_peer::connect_to_peer(
+                addr,
+                connector.info_hash,
+                connector.peer_id,
+                connector.piece_count,
+            );
+            let probe = PeerProbe {
+                addr,
+                future: Box::pin(future),
             };
-            let mut probe = PeerProbe::connect(token, addr, context)?;
-            probe.register(&mut poll)?;
-            probes.insert(token, probe);
+            ready_queue.push(id);
+            probes.insert(id, probe);
         }
 
-        Ok(Self {
-            probes,
-            poll,
+        Self {
+            pending_probes: probes,
             connector,
-        })
+            ready_queue: Arc::new(Mutex::new(ready_queue)),
+            connected_channels: vec![],
+        }
     }
 
     fn wait_for_connected_channel(&mut self) -> io::Result<Option<PeerChannel>> {
-        let mut events = mio::Events::with_capacity(1024);
         loop {
-            if let Some(channel) = self.get_connected_channel()? {
+            self.poll_ready_probes();
+
+            if let Some(channel) = self.connected_channels.pop() {
                 return Ok(Some(channel));
             }
 
-            self.poll.poll(&mut events, Some(self.connector.timeout))?;
-            if events.is_empty() {
+            if self.pending_probes.is_empty() {
                 return Ok(None);
             }
 
-            self.update_probe_states(&events);
-            self.remove_errored_probes()?;
-            if self.probes.is_empty() {
+            if !async_tcp::poll_reactor(Some(self.connector.timeout))? {
                 return Ok(None);
             }
         }
     }
 
-    fn remove_errored_probes(&mut self) -> io::Result<()> {
-        let errored_tokens: Vec<Token> = self
-            .probes
-            .iter()
-            .filter(|(_, probe)| matches!(probe.state, ProbeState::Error))
-            .map(|(token, _)| *token)
-            .collect();
+    fn poll_ready_probes(&mut self) {
+        let mut ready_probes: Vec<(usize, ProbeResult<PeerChannel>)> = vec![];
+        {
+            let mut ready_queue = self.ready_queue.lock().unwrap();
+            while let Some(id) = ready_queue.pop() {
+                let waker = Waker::from(Arc::new(TaskWaker::new(id, self.ready_queue.clone())));
+                let mut context = Context::from_waker(&waker);
+                let probe = self
+                    .pending_probes
+                    .get_mut(&id)
+                    .unwrap_or_else(|| panic!("Unexpected id in received event: {id}"));
 
-        for token in errored_tokens {
-            if let Some(mut probe) = self.probes.remove(&token) {
-                self.unregister_probe(&mut probe)?;
+                if let Poll::Ready(res) = probe.future.as_mut().poll(&mut context) {
+                    ready_probes.push((id, res));
+                }
             }
         }
-        Ok(())
-    }
 
-    fn get_connected_channel(&mut self) -> io::Result<Option<PeerChannel>> {
-        let connected_probe_token = self
-            .probes
-            .iter()
-            .find(|(_, probe)| probe.state.is_connected())
-            .map(|(token, _)| *token);
+        for (id, result) in ready_probes {
+            self.pending_probes.remove(&id).inspect(|probe| {
+                self.connector.report_progress(probe.addr);
+            });
 
-        if let Some(token) = connected_probe_token {
-            let mut probe = self.probes.remove(&token).unwrap();
-            self.unregister_probe(&mut probe)?;
-
-            probe.into_peer_channel().map(Some)
-        } else {
-            Ok(None)
+            if let Ok(channel) = result {
+                self.connected_channels.push(channel);
+            }
         }
-    }
-
-    fn update_probe_states(&mut self, events: &Events) {
-        for event in events.iter() {
-            let token = event.token();
-            let probe = self
-                .probes
-                .get_mut(&token)
-                .unwrap_or_else(|| panic!("Unexpected token in received event: {token:?}"));
-            probe.handle_event(event);
-        }
-    }
-
-    fn unregister_probe(&mut self, probe: &mut PeerProbe) -> io::Result<()> {
-        probe.unregister(&mut self.poll)?;
-        self.connector.report_progress(probe.addr);
-        Ok(())
     }
 }
 
@@ -179,94 +165,6 @@ impl<'a> Iterator for PeerPoller<'a> {
         self.wait_for_connected_channel()
             .inspect_err(|err| error!(%err, "error while processing I/O events"))
             .expect("error while processing I/O events")
-    }
-}
-
-struct PeerProbe {
-    token: Token,
-    stream: MioPeerStream,
-    state: ProbeState,
-    addr: SocketAddr,
-    span: Span,
-}
-
-impl PeerProbe {
-    fn connect(token: Token, addr: SocketAddr, context: ProbeContext) -> io::Result<Self> {
-        let span = debug_span!("connect_to_peer", addr = %addr);
-        let stream = span.in_scope(|| {
-            debug!("initiating connection");
-            mio::net::TcpStream::connect(addr).map(MioPeerStream::new)
-        })?;
-        Ok(Self {
-            token,
-            stream,
-            state: ProbeState::Connecting(context),
-            addr,
-            span,
-        })
-    }
-
-    fn register(&mut self, poll: &mut Poll) -> io::Result<()> {
-        poll.registry().register(
-            &mut self.stream.inner,
-            self.token,
-            mio::Interest::WRITABLE | mio::Interest::READABLE,
-        )?;
-        Ok(())
-    }
-
-    fn handle_event(&mut self, event: &Event) {
-        let _guard = self.span.enter();
-
-        if event.is_error() {
-            match self.stream.inner.take_error() {
-                Ok(Some(err)) => debug!(?err, "probe error: I/O error"),
-                Ok(None) => {}
-                Err(err) => debug!(?err, "failed to take I/O error"),
-            }
-            self.state = ProbeState::Error;
-            return;
-        }
-
-        loop {
-            match self.state.update(&mut self.stream) {
-                Ok(next_state) => {
-                    self.state = next_state;
-                    if self.state.is_terminal() {
-                        break;
-                    }
-                }
-                Err(ProbeError::IO(err)) if err.kind() == io::ErrorKind::WouldBlock => {
-                    break;
-                }
-                Err(ProbeError::IO(err)) => {
-                    debug!(?err, "probe error: I/O error");
-                    self.state = ProbeState::Error;
-                    break;
-                }
-                Err(err) => {
-                    warn!(?err, "probe error");
-                    self.state = ProbeState::Error;
-                    break;
-                }
-            }
-        }
-    }
-
-    fn into_peer_channel(self) -> io::Result<PeerChannel> {
-        match self.state {
-            ProbeState::Unchoked(remote_id) => {
-                let std_stream: std::net::TcpStream = self.stream.inner.into();
-                std_stream.set_nonblocking(false)?;
-
-                PeerChannel::from_stream(std_stream, remote_id)
-            }
-            _ => Err(std::io::Error::other("peer did not unchoke")),
-        }
-    }
-
-    fn unregister(&mut self, poll: &mut Poll) -> io::Result<()> {
-        poll.registry().deregister(&mut self.stream.inner)
     }
 }
 
@@ -287,10 +185,13 @@ mod tests {
         let peer_addr = remote_peer.start();
 
         let connector = make_connector();
-        let channel = connector.connect(vec![peer_addr]).next().unwrap();
+        let channel = connector
+            .connect(vec![peer_addr])
+            .next()
+            .expect("failed to connect to peer");
 
-        assert_eq!(channel.peer_addr(), peer_addr);
-        assert_eq!(channel.remote_id(), remote_peer.peer_id());
+        assert_eq!(peer_addr, channel.peer_addr());
+        assert_eq!(remote_peer.peer_id(), channel.remote_id());
     }
 
     #[test]
@@ -436,7 +337,7 @@ mod tests {
                 let handshake = HandshakeMessage::new(incoming_info_hash, peer_id);
                 handshake.send(&mut stream).unwrap();
                 let bitfield = vec![0b11111111, 0b11111111];
-                send_bitfield_in_portions(&mut stream, bitfield).unwrap();
+                send_bitfield_in_chunks(&mut stream, bitfield).unwrap();
                 let msg = PeerMessage::receive(&mut stream).unwrap();
                 if msg != PeerMessage::Interested {
                     panic!("expected interested message, received: {:?}", msg);
@@ -447,7 +348,7 @@ mod tests {
         }
     }
 
-    fn send_bitfield_in_portions(stream: &mut impl io::Write, bitfield: Vec<u8>) -> io::Result<()> {
+    fn send_bitfield_in_chunks(stream: &mut impl io::Write, bitfield: Vec<u8>) -> io::Result<()> {
         let msg = PeerMessage::Bitfield(bitfield);
         let mut buffer = vec![];
         msg.send(&mut buffer)?;

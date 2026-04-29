@@ -1,3 +1,4 @@
+mod async_tcp;
 pub mod downloader;
 pub mod ratatui_ui;
 pub mod result;
@@ -5,11 +6,10 @@ pub mod torrent;
 mod tracker;
 pub mod types;
 mod util;
-
 use tracing::{error, info};
 
 use crate::{
-    downloader::{PeerChannel, peer_connector::PeerConnector},
+    downloader::{PeerChannel, async_peer_connector::PeerConnector},
     ratatui_ui::AppEvent,
     tracker::AnnounceRequest,
     types::PeerId,

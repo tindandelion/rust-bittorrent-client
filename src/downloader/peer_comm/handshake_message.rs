@@ -1,6 +1,9 @@
 use std::io;
 
-use crate::types::{PeerId, Sha1};
+use crate::{
+    downloader::peer_comm::AsyncReadExact,
+    types::{PeerId, Sha1},
+};
 
 const PROTOCOL_ID: &[u8; 19] = b"BitTorrent protocol";
 
@@ -12,6 +15,16 @@ pub struct HandshakeMessage {
     reserved: [u8; 8],
     pub info_hash: Sha1,
     pub peer_id: PeerId,
+}
+
+impl std::fmt::Display for HandshakeMessage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "HandshakeMessage(info_hash: {}, peer_id: {})",
+            self.info_hash, self.peer_id
+        )
+    }
 }
 
 impl HandshakeMessage {
@@ -31,6 +44,22 @@ impl HandshakeMessage {
         let mut instance = Self::default();
         let buffer_ptr = &mut instance as *mut Self as *mut [u8; size_of::<Self>()];
         unsafe { src.read_exact(&mut *buffer_ptr)? };
+        if instance.pstrlen as usize != PROTOCOL_ID.len() {
+            return Err(io::Error::other(format!(
+                "invalid pstrlen: {}",
+                instance.pstrlen
+            )));
+        }
+        if &instance.pstr != PROTOCOL_ID {
+            return Err(io::Error::other("invalid protocol id"));
+        }
+        Ok(instance)
+    }
+
+    pub async fn receive_async(src: &mut impl AsyncReadExact) -> io::Result<Self> {
+        let mut instance = Self::default();
+        let buffer_ptr = &mut instance as *mut Self as *mut [u8; size_of::<Self>()];
+        unsafe { src.read_exact(&mut *buffer_ptr).await? };
         if instance.pstrlen as usize != PROTOCOL_ID.len() {
             return Err(io::Error::other(format!(
                 "invalid pstrlen: {}",
