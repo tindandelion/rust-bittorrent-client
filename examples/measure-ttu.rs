@@ -1,7 +1,7 @@
 use std::time::{Duration, Instant};
 
 use bt_client::Torrent;
-use bt_client::downloader::peer_connector::PeerConnector;
+use bt_client::downloader::async_peer_connector::PeerConnector;
 use bt_client::result::Result;
 use bt_client::types::PeerId;
 use rand::seq::SliceRandom;
