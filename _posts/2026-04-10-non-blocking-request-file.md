@@ -13,7 +13,7 @@ I continue the experiments with non-blocking I/O. In this section, I'm going to 
 When working with non-blocking I/O, we need to change the way we think about our program flow. In the blocking mode, the program would look like a linear sequence of instructions. That's no longer true in non-blocking mode. Conversely, we need to approach the algorithm that we implement as a _state machine:_ 
 
 * the machine's states represent the points where we wait for data to be available from the underlying resource; 
-* the bits of business logic are split across different state transitions; 
+* the bits of business logic (algorithm steps) are split across different state transitions; 
 * the entire execution is driven by I/O events coming from the resource via the event queue. 
 
 It sounds rather involved, but transforming a sequential algorithm into a state machine is not that hard, at least in concept. The annoying part is the implementation, though: it requires quite a bit of repetitive code, and the program structure becomes more obscure. There are also a few pesky low-level details that need to be taken care of. 
@@ -26,13 +26,13 @@ Let's take one more look at the message exchange we need to complete with the pe
 
 ![Request file message exchange]({{ site.baseurl }}/assets/images/non-blocking-request-file/request-file-sequence.svg)
 
-There are a few waiting points here, all related to receiving data from the remote peer: 
+There are a few waiting points here, all related to _receiving responses_ from the remote peer: 
 
 * TCP connection to be established; 
 * the handshake message from the remote peer; 
 * the `bitfield` and `unchoke` messages. 
 
-To be precise, _sending messages_ is also a non-blocking operation. If the application tries to send vast amounts of data over a TCP channel, it could receive `EWOULDBLOCK` on a write operation as well, when the channel can't keep up. However, in our case we only send tiny bits of data, so for the sake of simplifying the picture, I would like to treat send operations as if they were blocking. It's the receiving part that's our primary focus. 
+To be precise, _sending messages_ is also a non-blocking operation. If the application tries to send vast amounts of data over a TCP channel, it could receive `EWOULDBLOCK` error on a write operation as well, when the channel can't keep up. However, in our case we only send tiny bits of data, so for the sake of simplifying the picture, I would like to treat send operations as if they were blocking. It's the receiving part that's our primary focus. 
 
 With all that said, here's the state diagram that represents the entire message interchange, from connecting to receiving the `unchoke` message: 
 
@@ -73,7 +73,7 @@ Unfortunately, the reality turned out to be more complicated. When I finished wi
 * The [unit tests](https://github.com/tindandelion/rust-bittorrent-client/blob/0.1.3/src/downloader/peer_connector.rs#L274) for `PeerConnector` became unstable: roughly, they failed in 10% of runs for some obscure reason; 
 * I started to see the errors from the TCP layer that I hadn't seen before, and I had no explanation for them. 
 
-It took me a few hours of debugging to get down to the root of the issue. You see, in fact we have not one, but two layers of events. On a higher level, we have the events that drive our state machine: basically, events of the types _"The message from the remote peer has arrived"_. That's the sort of events we talk about when we describe the behavior of the state machine. 
+It took me a few hours of debugging to get down to the root of the issue. You see, in fact we have not one, but **two layers of events**. On a higher level, we have the state machine events to drive its transitions: basically, events of the types _"The message from the remote peer has arrived"_. That's the sort of events we talk about when we describe the behavior of the state machine. 
 
 On the lower level of TCP sockets, we have I/O events that basically say _"Some data is available to read from the TCP socket"_. The tricky part is that these two types of events don't map one-to-one. In particular, there are two distinct situations we need to tackle: 
 
@@ -84,7 +84,9 @@ Let's see when these situations occur and how to deal with them.
 
 #### One I/O event for several BitTorrent messages
 
-I observed this situation only in the local tests, because it is predicated on the condition that the data from the remote peer arrives very quickly. However, there's no guarantee that it can't happen "in production". The root cause was that the remote peer was sending us the response handshake and the `bitfield` so quickly, that they only generated one I/O event: 
+I observed this situation only in the local tests, because it is predicated on the condition that the data from the remote peer arrives very quickly. However, there's no guarantee that it can't happen "in production". 
+
+The root cause was that the remote peer was sending us the response handshake and the `bitfield` so quickly, that they only generated one I/O event: 
 
 ![Receiving several messages with a single I/O event]({{ site.baseurl }}/assets/images/non-blocking-request-file/many-messages-single-event.svg)
 
@@ -136,7 +138,7 @@ It's true that non-blocking I/O gives us a useful tool to handle multiple TCP so
 
 * The code to handle socket communication becomes very hairy very fast. Instead of a simple linear sequence of instructions we have to deal with a state machine implementation, which is much more obscure and hard to understand for the developer. Even though the process of transforming the linear algorithm into a state machine is pretty straightforward on paper, the code we had to produce is quite hard to reason about, especially if we had to introduce it to a new developer, or even for ourselves when we come back to this code a few months later; 
 
-* Non-blocking I/O brings about a number of special cases that need to be handled, and it's much more prone to developer errors. The subtle bugs I reasoned about in the [previous section][prev-section] were quite subtle, and frankly, it was a bit of luck that I was able to notice them at all! I wonder how many bugs are still there, those that I haven't yet noticed. 
+* Non-blocking I/O brings about a number of special cases that need to be handled, and it's much more prone to developer errors. The subtle bugs I reasoned about in the [previous section](#well-its-not-that-simple) were quite subtle, and frankly, it was a bit of luck that I was able to notice them at all! I wonder how many bugs are still there, those that I haven't yet noticed. 
 
 To summarize, it was a very interesting experience from the perspective of learning to work with non-blocking I/O. However, for real-world projects, I'd recommend sticking to a much simpler solution with multiple threads. Only if we have 100% confidence that multiple threads cause serious performance problems should we contemplate switching to non-blocking I/O and accept the increased development and maintenance costs. 
 
