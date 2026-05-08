@@ -113,6 +113,11 @@
         "timeline",
         "unchokes",
         "Async",
-        "microcontroller"
+        "microcontroller",
+        "runtimes",
+        "interoperable",
+        "WebAssembly",
+        "mutexes",
+        "runtime's"
     ]
 } 
