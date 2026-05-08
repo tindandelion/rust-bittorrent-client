@@ -77,7 +77,71 @@ And that's true, if we had to program like that, it would be a nightmare of a jo
 
 You see, this pattern "wait until a lower-level future completes, then progress to the next step" is so mechanical and generic, that we can leave it to the compiler to generate the implementation of all nitty-gritty details of `Future::poll()` and never have to do it manually! Instead, we can focus on what's really important: the algorithm the future implements.
 
-# Compiler support: _async/await_
+### Compiler support: _async/await_
+
+Let's see now how the compiler helps us escape the nightmare of writing the future implementations from the ground-up, with the help of `async/await` syntax. Spoiler alert: using `async/await` we can write the code in a much more direct and readable way. It looks almost like a regular synchronous code, with a sprinkle of magic here and there. 
+
+Assuming that we have an asynchronous implementation of `TcpStream` type, the code for the `ReadTextFuture` we introduced above would look like this: 
+
+```rust
+pub async fn read_text(addr: &str) -> std::io::Result<String> {
+    let mut stream = TcpStream::connect(addr).await?;
+
+    let mut buf = vec![0_u8; 1024];
+    stream.read_exact(&mut buf).await?;
+
+    let text = String::from_utf8(buf)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+    Ok(text)
+}
+```
+
+Looks quite straightforward, right? This function reads almost like a normal synchronous function. Nonetheless, under the hood this is a state machine to orchestrate the futures, similar to what we talked above. Let's have a closer look. 
+
+First, the `async` keyword in `async fn read_text(...)` means that calling this function does not execute its body immediately. Instead, it creates and returns a future object. As with other Rust futures, that future is lazy: real work starts only when someone polls it.
+
+You'll notice also a few `.await` keywords here and there. Each `.await` is a _suspension point_ (or _yield point_) inside this future. In other words, these are the points where the generated `poll()` can interrupt its flow and return `Pending` to the caller. When called again, it behaves as if the execution gets resumed starting from that suspension point. There's no magic, though: that behaviour is guaranteed by the compiler carefully generating the state machine for us.  
+
+### Async runtimes 
+
+By now, we've talked in depth about what futures are and how to implement them, both directly via `Future` trait, and indirectly via async/await. However, we haven't touched yet on a very important topic: who actually drives futures to completion? Remember, futures by themselves are _inert_, so there's got to be someone to keep polling them to make progress. This is where the idea of an **async runtime** enters the scene. 
+
+The basic idea behind an async runtime is simple: given a future, keep calling its `poll()` method until the future resolves to a result. A naive implementation pops up into mind immediately: just keep calling `poll()` in a loop until it returns `Ready(T)`. It would work, but obviously that's going to be a very wasteful implementation that would just keep the CPU busy in that loop, while waiting for it completion. A more mature runtime should provide at least those capabilities: 
+
+* It should be able to run multiple futures concurrently; 
+* It should schedule futures efficiently, so that ones that are not yet ready to progress don't waste CPU time. 
+
+In particular, as our experience with `mio` illustrated, the OS provides us with the mechanisms to avoid active polling via I/O event queues. The async runtime should work in concert with these capabilities, to make sure that futures that are currently waiting for an I/O event don't get polle needlessly. On the other hand, once the I/O resource becomes ready, we'd like the runtime to poll that future as soon as possible. 
+
+Interestingly, unlike other programming languages, Rust doesn't come with the "standard" async runtime. Instead, the runtimes are installed as separate crates. This decision, just like everyting about software development, has both pros and cons. 
+
+On a positive side, it gives developers a lot of flexibility on choosing an optimal runtime according to their project's needs and constraints. It also allows runtime implementations to evolve more quickly, because they are not constrained by the release cycle of Rust's standard library. 
+
+On a negative side, it creates a bit of a mess in the async Rust ecosystem. Different runtimes are generally not interoperable, so mixing them can be awkward or impossible. For application developers, it's less of a problem: usually you just pick a single async runtime for your project and stick to it. For library developers, however, it's a much bigger pain. If you aim to develop a library with async features, you either need to pick a single runtime you're going to support, or go to the great lengths trying to make your library compatible with different runtimes. 
+
+Today, the most commonly used options are:
+
+* [**tokio**][crate-link?] - the most popular general-purpose runtime in the ecosystem, with a rich set of async utilities and integrations.
+* [**async-std**][crate-link?] - an alternative runtime that aims for an API style similar to Rust's standard library.
+* [**smol**][crate-link?] (and related ecosystem crates) - a lightweight, modular approach that focuses on smaller building blocks.
+
+There are also specialized runtimes for specific environments (for example, embedded or WebAssembly), but the key point stays the same: runtime choice is an explicit architectural decision in Rust.
+
+
+---
+So what does a typical async runtime consist of?
+
+Usually, some version of these components:
+
+* A **task scheduler/executor** that owns tasks (futures) and decides which one to poll next.
+* A **reactor** (or I/O event driver) that waits for OS-level events like "socket became readable" and wakes relevant tasks.
+* A **timer subsystem** for things like sleep, timeouts, and intervals.
+* A **waker mechanism** that connects low-level readiness events back to high-level futures.
+* Often, a **threading model** (single-threaded or multi-threaded) and supporting queues for moving tasks around.
+
+Conceptually, this is very similar to what we did manually with `mio`, just wrapped in reusable abstractions so most application code can stay clean and focused on business logic.
+
+In the next section, we'll build an async runtime from the ground up to make these moving parts feel less mysterious.
 
 # Async runtime from the ground up
 
