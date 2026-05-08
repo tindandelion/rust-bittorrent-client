@@ -119,11 +119,10 @@ On a positive side, it gives developers a lot of flexibility on choosing an opti
 
 On a negative side, it creates a bit of a mess in the async Rust ecosystem. Different runtimes are generally not interoperable, so mixing them can be awkward or impossible. For application developers, it's less of a problem: usually you just pick a single async runtime for your project and stick to it. For library developers, however, it's a much bigger pain. If you aim to develop a library with async features, you either need to pick a single runtime you're going to support, or go to the great lengths trying to make your library compatible with different runtimes. 
 
-Today, the most commonly used options are:
+Today, by far the most popular async runtime option is `tokio`, with `smol` as a notable lightweight alternative:
 
-* [**tokio**][crate-link?] - the most popular general-purpose runtime in the ecosystem, with a rich set of async utilities and integrations.
-* [**async-std**][crate-link?] - an alternative runtime that aims for an API style similar to Rust's standard library.
-* [**smol**][crate-link?] (and related ecosystem crates) - a lightweight, modular approach that focuses on smaller building blocks.
+* [**tokio**](https://docs.rs/tokio/latest/tokio/) - a general-purpose runtime with a rich set of async utilities and integrations.
+* [**smol**](https://docs.rs/smol/latest/smol/) (and related ecosystem crates) - a modular approach that focuses on smaller building blocks.
 
 There are also specialized runtimes for specific environments (for example, embedded or WebAssembly), but the key point stays the same: runtime choice is an explicit architectural decision in Rust.
 
