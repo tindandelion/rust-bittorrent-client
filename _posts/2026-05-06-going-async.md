@@ -4,17 +4,15 @@ title:  "Going async"
 date: 2026-05-06 
 ---
 
-
-
-In the [last post][last-post] I shared my experiences with programming non-blocking I/O on a low level, using Rust's [`mio`](https://docs.rs/mio/latest/mio/) library. It was a mixed bag: on one hand, non-blocking I/O was very useful to handle multiple TCP streams concurrently, but the overall programming experience and the resulting code structure left me wishing for something simpler. In this section, we're going to make a step forward towards a more ergonomic way to handle non-blocking I/O and dive deeper into _asynchronous programming_ in Rust. 
+In the [last post][last-post] I shared my experiences with programming non-blocking I/O on a low level, using Rust's [`mio`](https://docs.rs/mio/latest/mio/) library. It was a mixed bag: on one hand, non-blocking I/O was very useful to handle multiple TCP streams concurrently, but the overall programming experience and the resulting code structure left me wishing for something simpler. Starting from there, we're going to make a step forward towards a more ergonomic way to handle non-blocking I/O and dive deeper into _asynchronous programming_ in Rust. 
 
 [*Version 0.1.4 on GitHub*][github-0.1.4]{: .no-github-icon}
 
-Most of the work from this section is based on the knowledge I got from a book [_Asynchronous Programming in Rust_](https://www.goodreads.com/book/show/205552626-asynchronous-programming-in-rust) by Carl F. Samson. This is an excellent resource for those who want to learn the concepts of asynchronous programming, not only in Rust specifically. 
+Most of the work from this section is based on the knowledge I gathered from the book [_Asynchronous Programming in Rust_](https://www.goodreads.com/book/show/205552626-asynchronous-programming-in-rust) by Carl F. Samson. This is an excellent resource for those who want to learn the concepts of asynchronous programming, not only in Rust specifically. 
 
 # Futures: basic building blocks 
 
-A idea of a _future_ lies at the foundation of asynchronous programming. On the lowest level, a future is just a data type that implements the `Future` trait with a single method `poll()`: 
+A idea of a _future_ lies at the foundation of asynchronous programming. On the lowest level, a future is just a data type that implements the [`Future`][doc-link?] trait with a single method [`Future::poll()`][doc-link?]: 
 
 ```rust
 pub enum Poll<T> {
@@ -28,9 +26,9 @@ pub trait Future {
 }
 ```
 
-Omitting some pesky implementation details, the core idea of the future is quite simple: it represents  a computation process whose result may not be immediately available, but we'll get to it eventually. While the computation is still in progress, the call to `poll()` returns immediately with `Poll::Pending`; once the computation is done, the call to `poll()` will return `Ready` with that computed value. In the programming jargon, we say that the future _resolves to a value of `T`_. 
+Omitting some pesky implementation details, the core idea of a future is quite simple: it represents  a computation process whose result may not be immediately available, but we'll get to it eventually. While the computation is still in progress, the call to `poll()` returns immediately with `Poll::Pending`; once the computation is done, the call to `poll()` will return `Ready` with that computed value. In the programming jargon, we say that the future _resolves to a value of `T`_. 
 
-For the caller, this interface provides more flexibility. Instead of blocking the execution thread until the computation is done, the call to `poll()` returns immediately, which allows the caller decide what to do while the future is still pending. In the simplest case, the caller may decide to wait idly for a while and call `poll()` again. In a more useful scenario, the caller would choose to do some other work while the result isn't ready yet. 
+For the caller, such an interface provides more flexibility. Instead of blocking the execution thread until the computation is done, the call to `poll()` returns immediately, which allows the caller decide what to do while the future is still pending. In the simplest case, the caller may decide to wait idly for a while and call `poll()` again. In a more useful scenario, the caller would choose to do some other work while the result isn't ready yet. 
 
 The overall idea is that a call to `poll()` never blocks the caller's execution flow for a long time. Behind this simple interface, however, can hide a complex implementation to ensure that each call to `poll()` returns quickly. 
 
@@ -144,8 +142,6 @@ When we look at typical runtime components, we discover the following pieces:
 The reactor and executor work together in a loosely coupled coordination: the executor provides each task with a [_waker_][doc-link?], and when the reactor observes a ready event, it uses that waker to mark the task runnable again so the executor can poll it.
 
 In practice, resources are usually tightly coupled to the runtime's reactor and wakeup machinery. That coupling is one of the main reasons interoperability between async runtimes in Rust is limited.
-
-# Async runtime from the ground up
 
 # Next steps 
 
