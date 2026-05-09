@@ -12,7 +12,7 @@ Most of the work from this section is based on the knowledge I gathered from the
 
 # Futures: basic building blocks 
 
-A idea of a _future_ lies at the foundation of asynchronous programming. On the lowest level, a future is just a data type that implements the [`Future`][doc-link?] trait with a single method [`Future::poll()`][doc-link?]: 
+A idea of a _future_ lies at the foundation of asynchronous programming. On the lowest level, a future is just a data type that implements the [`Future`](https://doc.rust-lang.org/std/future/trait.Future.html) trait with a single method [`Future::poll()`](https://doc.rust-lang.org/std/future/trait.Future.html#tymethod.poll): 
 
 ```rust
 pub enum Poll<T> {
@@ -139,7 +139,7 @@ When we look at typical runtime components, we discover the following pieces:
 * The runtime also typically provides async _resources_ such as timers, TCP streams, file wrappers, etc. These expose async APIs and integrate with the runtime so they can register interest in events and get woken up by the reactor.
 * Async versions of _synchronization primitives_ such as channels, mutexes, semaphores, etc. 
 
-The reactor and executor work together in a loosely coupled coordination: the executor provides each task with a [_waker_][doc-link?], and when the reactor observes a ready event, it uses that waker to mark the task runnable again so the executor can poll it.
+The reactor and executor work together in a loosely coupled coordination: the executor provides each task with a [_Waker_](https://doc.rust-lang.org/std/task/struct.Waker.html), and when the reactor observes a ready event, it uses that waker to mark the task runnable again so the executor can poll it.
 
 In practice, resources are usually tightly coupled to the runtime's reactor and wakeup machinery. That coupling is one of the main reasons interoperability between async runtimes in Rust is limited.
 
