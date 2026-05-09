@@ -4,13 +4,13 @@ title:  "Intro to async Rust"
 date: 2026-05-06 
 ---
 
-In the [last post][last-post] I shared my experiences with programming non-blocking I/O on a pretty low level, using Rust's [`mio`](https://docs.rs/mio/latest/mio/) library. This experience was a mixed bag: obviously, non-blocking I/O was very useful to handle multiple TCP streams concurrently, but the overall programming experience and the resulting code structure [left me wishing for something simpler][last-post-reflections]. Motivated by this frustration, we're going to make a step forward towards a more ergonomic way to handle non-blocking I/O, and dive deeper into _asynchronous programming_ in Rust. 
+In the [last post][last-post] I shared my experiences with programming non-blocking I/O at a fairly low level, using Rust's [`mio`](https://docs.rs/mio/latest/mio/) library. This experience was a mixed bag: obviously, non-blocking I/O was very useful for handling multiple TCP streams concurrently, but the overall programming experience and the resulting code structure [left me wishing for something simpler][last-post-reflections]. Motivated by this frustration, we're going to take a step forward toward a more ergonomic way to handle non-blocking I/O, and dive deeper into _asynchronous programming_ in Rust.
 
 This post is a brief introduction to async Rust. We'll do real coding as the next step.
 
 # Futures: basic building blocks 
 
-A idea of a _future_ lies at the foundation of asynchronous programming. On the lowest level, a future is just a data type that implements the [`Future`](https://doc.rust-lang.org/std/future/trait.Future.html) trait with a single method [`Future::poll()`](https://doc.rust-lang.org/std/future/trait.Future.html#tymethod.poll): 
+The idea of a _future_ lies at the foundation of asynchronous programming. At the lowest level, a future is just a data type that implements the [`Future`](https://doc.rust-lang.org/std/future/trait.Future.html) trait with a single method, [`Future::poll()`](https://doc.rust-lang.org/std/future/trait.Future.html#tymethod.poll):
 
 ```rust
 pub enum Poll<T> {
@@ -24,24 +24,24 @@ pub trait Future {
 }
 ```
 
-Omitting some pesky implementation details, the core idea of a future is quite simple: it represents  a computation process whose result may not be immediately available, but we'll get to it eventually. While the computation is still in progress, the call to `poll()` returns immediately with `Poll::Pending`; once the computation is done, the call to `poll()` will return `Ready` with that computed value. In the programming jargon, we say that the future _resolves to a value of `T`_. 
+Omitting some pesky implementation details, the core idea of a future is quite simple: it represents a computation process whose result may not be immediately available, but we'll get it eventually. While the computation is still in progress, the call to `poll()` returns immediately with `Poll::Pending`; once the computation is done, the call to `poll()` returns `Ready` with that computed value. In programming jargon, we say that the future _resolves to a value of `T`_.
 
-For the caller, such an interface provides more flexibility. Instead of blocking the execution thread until the computation is done, the call to `poll()` returns immediately, which allows the caller decide what to do while the future is still pending. In the simplest case, the caller may decide to wait idly for a while and call `poll()` again. In a more useful scenario, the caller would choose to do some other work while the result isn't ready yet. 
+For the caller, such an interface provides more flexibility. Instead of blocking the execution thread until the computation is done, the call to `poll()` returns immediately, which allows the caller to decide what to do while the future is still pending. In the simplest case, the caller may decide to wait idly for a while and call `poll()` again. In a more useful scenario, the caller can do other work while the result isn't ready yet.
 
-The overall idea is that a call to `poll()` never blocks the caller's execution flow for a long time. Behind this simple interface, however, can hide a complex implementation to ensure that each call to `poll()` returns quickly. 
+The overall idea is that a call to `poll()` never blocks the caller's execution flow for a long time. Behind this simple interface, however, there may be a complex implementation ensuring that each call to `poll()` returns quickly.
 
-Consider, for example, the calculation of n-th Fibonacci number: a typical example of a potentially long-running computation. To avoid blocking the caller for a long time, the implementation could instead do calculations in steps: the first call to `poll()` could only calculate first 100 numbers, store the intermediate results, and return `Pending`. The second call would pick up where the last call stopped, and calculate next 100 numbers. The caller would call `poll()` in a loop until eventually the future resolves to n-th number in the sequence. Effectively, inside this data type we implement a state machine that advances towards a result with each call to `poll()`. 
+Consider, for example, the calculation of the nth Fibonacci number: a typical example of a potentially long-running computation. To avoid blocking the caller for a long time, the implementation could instead do calculations in steps: the first call to `poll()` could only calculate the first 100 numbers, store the intermediate results, and return `Pending`. The second call would pick up where the last call stopped and calculate the next 100 numbers. The caller would call `poll()` in a loop until eventually the future resolves to the nth number in the sequence. Effectively, inside this data type we implement a state machine that advances toward a result with each call to `poll()`.
 
-Another example from a non-blocking I/O realm could be connecting to the TCP stream. As we know from before, `mio`'s implementation of `TcpStream::connect()` is non-blocking, so we need to wait for a while until the TCP socket becomes ready to transmit the data. This can also be thought of as a future type `TcpConnectFuture`. Its `poll()` method would check the underlying TCP socket, returning `Pending` while the socket is not yet readable. Once it's ready, the call to `poll()` would return `Ready(TcpStream)`, and we can use the returned stream to send data. 
+Another example from the realm of non-blocking I/O could be connecting to a TCP stream. As we know from before, `mio`'s implementation of `TcpStream::connect()` is non-blocking, so we need to wait until the TCP socket becomes ready to transmit data. This can also be thought of as a future type, `TcpConnectFuture`. Its `poll()` method would check the underlying TCP socket, returning `Pending` while the socket is not yet ready. Once it's ready, the call to `poll()` would return `Ready(TcpStream)`, and we can use the returned stream to send data.
 
 ### Futures in Rust are lazy
 
-Let's have a second look at the `TcpConnectFuture` from above. The question becomes: when do we actually call `TcpStream::connect()`? There's two possible places to do that: 
+Let's have a second look at the `TcpConnectFuture` from above. The question becomes: when do we actually call `TcpStream::connect()`? There are two possible places to do that:
 
 * Immediately in the constructor of `TcpConnectFuture`; 
 * Deferred, at the first call to `Future::poll()`; 
 
-If we do it in the constructor, our future is _eager:_ the work starts immediately. If, on the other hand, we defer the work until the first call to `Future::poll()`, our future is said to be _lazy_. Both approaches have pros and cons, there's no clean-cut answer which one is better. 
+If we do it in the constructor, our future is _eager:_ the work starts immediately. If, on the other hand, we defer the work until the first call to `Future::poll()`, our future is said to be _lazy_. Both approaches have pros and cons; there's no clear-cut answer to which one is better.
 
 In Rust, specifically, futures **are supposed to be lazy**: no work should be started until the explicit call to `Future::poll()`. The benefit of laziness is that the caller controls when and how work runs, which is essential when you might be on a microcontroller with no heap, or building a custom scheduler.
 
@@ -51,11 +51,11 @@ When reasoning about futures, there is an interesting and useful distinction to 
 
 A **leaf future** is a future that talks directly to some external async source, such as a socket, timer, or file descriptor. In other words, at the bottom of the chain there is a concrete operation that can be pending in the real world. For example, we could have a `ConnectFuture` to connect to a TCP socket, and `ReadExactFuture(stream, n_bytes)` to asynchronously read N bytes from the socket. 
 
-When implementing leaf futures, you usually can't avoid implementing the `Future` trait manually, to do all pesky low-level details of managing the underlying resource.
+When implementing leaf futures, you usually can't avoid implementing the `Future` trait manually to handle all the pesky low-level details of managing the underlying resource.
 
 In contrast, a **non-leaf future** is a future that does not perform a low-level operation itself. Instead, it orchestrates other futures: it polls them, combines their results, and decides what to do next. In other words, it operates on a higher level of abstraction, and at that level we can get help from the compiler to make coding more ergonomic.
 
-Let's illustrate that with a small example. Suppose we want to build on top of `ConnectFuture` and `ReadExactFuture` a new piece of functionality, called `ReadTextFuture(addr)` that should:
+Let's illustrate that with a small example. Suppose we want to build a new piece of functionality on top of `ConnectFuture` and `ReadExactFuture`, called `ReadTextFuture(addr)`, that should:
 
 * Connect to a TCP stream by address;
 * Read 1024 bytes from that stream;
@@ -77,7 +77,7 @@ You see, this pattern "wait until a lower-level future completes, then progress 
 
 ### Compiler support: _async/await_
 
-Let's see now how the compiler helps us escape the nightmare of writing the future implementations from the ground-up, with the help of `async/await` syntax. Spoiler alert: using `async/await` we can write the code in a much more direct and readable way. It looks almost like a regular synchronous code, with a sprinkle of "async magic" here and there. 
+Let's now see how the compiler helps us escape the nightmare of writing future implementations from the ground up, with the help of `async/await` syntax. Spoiler alert: using `async/await`, we can write the code in a much more direct and readable way. It looks almost like regular synchronous code, with a sprinkle of "async magic" here and there.
 
 Assuming that we have an asynchronous implementation of `TcpStream` type, the code for the `ReadTextFuture` we introduced above would look like this: 
 
@@ -94,11 +94,11 @@ pub async fn read_text(addr: &str) -> std::io::Result<String> {
 }
 ```
 
-Looks quite straightforward, right? This function reads almost like a normal synchronous function. Nonetheless, under the hood this is a state machine to orchestrate the futures, similar to what we talked above. Let's have a closer look. 
+Looks quite straightforward, right? This function reads almost like a normal synchronous function. Nonetheless, under the hood this is a state machine that orchestrates futures, similar to what we discussed above. Let's have a closer look.
 
 First, the `async` keyword in `async fn read_text(...)` means that calling this function does not execute its body immediately. Instead, it creates and returns a future object. As with other Rust futures, that future is lazy: real work starts only when someone polls it.
 
-You'll notice also a few `.await` keywords here and there. Each `.await` is a _suspension point_ (or _yield point_) inside this future. In other words, these are the points where the generated `poll()` can interrupt its flow and return `Pending` to the caller. When called again, it behaves as if the execution gets resumed starting from that suspension point. There's no magic, though: that behaviour is guaranteed by the compiler carefully generating the state machine for us.  
+You'll also notice a few `.await` keywords here and there. Each `.await` is a _suspension point_ (or _yield point_) inside this future. In other words, these are the points where the generated `poll()` can interrupt its flow and return `Pending` to the caller. When called again, it behaves as if execution resumes from that suspension point. There's no magic, though: that behavior is guaranteed by the compiler carefully generating the state machine for us.
 
 # Async runtimes 
 
@@ -106,7 +106,7 @@ By now, we've talked in depth about what futures are and how to implement them, 
 
 ### What a runtime does 
 
-The basic idea behind an async runtime is simple: given a future, keep calling its `poll()` method until the future resolves to a result. A naive implementation pops up into mind immediately: just keep calling `poll()` in a loop until it returns `Ready(T)`. It would work, but obviously that's going to be a very wasteful implementation that would just keep the CPU busy in that loop, while waiting for it completion. A more mature runtime should provide at least those capabilities:
+The basic idea behind an async runtime is simple: given a future, keep calling its `poll()` method until the future resolves to a result. A naive implementation comes to mind immediately: just keep calling `poll()` in a loop until it returns `Ready(T)`. It would work, but obviously that's going to be very wasteful, keeping the CPU busy in that loop while waiting for its completion. A more mature runtime should provide at least these capabilities:
 
 * It should be able to run multiple futures concurrently; 
 * It should schedule futures efficiently, so that ones that are not yet ready to progress don't waste CPU time. 
@@ -115,11 +115,11 @@ In particular, as our experience with `mio` illustrated, the OS provides us with
 
 ### Choose your runtime 
 
-Interestingly, unlike other programming languages, Rust doesn't come with the "standard" async runtime. Instead, the runtimes are installed as separate crates. This decision, just like everything about software development, has both pros and cons. 
+Interestingly, unlike many other programming languages, Rust doesn't come with a "standard" async runtime. Instead, runtimes are installed as separate crates. This decision, like almost everything in software development, has both pros and cons.
 
-On a positive side, it gives developers a lot of flexibility on choosing an optimal runtime according to their project's needs and constraints. It also allows runtime implementations to evolve more quickly, because they are not constrained by the release cycle of Rust's standard library. 
+On the positive side, it gives developers a lot of flexibility in choosing an optimal runtime according to their project's needs and constraints. It also allows runtime implementations to evolve more quickly because they are not constrained by the release cycle of Rust's standard library.
 
-On a negative side, it creates a bit of a mess in the async Rust ecosystem. Different runtimes are generally not interoperable, so mixing them can be awkward or impossible. For application developers, it's less of a problem: usually you just pick a single async runtime for your project and stick to it. For library developers, however, it's a much bigger pain. If you aim to develop a library with async features, you either need to pick a single runtime you're going to support, or go to the great lengths trying to make your library compatible with different runtimes. 
+On the negative side, it creates a bit of a mess in the async Rust ecosystem. Different runtimes are generally not interoperable, so mixing them can be awkward or impossible. For application developers, it's less of a problem: usually you just pick a single async runtime for your project and stick to it. For library developers, however, it's a much bigger pain. If you aim to develop a library with async features, you either need to pick a single runtime you're going to support, or go to great lengths to make your library compatible with different runtimes.
 
 Today, by far the most popular async runtime option is `tokio`, with `smol` as a notable lightweight alternative:
 
@@ -143,7 +143,7 @@ In practice, resources are usually tightly coupled to the runtime's reactor and 
 
 # What's next? 
 
-So, that was a brief overview of async Rust. Next, we'll dive into a deeper end of the pool and implement our own little async runtime. After all, since Rust doesn't give us one, why not build it by ourselves? Though it may sound like reinventing the wheel, I think it's a good exercise to learn how async runtimes work under the hood. Let's go!
+So, that was a brief overview of async Rust. Next, we'll dive into the deep end of the pool and implement our own little async runtime. After all, since Rust doesn't give us one, why not build one ourselves? Though it may sound like reinventing the wheel, I think it's a good exercise to learn how async runtimes work under the hood. Let's go!
 
 [last-post]: {{site.baseurl}}/{% post_url 2026-04-10-non-blocking-request-file %}
 [last-post-reflections]: {{site.baseurl}}/{% post_url 2026-04-10-non-blocking-request-file %}#lessons-learned-the-hard-way
